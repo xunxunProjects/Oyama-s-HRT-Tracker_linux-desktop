@@ -4,12 +4,13 @@ A native Qt 6 desktop application for Linux and BSD. Local-only: no account,
 no cloud, no telemetry. Health records live in a local PostgreSQL database, and
 data moves in and out through the upstream `oyama-hrt-complete-backup` format.
 
-**Status: model core, storage foundation, and local database setup implemented;
-Qt application shell not started.** The C99 pharmacokinetic core is in `core/`,
-with a strict C test and a comparison harness that checks it against the
-upstream TypeScript model to machine precision. `storage/` contains the
-PostgreSQL schema, forward-only migration runner, typed repositories, and the
-application-managed cluster lifecycle; `cli/` exposes setup, migration, and data
+**Status: model core, storage foundation, local database setup, and backup
+import/export implemented; Qt application shell not started.** The C99
+pharmacokinetic core is in `core/`, with a strict C test and a comparison
+harness that checks it against the upstream TypeScript model to machine
+precision. `storage/` contains the PostgreSQL schema, forward-only migration
+runner, typed repositories, the application-managed cluster lifecycle, and the
+LWW/tombstone backup merge; `cli/` exposes setup, migration, data, and backup
 commands. The Qt/QML application and desktop packaging are still ahead.
 
 - Design: [`docs/superpowers/specs/2026-10-29-linux-desktop-design.md`](docs/superpowers/specs/2026-10-29-linux-desktop-design.md)
@@ -33,11 +34,10 @@ ctest --test-dir build --output-on-failure
 ```
 
 The PK test binary is `build/pk_smoke_test`; the comparison dumper is
-`build/oyama_pk_dump` (see `tools/compare/README.md`). The storage test is
-`build/storage_test`; the `storage_integration` and `cli_integration` CTests
-start throwaway PostgreSQL clusters when `initdb`/`pg_ctl` are available, or
-skip. Set `PG_BINDIR=/path/to/postgres/bin` if the server tools are not on
-`PATH`.
+`build/oyama_pk_dump` (see `tools/compare/README.md`). The storage tests are
+`build/storage_test` and `build/backup_test`; the integration CTests start
+throwaway PostgreSQL clusters when `initdb`/`pg_ctl` are available, or skip.
+Set `PG_BINDIR=/path/to/postgres/bin` if the server tools are not on `PATH`.
 
 To install the CLI and its migrations:
 
@@ -106,11 +106,37 @@ build/oyama-hrt-cli db status
 build/oyama-hrt-cli settings set --weight 70 --birth-year 1995
 build/oyama-hrt-cli doses add \
   --mode transfem --route oral --ester E2 --dose-mg 2 --time-h 480000
+build/oyama-hrt-cli backup export ~/oyama-backup.json
+build/oyama-hrt-cli backup preview ~/oyama-backup.json
+build/oyama-hrt-cli backup import ~/oyama-backup.json
 ```
 
 `db init` creates the `oyama_hrt` database when missing and applies all pending
 migrations in one transaction. Migrations live in `storage/migrations/` and are
 forward-only; the runner records a checksum for each applied file.
+
+### Backup import/export
+
+Backups use the upstream `oyama-hrt-complete-backup` format, version 1. Export
+includes the optional `birthYear` extension; upstream ignores it, so a
+round-trip through the upstream app loses that field (the CLI preview reports
+it). Import and export are plaintext JSON and contain health data; export writes
+the file with mode 0600 and prints a warning.
+
+Merge behavior follows upstream:
+
+- `updatedAt` last-write-wins for events, labs, and dose templates;
+- tombstones have a 5-minute future tolerance, a 180-day TTL, and a 5000-per-kind
+  cap;
+- quick doses, supplies, and plan items are unstamped: if the same ID exists
+  locally, that whole category is blocked rather than overwriting silently;
+- each category is validated independently; blocked categories leave local data
+  untouched while other categories still merge;
+- import runs in one transaction, so a failure leaves the database unchanged.
+
+Our schema stores UUID record IDs, so non-UUID IDs from another client are
+rejected rather than rewritten. Lab records without an assay are imported as
+`immuno` because the local schema requires an assay value.
 
 The storage library exposes `LocalCluster` for the future Qt shell: call
 `ensure_running()` during application startup and `stop()` on clean exit. The
@@ -130,8 +156,8 @@ Qt application itself has not been started yet.
 
 目前 C99 药代动力学核心已经完成，并与上游 TypeScript 模型做了逐点对比
 （36 个场景、413,323 个字段，最大相对误差约 1.1e-15）。PostgreSQL 存储层、
-迁移调度、托管本地 cluster 生命周期、首次设置向导和基础 CLI 也已经落地；
-Qt/QML 界面和桌面打包尚未开始。
+迁移调度、托管本地 cluster 生命周期、首次设置向导、备份导入/导出与
+LWW/删除合并、基础 CLI 也已经落地；Qt/QML 界面和桌面打包尚未开始。
 
 ## Repository layout
 

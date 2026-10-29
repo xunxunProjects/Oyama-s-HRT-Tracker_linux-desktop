@@ -19,7 +19,9 @@ enum class Mode {
 /// calibration are shared by both modes, matching the upstream application.
 struct Settings {
     std::optional<double> body_weight_kg;
+    std::optional<std::int64_t> weight_updated_at;
     std::optional<int> birth_year;
+    std::optional<std::int64_t> birth_year_updated_at;
     std::optional<std::string> pk_params_json;
     std::optional<std::int64_t> pk_params_updated_at;
     std::string calibration_method{"mipd"};

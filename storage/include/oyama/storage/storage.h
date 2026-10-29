@@ -1,6 +1,7 @@
 #pragma once
 
 #include "app_config.h"
+#include "backup.h"
 #include "connection.h"
 #include "database.h"
 #include "dose_event_repository.h"

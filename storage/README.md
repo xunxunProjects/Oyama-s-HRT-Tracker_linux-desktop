@@ -69,6 +69,29 @@ do not edit an already-applied file.
 Repositories validate UUIDs and basic numeric/text constraints before sending
 SQL. JSON columns are checked by the schema to be JSON objects where required.
 
+## Backup import/export
+
+`backup.h` exposes the upstream-compatible complete-backup path:
+
+- `preview_backup(Connection&, path, now_ms)` parses and validates the bundle,
+  computes the LWW/tombstone merge, and reports counts, blocked categories,
+  issues, and statistics without writing.
+- `import_backup(Connection&, path, now_ms)` applies the same merge in one
+  transaction. Root-envelope errors throw; a blocked category is left untouched
+  while other categories are still applied.
+- `export_backup(Connection&, path, now_ms)` writes a complete v1 bundle with
+  mode 0600 and includes the local `birthYear` extension.
+
+The format intentionally follows upstream: stamped categories (`events`,
+`labResults`, `doseTemplates`) use `updatedAt` LWW with deterministic
+fingerprint tie-breaking; tombstones use 5-minute future tolerance, 180-day
+TTL, and a 5000-per-kind cap. `quickDoses`, `supplies`, and `plan` have no
+upstream timestamps, so an incoming id that already exists locally blocks that
+category rather than overwriting silently. Upstream v1 has no `birthYear`; the
+optional top-level extension is preserved here but lost through an upstream
+round-trip. IDs are required to be UUIDs by this database, and a lab without an
+`assay` is stored as `immuno`.
+
 ## Tests
 
 `storage_test` runs unit checks. When `OYAMA_TEST_PG_SOCKET` and
@@ -83,9 +106,10 @@ server binaries are unavailable, which CTest reports as skipped. Set
 `cli/tests/run_cli_managed_integration.sh` exercises the full managed-cluster
 path: setup, config persistence, ping, status, stop/start, idempotent setup,
 existing-cluster selection, and the missing-tools error.
+`backup_test` runs backup/merge integration checks; `cli/tests/run_cli_backup_integration.sh`
+exercises `backup export/preview/import` and the invalid-envelope path.
 
 ## Not implemented yet
 
-- Backup import/export and last-write-wins merge.
 - Calibration history storage and model integration.
 - Qt/QML view models; those belong in `app/` and are intentionally deferred.

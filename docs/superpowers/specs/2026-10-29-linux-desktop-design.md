@@ -432,6 +432,17 @@ Postgres 集成测试使用临时 cluster（`initdb` + `pg_ctl`），不依赖�
 - 明文导出，文件内含健康数据；导出对话框必须明确提示。
 - 加密 `.hrtb` 不在第一版；后续通过独立的 OpenPGP 兼容层实现。
 
+### 10.4 实现补充（2026-10-29）
+
+- `storage/backup.h` 提供 `preview_backup`、`import_backup`、`export_backup`，使用 C++20 + nlohmann JSON，不引入网络或 OpenSSL。
+- CLI 命令为 `backup export FILE`、`backup preview FILE`、`backup import FILE [--dry-run]`。
+- 合并实现与上游对齐：`events`/`labResults`/`doseTemplates` 使用 `updatedAt` LWW；同时间戳用内容指纹确定性决胜；tombstone 未来容差 5 分钟、TTL 180 天、每类上限 5000 条。
+- `quickDoses`/`supplies`/`plan` 没有上游时间戳；如果导入 id 已存在于本地，该类别整体阻塞，不做静默覆盖。
+- 导入按类别原子校验；根信封错误拒绝整个文件；其他类别成功时仍可在单个事务中应用。
+- 本数据库要求记录 id 为 UUID；上游的非 UUID id 会被拒绝。上游 lab 的 `assay` 可缺失，本数据库默认存为 `immuno`。
+- 导出包含本地 `birthYear`/`birthYearUpdatedAt` 扩展；上游往返会丢失，导入预览需提示。
+- 导出为明文 JSON，文件权限 0600；UI 必须继续显示健康数据警告。
+
 ---
 
 ## 11. 安全与隐私

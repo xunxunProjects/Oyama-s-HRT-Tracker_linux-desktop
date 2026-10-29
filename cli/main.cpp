@@ -19,6 +19,7 @@ namespace {
 
 using oyama::storage::AppConfig;
 using oyama::storage::Backend;
+using oyama::storage::BackupPreview;
 using oyama::storage::Connection;
 using oyama::storage::ConnectionConfig;
 using oyama::storage::Database;
@@ -103,7 +104,10 @@ void print_usage(std::ostream& output) {
         << "  doses add --mode MODE --route ROUTE --ester ESTER\n"
         << "            --dose-mg N --time-h H [--extras JSON]\n"
         << "            [--updated-at MS] [--created-at MS] [--id UUID]\n"
-        << "  doses remove --id UUID\n";
+        << "  doses remove --id UUID\n"
+        << "  backup export FILE\n"
+        << "  backup preview FILE\n"
+        << "  backup import FILE [--dry-run]\n";
 }
 
 std::string require_value(const std::vector<std::string>& args, std::size_t& index,
@@ -819,6 +823,82 @@ int command_settings(const GlobalOptions& global,
     throw Error("unknown settings command: " + command);
 }
 
+void print_backup_preview(const BackupPreview& preview) {
+    std::cout << "ok\t" << (preview.ok ? "yes" : "no") << '\n';
+    for (const auto& error : preview.errors) {
+        std::cout << "error\t" << error << '\n';
+    }
+    for (const auto& issue : preview.issues) {
+        std::cout << "issue\t" << issue << '\n';
+    }
+    for (const auto& missing : preview.missing) {
+        std::cout << "missing\t" << missing << '\n';
+    }
+    for (const auto& blocked : preview.blocked) {
+        std::cout << "blocked\t" << blocked << '\n';
+    }
+    for (const auto& [mode, counts] : preview.counts) {
+        std::cout << "count\t" << mode << "\tevents\t" << counts.events
+                  << "\tlabResults\t" << counts.lab_results
+                  << "\tdoseTemplates\t" << counts.dose_templates
+                  << "\tquickDoses\t" << counts.quick_doses
+                  << "\tsupplies\t" << counts.supplies << "\tplan\t"
+                  << counts.plan << "\tdeletions\t" << counts.deletions
+                  << '\n';
+    }
+    std::cout << "stats\tadded\t" << preview.stats.added << "\tupdated\t"
+              << preview.stats.updated << "\tskipped\t"
+              << preview.stats.skipped << "\tremoved\t"
+              << preview.stats.removed << '\n';
+    for (const auto& id : preview.removed_ids) {
+        std::cout << "removed\t" << id << '\n';
+    }
+}
+
+int command_backup(const GlobalOptions& global,
+                   const std::vector<std::string>& args, std::size_t index) {
+    if (index >= args.size()) {
+        throw Error("backup needs export, preview or import");
+    }
+    const std::string command = args[index++];
+    bool dry_run = false;
+    if (command == "import") {
+        while (index < args.size() && args[index] == "--dry-run") {
+            dry_run = true;
+            ++index;
+        }
+    }
+    if (index >= args.size()) {
+        throw Error("backup " + command + " needs a file");
+    }
+    const std::filesystem::path file = args[index++];
+    if (index != args.size()) {
+        throw Error("unexpected argument for backup " + command + ": " +
+                    args[index]);
+    }
+
+    ensure_managed_running(global);
+    Connection connection(global.config);
+    if (command == "export") {
+        export_backup(connection, file, now_ms());
+        std::cout << "exported " << file.string() << '\n';
+        std::cout << "warning\tbackup contains plaintext health data\n";
+        return 0;
+    }
+    if (command == "preview" || (command == "import" && dry_run)) {
+        const auto preview = preview_backup(connection, file, now_ms());
+        print_backup_preview(preview);
+        return preview.ok ? 0 : 1;
+    }
+    if (command == "import") {
+        const auto result = import_backup(connection, file, now_ms());
+        print_backup_preview(result.preview);
+        std::cout << "applied\t" << (result.applied ? "yes" : "no") << '\n';
+        return result.applied ? 0 : 1;
+    }
+    throw Error("unknown backup command: " + command);
+}
+
 int command_doses(const GlobalOptions& global,
                   const std::vector<std::string>& args, std::size_t index) {
     if (index >= args.size()) {
@@ -973,6 +1053,9 @@ int main(int argc, char** argv) {
         }
         if (command == "doses") {
             return command_doses(global, args, index);
+        }
+        if (command == "backup") {
+            return command_backup(global, args, index);
         }
         throw Error("unknown command: " + command);
     } catch (const Error& error) {

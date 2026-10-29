@@ -13,6 +13,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PostgreSQL 14 REQUIRED)
+find_package(nlohmann_json 3.11 REQUIRED)
 include(GNUInstallDirs)
 
 add_library(oyama_pk STATIC
@@ -30,6 +31,7 @@ endif()
 
 add_library(oyama_storage STATIC
     storage/src/app_config.cpp
+    storage/src/backup.cpp
     storage/src/connection.cpp
     storage/src/database.cpp
     storage/src/dose_event_repository.cpp
@@ -46,7 +48,9 @@ add_library(oyama_storage STATIC
 target_include_directories(oyama_storage
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
-target_link_libraries(oyama_storage PUBLIC PostgreSQL::PostgreSQL)
+target_link_libraries(oyama_storage
+    PUBLIC PostgreSQL::PostgreSQL
+    PRIVATE nlohmann_json::nlohmann_json)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_storage PRIVATE -Wall -Wextra -Wpedantic)
@@ -93,6 +97,20 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:storage_test>)
     set_tests_properties(storage_integration PROPERTIES SKIP_RETURN_CODE 77)
 
+    add_executable(backup_test storage/tests/backup_test.cpp)
+    target_link_libraries(backup_test PRIVATE oyama_storage nlohmann_json::nlohmann_json)
+    target_compile_definitions(backup_test PRIVATE
+        OYAMA_TEST_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(backup_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME backup_test COMMAND backup_test)
+    add_test(
+        NAME backup_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_with_temp_postgres.sh
+                $<TARGET_FILE:backup_test>)
+    set_tests_properties(backup_integration PROPERTIES SKIP_RETURN_CODE 77)
+
     add_test(NAME cli_version COMMAND oyama-hrt-cli version)
     set_tests_properties(cli_version PROPERTIES
         PASS_REGULAR_EXPRESSION "oyama-hrt-cli ${PROJECT_VERSION}")
@@ -110,6 +128,13 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:oyama-hrt-cli>
                 ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
     set_tests_properties(cli_managed_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_test(
+        NAME cli_backup_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cli/tests/run_cli_backup_integration.sh
+                $<TARGET_FILE:oyama-hrt-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
+    set_tests_properties(cli_backup_integration PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 option(OYAMA_BUILD_COMPARE_TOOLS "Build the upstream comparison dumper" ON)
