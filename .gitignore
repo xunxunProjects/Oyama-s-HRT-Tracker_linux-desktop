@@ -1,0 +1,35 @@
+# Build output
+build/
+build-*/
+out/
+install/
+compile_commands.json
+CMakeUserPresets.json
+
+# CMake / Qt generated
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+*.moc
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.qmlc
+*.jsc
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local runtime data
+*.log
+data/
+.pgdata/
+
+# OS
+.DS_Store
+Thumbs.db
