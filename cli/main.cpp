@@ -862,19 +862,30 @@ int command_backup(const GlobalOptions& global,
     }
     const std::string command = args[index++];
     bool dry_run = false;
+    std::filesystem::path file;
     if (command == "import") {
-        while (index < args.size() && args[index] == "--dry-run") {
-            dry_run = true;
-            ++index;
+        for (; index < args.size(); ++index) {
+            if (args[index] == "--dry-run") {
+                dry_run = true;
+            } else if (file.empty()) {
+                file = args[index];
+            } else {
+                throw Error("unexpected argument for backup import: " +
+                            args[index]);
+            }
         }
-    }
-    if (index >= args.size()) {
-        throw Error("backup " + command + " needs a file");
-    }
-    const std::filesystem::path file = args[index++];
-    if (index != args.size()) {
-        throw Error("unexpected argument for backup " + command + ": " +
-                    args[index]);
+        if (file.empty()) {
+            throw Error("backup import needs a file");
+        }
+    } else {
+        if (index >= args.size()) {
+            throw Error("backup " + command + " needs a file");
+        }
+        file = args[index++];
+        if (index != args.size()) {
+            throw Error("unexpected argument for backup " + command + ": " +
+                        args[index]);
+        }
     }
 
     ensure_managed_running(global);
