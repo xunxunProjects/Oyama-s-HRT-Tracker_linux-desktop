@@ -65,6 +65,46 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama-hrt-cli PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+option(OYAMA_BUILD_QT_SHELL "Build the Qt/QML desktop shell" ON)
+
+if(OYAMA_BUILD_QT_SHELL)
+    find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
+    if(Qt6_FOUND)
+        qt_standard_project_setup()
+        qt_policy(SET QTP0001 NEW)
+        qt_policy(SET QTP0004 NEW)
+        qt_add_executable(oyama-hrt-app
+            app/src/main.cpp
+            app/src/app_controller.cpp
+            app/src/app_controller.h)
+        qt_add_qml_module(oyama-hrt-app
+            URI OyamaHrt
+            VERSION 1.0
+            QML_FILES
+                app/qml/Main.qml
+                app/qml/OverviewPage.qml
+                app/qml/AddDosePage.qml
+                app/qml/HistoryPage.qml)
+        target_link_libraries(oyama-hrt-app PRIVATE
+            oyama_storage
+            oyama_pk
+            nlohmann_json::nlohmann_json
+            Qt6::Core
+            Qt6::Qml
+            Qt6::Quick
+            Qt6::QuickControls2)
+        target_compile_definitions(oyama-hrt-app PRIVATE
+            OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
+            OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+        install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    else()
+        message(STATUS "Qt 6.4+ not found; skipping the Qt/QML shell")
+    endif()
+endif()
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -135,6 +175,13 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:oyama-hrt-cli>
                 ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
     set_tests_properties(cli_backup_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+
+    if(TARGET oyama-hrt-app)
+        add_test(NAME qt_shell_smoke COMMAND oyama-hrt-app --self-test)
+        set_tests_properties(qt_shell_smoke PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;OYAMA_CONFIG_FILE=${CMAKE_CURRENT_BINARY_DIR}/qt-shell-smoke-no-config")
+    endif()
 endif()
 
 option(OYAMA_BUILD_COMPARE_TOOLS "Build the upstream comparison dumper" ON)

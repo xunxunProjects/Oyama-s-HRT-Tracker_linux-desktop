@@ -112,4 +112,4 @@ exercises `backup export/preview/import` and the invalid-envelope path.
 ## Not implemented yet
 
 - Calibration history storage and model integration.
-- Qt/QML view models; those belong in `app/` and are intentionally deferred.
+- Qt/QML view models beyond the M2 shell's `AppController`.

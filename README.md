@@ -4,14 +4,17 @@ A native Qt 6 desktop application for Linux and BSD. Local-only: no account,
 no cloud, no telemetry. Health records live in a local PostgreSQL database, and
 data moves in and out through the upstream `oyama-hrt-complete-backup` format.
 
-**Status: model core, storage foundation, local database setup, and backup
-import/export implemented; Qt application shell not started.** The C99
+**Status: model core, storage foundation, local database setup, backup
+import/export, and an early Qt/QML shell implemented (M2).** The C99
 pharmacokinetic core is in `core/`, with a strict C test and a comparison
 harness that checks it against the upstream TypeScript model to machine
 precision. `storage/` contains the PostgreSQL schema, forward-only migration
 runner, typed repositories, the application-managed cluster lifecycle, and the
 LWW/tombstone backup merge; `cli/` exposes setup, migration, data, and backup
-commands. The Qt/QML application and desktop packaging are still ahead.
+commands. `app/` now has a Qt 6/QML shell with Overview, Add dose, and History
+screens wired to the local database and the PK model. It is an early milestone:
+Settings, Labs, Plan, Supplies, Forecast, packaging, and full upstream UI parity
+are still ahead.
 
 - Design: [`docs/superpowers/specs/2026-10-29-linux-desktop-design.md`](docs/superpowers/specs/2026-10-29-linux-desktop-design.md)
 - PK comparison: [`tools/compare/README.md`](tools/compare/README.md)
@@ -24,8 +27,11 @@ Requirements: CMake 3.21+, Ninja (or another CMake generator), a C99 compiler,
 a C++20 compiler, and libpq 14 or newer. PostgreSQL server 14+ is needed for the
 database and for the integration tests. For the application-managed cluster,
 `initdb`, `pg_ctl`, and `postgres` must be on `PATH` or in a directory passed
-with `--pg-bin-dir`/`PG_BINDIR`. There is no network, OpenSSL, Node, Rust, or Qt
-dependency in this part of the tree.
+with `--pg-bin-dir`/`PG_BINDIR`. The Qt shell additionally needs Qt 6.4+ with
+the Core, Qml, Quick, and QuickControls2 modules; it is skipped automatically
+when those are missing and can be disabled explicitly with
+`-DOYAMA_BUILD_QT_SHELL=OFF`. There is no network, OpenSSL, Node, Rust, Qt
+WebEngine, or Electron dependency. Qt is used only for the local desktop UI.
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -38,6 +44,13 @@ The PK test binary is `build/pk_smoke_test`; the comparison dumper is
 `build/storage_test` and `build/backup_test`; the integration CTests start
 throwaway PostgreSQL clusters when `initdb`/`pg_ctl` are available, or skip.
 Set `PG_BINDIR=/path/to/postgres/bin` if the server tools are not on `PATH`.
+
+The Qt shell is `build/oyama-hrt-app`. It uses the database configured by
+`oyama-hrt-cli db setup`. A headless QML smoke check is available with
+`build/oyama-hrt-app --self-test` (run it with `QT_QPA_PLATFORM=offscreen
+QT_QUICK_BACKEND=software`); CTest exposes the same check as `qt_shell_smoke`.
+See [`app/README.md`](app/README.md) for the screen scope, supported dose
+extras, and current limitations.
 
 To install the CLI and its migrations:
 
@@ -138,9 +151,10 @@ Our schema stores UUID record IDs, so non-UUID IDs from another client are
 rejected rather than rewritten. Lab records without an assay are imported as
 `immuno` because the local schema requires an assay value.
 
-The storage library exposes `LocalCluster` for the future Qt shell: call
-`ensure_running()` during application startup and `stop()` on clean exit. The
-Qt application itself has not been started yet.
+The storage library exposes `LocalCluster`; the Qt shell calls
+`ensure_running()` during application startup, applies migrations, and loads
+settings and doses through the same repositories as the CLI. The app leaves a
+managed cluster running on exit; use `oyama-hrt-cli db stop` to stop it.
 
 > [!WARNING]
 > **Not medical advice.** This application shows estimates from a
@@ -157,7 +171,9 @@ Qt application itself has not been started yet.
 目前 C99 药代动力学核心已经完成，并与上游 TypeScript 模型做了逐点对比
 （36 个场景、413,323 个字段，最大相对误差约 1.1e-15）。PostgreSQL 存储层、
 迁移调度、托管本地 cluster 生命周期、首次设置向导、备份导入/导出与
-LWW/删除合并、基础 CLI 也已经落地；Qt/QML 界面和桌面打包尚未开始。
+LWW/删除合并、基础 CLI 也已经落地。Qt 6/QML 桌面壳已经进入 M2：Overview、
+Add dose、History 三个页面已接入本地数据库和 PK 模型；设置页、Plan、Labs、
+Supplies、Forecast、桌面打包以及完整界面对齐仍未完成。
 
 ## Repository layout
 
@@ -172,7 +188,7 @@ storage/
   migrations/          forward-only SQL schema migrations
   tests/               unit and PostgreSQL integration tests
 cli/                   oyama-hrt-cli (database and data commands)
-app/                   Qt/QML shell (deferred; see app/README.md)
+app/                   Qt 6/QML shell (M2; see app/README.md)
 tools/compare/         upstream numerical comparison harness
 docs/
   superpowers/specs/   design documents

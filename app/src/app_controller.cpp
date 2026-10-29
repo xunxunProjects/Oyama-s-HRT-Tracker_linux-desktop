@@ -1,0 +1,380 @@
+#include "app_controller.h"
+
+#include <QDateTime>
+#include <QTimeZone>
+
+#include <nlohmann/json.hpp>
+
+#include <algorithm>
+#include <cmath>
+#include <cstdlib>
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
+
+#include <oyama/pk.h>
+
+namespace {
+
+using oyama::storage::AppConfig;
+using oyama::storage::Backend;
+using oyama::storage::Database;
+using oyama::storage::DoseEvent;
+using oyama::storage::DoseEventRepository;
+using oyama::storage::LocalCluster;
+using oyama::storage::Mode;
+using oyama::storage::SettingsRepository;
+
+std::filesystem::path migrations_dir() {
+    if (const char* value = std::getenv("OYAMA_MIGRATIONS_DIR");
+        value != nullptr && *value != '\0') {
+        return value;
+    }
+#ifdef OYAMA_DEFAULT_MIGRATIONS_DIR
+    if (std::filesystem::is_directory(OYAMA_DEFAULT_MIGRATIONS_DIR)) {
+        return OYAMA_DEFAULT_MIGRATIONS_DIR;
+    }
+#endif
+#ifdef OYAMA_INSTALL_MIGRATIONS_DIR
+    if (std::filesystem::is_directory(OYAMA_INSTALL_MIGRATIONS_DIR)) {
+        return OYAMA_INSTALL_MIGRATIONS_DIR;
+    }
+#endif
+    return "storage/migrations";
+}
+
+std::optional<oyama_pk_route> route_from(const QString& value) {
+    const QString route = value.trimmed();
+    if (route.compare("oral", Qt::CaseInsensitive) == 0) {
+        return OYAMA_PK_ROUTE_ORAL;
+    }
+    if (route.compare("sublingual", Qt::CaseInsensitive) == 0) {
+        return OYAMA_PK_ROUTE_SUBLINGUAL;
+    }
+    if (route.compare("injection", Qt::CaseInsensitive) == 0) {
+        return OYAMA_PK_ROUTE_INJECTION;
+    }
+    if (route.compare("gel", Qt::CaseInsensitive) == 0) {
+        return OYAMA_PK_ROUTE_GEL;
+    }
+    if (route.compare("patchApply", Qt::CaseInsensitive) == 0 ||
+        route.compare("patch", Qt::CaseInsensitive) == 0) {
+        return OYAMA_PK_ROUTE_PATCH_APPLY;
+    }
+    if (route.compare("patchRemove", Qt::CaseInsensitive) == 0) {
+        return OYAMA_PK_ROUTE_PATCH_REMOVE;
+    }
+    return std::nullopt;
+}
+
+std::optional<oyama_pk_ester> ester_from(const QString& value) {
+    const QString ester = value.trimmed().toUpper();
+    if (ester == "E2") return OYAMA_PK_ESTER_E2;
+    if (ester == "EB") return OYAMA_PK_ESTER_EB;
+    if (ester == "EV") return OYAMA_PK_ESTER_EV;
+    if (ester == "EC") return OYAMA_PK_ESTER_EC;
+    if (ester == "EN") return OYAMA_PK_ESTER_EN;
+    if (ester == "EU") return OYAMA_PK_ESTER_EU;
+    if (ester == "CPA") return OYAMA_PK_ESTER_CPA;
+    if (ester == "SPIRO") return OYAMA_PK_ESTER_SPIRO;
+    if (ester == "BICA") return OYAMA_PK_ESTER_BICA;
+    if (ester == "MPA") return OYAMA_PK_ESTER_MPA;
+    if (ester == "LEUP") return OYAMA_PK_ESTER_LEUP;
+    if (ester == "TRIP") return OYAMA_PK_ESTER_TRIP;
+    if (ester == "RLX") return OYAMA_PK_ESTER_RLX;
+    if (ester == "T") return OYAMA_PK_ESTER_T;
+    if (ester == "TC") return OYAMA_PK_ESTER_TC;
+    if (ester == "TE") return OYAMA_PK_ESTER_TE;
+    if (ester == "TU") return OYAMA_PK_ESTER_TU;
+    return std::nullopt;
+}
+
+oyama_pk_extras extras_from_json(const std::string& text) {
+    oyama_pk_extras extras{};
+    const auto parsed = nlohmann::json::parse(text, nullptr, false);
+    if (parsed.is_discarded() || !parsed.is_object()) {
+        return extras;
+    }
+    const auto number = [&](const char* key) -> std::optional<double> {
+        const auto it = parsed.find(key);
+        if (it == parsed.end() || !it->is_number()) {
+            return std::nullopt;
+        }
+        return it->get<double>();
+    };
+    if (const auto value = number("sublingualTheta")) {
+        extras.has_sublingual_theta = 1;
+        extras.sublingual_theta = *value;
+    }
+    if (const auto value = number("sublingualTier")) {
+        extras.has_sublingual_tier = 1;
+        extras.sublingual_tier = static_cast<int>(std::llround(*value));
+    }
+    if (const auto value = number("gelSite")) {
+        extras.gel_site = static_cast<int>(std::llround(*value));
+    }
+    if (const auto value = number("releaseRateUGPerDay")) {
+        extras.has_release_rate_ug_per_day = 1;
+        extras.release_rate_ug_per_day = *value;
+    } else if (const auto value = number("releaseRate")) {
+        extras.has_release_rate_ug_per_day = 1;
+        extras.release_rate_ug_per_day = *value;
+    }
+    if (const auto value = number("patchWearH")) {
+        extras.has_patch_wear_h = 1;
+        extras.patch_wear_h = *value;
+    }
+    return extras;
+}
+
+std::int64_t now_ms() {
+    return QDateTime::currentMSecsSinceEpoch();
+}
+
+}  // namespace
+
+AppController::AppController(QObject* parent) : QObject(parent) {
+    reload();
+}
+
+AppController::~AppController() = default;
+
+void AppController::setMode(const QString& mode) {
+    if (mode != "transfem" && mode != "transmasc") {
+        return;
+    }
+    if (mode_ == mode) {
+        return;
+    }
+    mode_ = mode;
+    emit modeChanged();
+    reload();
+}
+
+void AppController::fail(const QString& message) {
+    status_ = message;
+    doses_.clear();
+    curve_.clear();
+    current_e2_ = 0.0;
+    current_cpa_ = 0.0;
+    current_t_ = 0.0;
+    emit changed();
+}
+
+void AppController::reload() {
+    try {
+        database_.reset();
+        cluster_.reset();
+        doses_.clear();
+        curve_.clear();
+        current_e2_ = 0.0;
+        current_cpa_ = 0.0;
+        current_t_ = 0.0;
+
+        const auto config = oyama::storage::load_app_config();
+        if (!config.has_value()) {
+            backend_ = "none";
+            fail("No database configured. Run `oyama-hrt-cli db setup`.");
+            return;
+        }
+        app_config_ = *config;
+        backend_ = app_config_.backend == Backend::Managed ? "managed"
+                                                           : "existing";
+        if (app_config_.backend == Backend::Managed) {
+            cluster_ = std::make_unique<LocalCluster>(
+                app_config_.cluster_config());
+            cluster_->ensure_running();
+        }
+
+        database_ = std::make_unique<Database>(
+            app_config_.connection_config(), migrations_dir());
+        (void)database_->migrate();
+        settings_ = SettingsRepository(database_->connection()).get();
+        const auto parsed_mode = oyama::storage::parse_mode(mode_.toStdString());
+        if (!parsed_mode.has_value()) {
+            fail("Invalid mode: " + mode_);
+            return;
+        }
+        auto events = DoseEventRepository(database_->connection())
+                          .list(*parsed_mode);
+        doses_.clear();
+        for (const auto& event : events) {
+            QVariantMap item;
+            item["id"] = QString::fromStdString(event.id);
+            item["route"] = QString::fromStdString(event.route);
+            item["ester"] = QString::fromStdString(event.ester);
+            item["doseMG"] = event.dose_mg;
+            item["timeH"] = event.time_h;
+            item["timeLabel"] = formatTime(event.time_h);
+            item["extras"] = QString::fromStdString(event.extras_json);
+            doses_.append(item);
+        }
+        compute_curve(events);
+        status_ = "Connected to " + QString::fromStdString(app_config_.dbname) +
+                  " via " + backend_;
+        emit changed();
+    } catch (const std::exception& error) {
+        fail(QString("Database error: ") + QString::fromUtf8(error.what()));
+    }
+}
+
+void AppController::load_data() {
+    reload();
+}
+
+void AppController::compute_curve(const std::vector<DoseEvent>& events) {
+    curve_.clear();
+    current_e2_ = 0.0;
+    current_cpa_ = 0.0;
+    current_t_ = 0.0;
+
+    std::vector<std::string> ids;
+    ids.reserve(events.size());
+    std::vector<oyama_pk_dose> doses;
+    doses.reserve(events.size());
+    for (const auto& event : events) {
+        const auto route = route_from(QString::fromStdString(event.route));
+        const auto ester = ester_from(QString::fromStdString(event.ester));
+        if (!route.has_value() || !ester.has_value()) {
+            continue;
+        }
+        ids.push_back(event.id);
+        oyama_pk_dose dose{};
+        dose.id = ids.back().c_str();
+        dose.route = *route;
+        dose.ester = *ester;
+        dose.time_h = event.time_h;
+        dose.dose_mg = event.dose_mg;
+        dose.extras = extras_from_json(event.extras_json);
+        doses.push_back(dose);
+    }
+    if (doses.empty()) {
+        return;
+    }
+
+    oyama_pk_params params{};
+    oyama_pk_params_defaults(&params);
+    oyama_pk_request request{};
+    request.events = doses.data();
+    request.event_count = doses.size();
+    request.body_weight_kg = settings_.body_weight_kg.value_or(70.0);
+    if (request.body_weight_kg <= 0.0) {
+        request.body_weight_kg = 70.0;
+    }
+    request.birth_year = settings_.birth_year.value_or(0);
+    request.now_h = nowHours();
+    request.params = &params;
+
+    oyama_pk_result result{};
+    oyama_pk_result_init(&result, nullptr, nullptr, nullptr, nullptr, nullptr,
+                         0);
+    const auto status = oyama_pk_simulate(&request, &result);
+    if (status == OYAMA_PK_NO_RESULT) {
+        return;
+    }
+    if (status == OYAMA_PK_ERR_BUFFER_TOO_SMALL) {
+        const std::size_t n = result.length;
+        std::vector<double> time(n);
+        std::vector<double> total(n);
+        std::vector<double> e2(n);
+        std::vector<double> cpa(n);
+        std::vector<double> t(n);
+        oyama_pk_result_init(&result, time.data(), total.data(), e2.data(),
+                             cpa.data(), t.data(), n);
+        if (oyama_pk_simulate(&request, &result) != OYAMA_PK_OK) {
+            return;
+        }
+        const std::size_t stride = std::max<std::size_t>(1, n / 700);
+        for (std::size_t i = 0; i < n; i += stride) {
+            QVariantMap point;
+            point["t"] = time[i];
+            point["e2"] = e2[i];
+            point["cpa"] = cpa[i];
+            point["tLevel"] = t[i];
+            curve_.append(point);
+        }
+        const double now = nowHours();
+        const double e2_now = oyama_pk_interpolate_e2(&result, now);
+        const double cpa_now = oyama_pk_interpolate_cpa(&result, now);
+        const double t_now = oyama_pk_interpolate_t(&result, now);
+        if (std::isfinite(e2_now)) current_e2_ = e2_now;
+        if (std::isfinite(cpa_now)) current_cpa_ = cpa_now;
+        if (std::isfinite(t_now)) current_t_ = t_now;
+    }
+}
+
+bool AppController::addDose(const QString& route, const QString& ester,
+                            double dose_mg, double time_h) {
+    if (!database_) {
+        fail("Database is not connected.");
+        return false;
+    }
+    if (!std::isfinite(dose_mg) || dose_mg <= 0.0 || !std::isfinite(time_h)) {
+        fail("Enter a valid dose and time.");
+        return false;
+    }
+    const auto parsed_mode = oyama::storage::parse_mode(mode_.toStdString());
+    if (!parsed_mode.has_value()) {
+        fail("Invalid mode.");
+        return false;
+    }
+    if (!route_from(route).has_value() || !ester_from(ester).has_value()) {
+        fail("Unsupported route or ester.");
+        return false;
+    }
+    try {
+        DoseEvent event;
+        event.id = oyama::storage::generate_uuid_v4();
+        event.mode = *parsed_mode;
+        event.route = route.toStdString();
+        event.ester = ester.toStdString();
+        event.time_h = time_h > 0.0 ? time_h : nowHours();
+        event.dose_mg = dose_mg;
+        event.extras_json = "{}";
+        event.created_at = now_ms();
+        event.updated_at = event.created_at;
+        DoseEventRepository(database_->connection()).upsert(event);
+        reload();
+        status_ = "Dose added.";
+        emit changed();
+        return true;
+    } catch (const std::exception& error) {
+        fail(QString("Could not add dose: ") + QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+bool AppController::removeDose(const QString& id) {
+    if (!database_) {
+        fail("Database is not connected.");
+        return false;
+    }
+    try {
+        (void)DoseEventRepository(database_->connection())
+            .remove(id.toStdString());
+        reload();
+        status_ = "Dose removed.";
+        emit changed();
+        return true;
+    } catch (const std::exception& error) {
+        fail(QString("Could not remove dose: ") +
+             QString::fromUtf8(error.what()));
+        return false;
+    }
+}
+
+double AppController::nowHours() const {
+    return static_cast<double>(QDateTime::currentMSecsSinceEpoch()) /
+           3600000.0;
+}
+
+QString AppController::formatTime(double time_h) const {
+    if (!std::isfinite(time_h)) {
+        return "-";
+    }
+    return QDateTime::fromSecsSinceEpoch(
+               static_cast<qint64>(time_h * 3600.0), QTimeZone::UTC)
+        .toLocalTime()
+        .toString("yyyy-MM-dd HH:mm");
+}
