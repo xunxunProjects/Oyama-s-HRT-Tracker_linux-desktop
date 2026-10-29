@@ -56,14 +56,15 @@ run_cli() {
 
 init_output="$(run_cli db init)"
 grep -q 'created database oyama_hrt_cli_test' <<<"$init_output"
-grep -q 'schema version 1' <<<"$init_output"
-grep -q 'applied 1 migration(s)' <<<"$init_output"
+grep -q 'schema version 2' <<<"$init_output"
+grep -q 'applied 2 migration(s)' <<<"$init_output"
 
 ping_output="$(run_cli db ping)"
 grep -q $'database\toyama_hrt_cli_test' <<<"$ping_output"
 
 status_output="$(run_cli db status)"
 grep -q $'1\tapplied\tok\tinitial_schema' <<<"$status_output"
+grep -q $'2\tapplied\tok\tsettings_timestamps' <<<"$status_output"
 
 settings_output="$(run_cli settings set --weight 70 --birth-year 1990 \
     --calibration mipd --history-mode retrospective)"

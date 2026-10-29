@@ -50,23 +50,26 @@ Settings SettingsRepository::get() {
         "ON CONFLICT (id) DO NOTHING");
 
     const auto result = connection_.exec(
-        "SELECT body_weight_kg, birth_year, pk_params::text, "
-        "pk_params_updated_at, calibration_method, calibration_history_mode, "
-        "updated_at FROM settings WHERE id = true");
+        "SELECT body_weight_kg, weight_updated_at, birth_year, "
+        "birth_year_updated_at, pk_params::text, pk_params_updated_at, "
+        "calibration_method, calibration_history_mode, updated_at "
+        "FROM settings WHERE id = true");
     if (result.rows() != 1) {
         throw Error("settings row is missing");
     }
 
     Settings settings;
     settings.body_weight_kg = detail::nullable_number(result, 0, 0);
-    if (!result.is_null(0, 1)) {
-        settings.birth_year = static_cast<int>(result.integer(0, 1));
+    settings.weight_updated_at = detail::nullable_integer(result, 0, 1);
+    if (!result.is_null(0, 2)) {
+        settings.birth_year = static_cast<int>(result.integer(0, 2));
     }
-    settings.pk_params_json = detail::nullable_text(result, 0, 2);
-    settings.pk_params_updated_at = detail::nullable_integer(result, 0, 3);
-    settings.calibration_method = result.text(0, 4);
-    settings.calibration_history_mode = result.text(0, 5);
-    settings.updated_at = result.integer(0, 6);
+    settings.birth_year_updated_at = detail::nullable_integer(result, 0, 3);
+    settings.pk_params_json = detail::nullable_text(result, 0, 4);
+    settings.pk_params_updated_at = detail::nullable_integer(result, 0, 5);
+    settings.calibration_method = result.text(0, 6);
+    settings.calibration_history_mode = result.text(0, 7);
+    settings.updated_at = result.integer(0, 8);
     return settings;
 }
 
@@ -74,14 +77,22 @@ void SettingsRepository::save(const Settings& settings) {
     validate(settings);
 
     std::vector<std::optional<std::string>> params;
-    params.reserve(7);
+    params.reserve(9);
     params.push_back(settings.body_weight_kg.has_value()
                          ? std::optional<std::string>(
                                detail::number_to_string(*settings.body_weight_kg))
                          : std::nullopt);
+    params.push_back(settings.weight_updated_at.has_value()
+                         ? std::optional<std::string>(
+                               std::to_string(*settings.weight_updated_at))
+                         : std::nullopt);
     params.push_back(settings.birth_year.has_value()
                          ? std::optional<std::string>(
                                std::to_string(*settings.birth_year))
+                         : std::nullopt);
+    params.push_back(settings.birth_year_updated_at.has_value()
+                         ? std::optional<std::string>(
+                               std::to_string(*settings.birth_year_updated_at))
                          : std::nullopt);
     params.push_back(settings.pk_params_json);
     params.push_back(settings.pk_params_updated_at.has_value()
@@ -93,12 +104,15 @@ void SettingsRepository::save(const Settings& settings) {
     params.push_back(std::to_string(settings.updated_at));
 
     (void)connection_.exec_params(
-        "INSERT INTO settings (id, body_weight_kg, birth_year, pk_params, "
-        "pk_params_updated_at, calibration_method, calibration_history_mode, "
-        "updated_at) VALUES (true, $1, $2, $3::jsonb, $4, $5, $6, $7) "
+        "INSERT INTO settings (id, body_weight_kg, weight_updated_at, "
+        "birth_year, birth_year_updated_at, pk_params, pk_params_updated_at, "
+        "calibration_method, calibration_history_mode, updated_at) "
+        "VALUES (true, $1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9) "
         "ON CONFLICT (id) DO UPDATE SET "
         "body_weight_kg = EXCLUDED.body_weight_kg, "
+        "weight_updated_at = EXCLUDED.weight_updated_at, "
         "birth_year = EXCLUDED.birth_year, "
+        "birth_year_updated_at = EXCLUDED.birth_year_updated_at, "
         "pk_params = EXCLUDED.pk_params, "
         "pk_params_updated_at = EXCLUDED.pk_params_updated_at, "
         "calibration_method = EXCLUDED.calibration_method, "

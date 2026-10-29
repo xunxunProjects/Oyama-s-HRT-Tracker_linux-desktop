@@ -55,8 +55,8 @@ setup_output="$(run_cli --port "$port" --dbname "$dbname" \
     --pg-bin-dir "$bindir" db setup --managed --yes)"
 grep -q $'backend\tmanaged' <<<"$setup_output"
 grep -q $'cluster\trunning' <<<"$setup_output"
-grep -q $'schema_version\t1' <<<"$setup_output"
-grep -q $'applied\t1' <<<"$setup_output"
+grep -q $'schema_version\t2' <<<"$setup_output"
+grep -q $'applied\t2' <<<"$setup_output"
 
 ping_output="$(run_cli db ping)"
 grep -q $'database\t'"$dbname" <<<"$ping_output"
@@ -114,7 +114,7 @@ grep -q 'applied 0 migration(s)' <<<"$init_output"
 
 second_setup="$(run_cli db setup --managed --yes)"
 grep -q 'using existing configuration' <<<"$second_setup"
-grep -q $'schema_version\t1' <<<"$second_setup"
+grep -q $'schema_version\t2' <<<"$second_setup"
 grep -q $'applied\t0' <<<"$second_setup"
 
 existing_config="$root/existing-config"
