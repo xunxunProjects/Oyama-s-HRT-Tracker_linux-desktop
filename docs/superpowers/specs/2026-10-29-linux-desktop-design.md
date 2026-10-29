@@ -223,6 +223,15 @@ preferences(key text primary key, value jsonb not null, updated_at bigint not nu
 
 如果两者都不可用，应用显示设置向导和文档链接，不进入主界面。这个流程必须在 M1 完成，否则应用无法启动。
 
+**实现补充（2026-10-29）**
+
+- `storage::LocalCluster` 提供 `initialize()`、`start()`、`stop()`、`ensure_running()` 和 `state()`；后续 Qt 启动时调用 `ensure_running()`，正常退出时调用 `stop()`，崩溃后下次启动由 `pg_ctl` 恢复。
+- 托管 cluster 的 `postgresql.conf` 通过 `include_if_exists = 'oyama-runtime.conf'` 引入生成配置，固定 `listen_addresses = ''`、端口、socket 目录和 `unix_socket_permissions = 0700`；即使绕过应用直接 `pg_ctl start` 也不会监听 TCP。
+- 选择结果保存在 `$XDG_CONFIG_HOME/oyama-hrt/config`（可用 `OYAMA_CONFIG_FILE` 覆盖，文件 0600），记录 backend、socket、端口、库名、用户；托管模式额外记录 data dir 和 PostgreSQL 二进制目录。
+- 托管 socket 目录缺省为 `$XDG_RUNTIME_DIR/oyama-hrt`；`XDG_RUNTIME_DIR` 缺失时回退到 `$XDG_DATA_HOME/oyama-hrt/run`。`OYAMA_PG_RUNTIME_DIR` 可覆盖。socket 路径必须短于 Unix domain socket 上限。
+- 首次向导当前以 `oyama-hrt-cli db setup` 实现（终端交互；脚本用 `--existing`/`--managed --yes`）。Qt 界面以后复用同一套 `AppConfig`/`LocalCluster` API，不重复实现逻辑。
+- 自动安装 PostgreSQL 仍然禁止；工具缺失时命令行打印 Debian/Ubuntu、Fedora、Arch、Gentoo、FreeBSD、OpenBSD 的安装提示。
+
 ---
 
 ## 6. 模型契约（golden vectors）

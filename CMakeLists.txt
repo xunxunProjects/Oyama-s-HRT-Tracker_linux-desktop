@@ -29,12 +29,14 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_library(oyama_storage STATIC
+    storage/src/app_config.cpp
     storage/src/connection.cpp
     storage/src/database.cpp
     storage/src/dose_event_repository.cpp
     storage/src/error.cpp
     storage/src/json_record_repository.cpp
     storage/src/lab_result_repository.cpp
+    storage/src/local_cluster.cpp
     storage/src/migration.cpp
     storage/src/preferences_repository.cpp
     storage/src/settings_repository.cpp
@@ -78,6 +80,13 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME storage_test COMMAND storage_test)
 
+    add_executable(local_cluster_test storage/tests/local_cluster_test.cpp)
+    target_link_libraries(local_cluster_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(local_cluster_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME local_cluster_test COMMAND local_cluster_test)
+
     add_test(
         NAME storage_integration
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_with_temp_postgres.sh
@@ -94,6 +103,13 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:oyama-hrt-cli>
                 ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
     set_tests_properties(cli_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_test(
+        NAME cli_managed_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cli/tests/run_cli_managed_integration.sh
+                $<TARGET_FILE:oyama-hrt-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
+    set_tests_properties(cli_managed_integration PROPERTIES SKIP_RETURN_CODE 77)
 endif()
 
 option(OYAMA_BUILD_COMPARE_TOOLS "Build the upstream comparison dumper" ON)
