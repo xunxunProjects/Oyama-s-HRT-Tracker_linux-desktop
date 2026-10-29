@@ -1,11 +1,13 @@
 #pragma once
 
+#include "app_config.h"
 #include "connection.h"
 #include "database.h"
 #include "dose_event_repository.h"
 #include "error.h"
 #include "json_record_repository.h"
 #include "lab_result_repository.h"
+#include "local_cluster.h"
 #include "migration.h"
 #include "preferences_repository.h"
 #include "settings_repository.h"
