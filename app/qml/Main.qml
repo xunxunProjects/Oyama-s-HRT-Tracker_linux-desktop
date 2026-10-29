@@ -4,168 +4,140 @@ import QtQuick.Layouts
 
 ApplicationWindow {
     id: window
-    width: 1180
-    height: 760
-    minimumWidth: 900
-    minimumHeight: 600
+    width: 1200
+    height: 800
     visible: true
     title: "Oyama's HRT Tracker"
-    color: "#0b0f13"
+    color: "#0e1318"
 
-    property int currentPage: 0
+    property int pageIndex: 0
+    property var editingDose: null
 
-    component NavButton: Button {
-        id: control
-        property int page
-        Layout.fillWidth: true
-        Layout.preferredHeight: 44
-        text: ""
-        checkable: true
-        checked: window.currentPage === page
-        onClicked: window.currentPage = page
-        background: Rectangle {
-            radius: 10
-            color: control.checked ? "#26313c"
-                                   : control.hovered ? "#1b232c" : "transparent"
-            border.width: control.checked ? 1 : 0
-            border.color: "#384654"
-        }
-        contentItem: Text {
-            leftPadding: 16
-            text: control.text
-            color: control.checked ? "#f4f6f8" : "#9aa8b6"
-            font.pixelSize: 14
-            font.weight: control.checked ? Font.DemiBold : Font.Normal
-            verticalAlignment: Text.AlignVCenter
+    readonly property var navItems: [
+        { label: "Overview", icon: "◉" },
+        { label: "Add dose", icon: "＋" },
+        { label: "History", icon: "≡" },
+        { label: "Settings", icon: "⚙" }
+    ]
+
+    header: Rectangle {
+        height: 64
+        color: "#141b22"
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: 24
+            anchors.rightMargin: 24
+            spacing: 16
+
+            Text {
+                text: "Oyama's HRT Tracker"
+                color: "#f4f6f8"
+                font.pixelSize: 20
+                font.weight: Font.DemiBold
+            }
+
+            Item { Layout.fillWidth: true }
+
+            ComboBox {
+                id: modeBox
+                model: ["transfem", "transmasc"]
+                currentIndex: app.mode === "transmasc" ? 1 : 0
+                onActivated: app.mode = currentText
+            }
+
+            Text {
+                text: app.backend
+                color: "#8a98a8"
+                font.pixelSize: 12
+            }
         }
     }
 
-    ColumnLayout {
+    RowLayout {
         anchors.fill: parent
         spacing: 0
 
         Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 68
-            color: "#11171d"
-            border.width: 0
+            Layout.preferredWidth: 220
+            Layout.fillHeight: true
+            color: "#101821"
 
-            RowLayout {
+            ColumnLayout {
                 anchors.fill: parent
-                anchors.leftMargin: 24
-                anchors.rightMargin: 24
-                spacing: 16
+                anchors.margins: 14
+                spacing: 6
 
-                ColumnLayout {
-                    spacing: 1
-                    Label {
-                        text: "Oyama's HRT Tracker"
-                        color: "#f4f6f8"
-                        font.pixelSize: 19
-                        font.weight: Font.DemiBold
+                Repeater {
+                    model: window.navItems
+
+                    delegate: Button {
+                        required property int index
+                        required property var modelData
+                        Layout.fillWidth: true
+                        text: modelData.icon + "  " + modelData.label
+                        flat: true
+                        highlighted: window.pageIndex === index
+                        onClicked: {
+                            if (index === 1) {
+                                window.editingDose = null;
+                                addPage.resetForm();
+                            }
+                            window.pageIndex = index;
+                        }
                     }
-                    Label {
-                        text: "local-first · no account · no network"
-                        color: "#7f8c9a"
-                        font.pixelSize: 11
-                    }
                 }
 
-                Item { Layout.fillWidth: true }
+                Item { Layout.fillHeight: true }
 
-                Label {
-                    text: "MODE"
-                    color: "#6f7d8b"
-                    font.pixelSize: 10
-                    font.letterSpacing: 1.2
-                }
-                ComboBox {
-                    id: modeBox
-                    Layout.preferredWidth: 140
-                    model: ["transfem", "transmasc"]
-                    currentIndex: app.mode === "transmasc" ? 1 : 0
-                    onActivated: app.mode = currentText
-                }
-                Label {
-                    text: app.backend
-                    color: "#7f8c9a"
+                Text {
+                    text: "Local · socket only"
+                    color: "#5f6d7c"
                     font.pixelSize: 11
                 }
             }
         }
 
-        RowLayout {
+        StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
+            currentIndex: window.pageIndex
 
-            Rectangle {
-                Layout.preferredWidth: 220
-                Layout.fillHeight: true
-                color: "#0d1318"
-                border.width: 0
+            OverviewPage {}
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 16
-                    spacing: 8
-
-                    Label {
-                        text: "NAVIGATION"
-                        color: "#596775"
-                        font.pixelSize: 10
-                        font.letterSpacing: 1.2
-                        Layout.leftMargin: 8
-                        Layout.topMargin: 4
-                    }
-                    NavButton { page: 0; text: "Overview" }
-                    NavButton { page: 1; text: "Add dose" }
-                    NavButton { page: 2; text: "History" }
-
-                    Item { Layout.fillHeight: true }
-
-                    Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 1
-                        color: "#1d2731"
-                    }
-                    Label {
-                        text: "Data stays on this machine.\nPostgreSQL over a local socket."
-                        color: "#657381"
-                        font.pixelSize: 11
-                        wrapMode: Text.WordWrap
-                        Layout.fillWidth: true
-                        Layout.leftMargin: 4
-                    }
+            AddDosePage {
+                id: addPage
+                onSaved: {
+                    window.editingDose = null;
+                    window.pageIndex = 0;
                 }
             }
 
-            StackLayout {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                currentIndex: window.currentPage
-                OverviewPage {}
-                AddDosePage {}
-                HistoryPage {}
+            HistoryPage {
+                onEditRequested: function(dose) {
+                    window.editingDose = dose;
+                    addPage.loadDose(dose);
+                    window.pageIndex = 1;
+                }
             }
-        }
 
-        Rectangle {
-            Layout.fillWidth: true
-            Layout.preferredHeight: 32
-            color: "#0d1318"
-            Label {
-                anchors.left: parent.left
-                anchors.leftMargin: 24
-                anchors.verticalCenter: parent.verticalCenter
-                text: app.status
-                color: app.status.indexOf("error") >= 0 ||
-                       app.status.indexOf("No database") >= 0
-                       ? "#e8a0b4" : "#7f8c9a"
-                font.pixelSize: 11
-                elide: Text.ElideRight
-                width: parent.width - 48
-            }
+            SettingsPage {}
+        }
+    }
+
+    footer: Rectangle {
+        height: 34
+        color: "#0b1015"
+
+        Text {
+            anchors.fill: parent
+            anchors.leftMargin: 24
+            anchors.rightMargin: 24
+            verticalAlignment: Text.AlignVCenter
+            text: app.status
+            color: "#8a98a8"
+            elide: Text.ElideRight
+            font.pixelSize: 12
         }
     }
 }
