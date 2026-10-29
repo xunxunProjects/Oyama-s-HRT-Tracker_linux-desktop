@@ -137,8 +137,9 @@
 ### 5.1 表
 
 ```sql
--- schema 版本
-schema_migrations(version integer primary key, applied_at timestamptz not null);
+-- schema 版本（由迁移 runner 维护；name/checksum 用于防止已应用文件被改写）
+schema_migrations(version integer primary key, name text not null,
+                  checksum text not null, applied_at timestamptz not null);
 
 -- 全局设置，单行；与上游一致：体重/PK 参数/校准/出生年不按模式分开
 settings(
@@ -199,7 +200,8 @@ preferences(key text primary key, value jsonb not null, updated_at bigint not nu
 ### 5.2 迁移
 
 - SQL 文件放在 `storage/migrations/NNNN_*.sql`，按文件名排序。
-- 启动时在事务中应用，使用 `pg_advisory_lock` 防止多实例并发迁移。
+- 启动时在事务中应用，使用 `pg_advisory_xact_lock` 防止多实例并发迁移。
+- 每个已应用文件记录 FNV-1a 64 位校验和；文件被改写、缺失或版本重复时拒绝启动迁移。
 - 迁移只前进，不回滚；破坏性变更必须附带导出/重建策略。
 - 第一版 schema 由 M1 固化，之后只增不改。
 
