@@ -56,6 +56,9 @@ preview_output="$(run_cli backup preview "$bundle")"
 grep -q $'ok\tyes' <<<"$preview_output"
 grep -q $'count\ttransfem\tevents\t0' <<<"$preview_output"
 
+run_cli backup import "$bundle" --dry-run | grep -q $'ok\tyes'
+run_cli backup import --dry-run "$bundle" | grep -q $'ok\tyes'
+
 dose_output="$(run_cli doses add --mode transfem --route oral --ester E2 \
     --dose-mg 2 --time-h 480000)"
 grep -q '^added ' <<<"$dose_output"
