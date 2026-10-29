@@ -140,21 +140,21 @@
 -- schema 版本
 schema_migrations(version integer primary key, applied_at timestamptz not null);
 
--- 每种模式一份配置：transfem / transmasc
-profiles(
-  mode text primary key check (mode in ('transfem','transmasc')),
+-- 全局设置，单行；与上游一致：体重/PK 参数/校准/出生年不按模式分开
+settings(
+  id boolean primary key default true check (id),
   body_weight_kg double precision,
   birth_year integer,
   pk_params jsonb,                 -- null = 使用默认参数
   pk_params_updated_at bigint,
-  calibration_method text not null default 'off',
-  calibration_history_mode text not null default 'forward',
+  calibration_method text not null default 'mipd',
+  calibration_history_mode text not null default 'retrospective',
   updated_at bigint not null
 );
 
 dose_events(
   id uuid primary key,
-  mode text not null references profiles(mode),
+  mode text not null check (mode in ('transfem','transmasc')),
   route text not null,
   ester text not null,
   time_h double precision not null,   -- 1970 起的小时数，与上游一致
@@ -166,7 +166,7 @@ dose_events(
 
 lab_results(
   id uuid primary key,
-  mode text not null references profiles(mode),
+  mode text not null check (mode in ('transfem','transmasc')),
   time_h double precision not null,
   value double precision not null,
   unit text not null,
@@ -192,7 +192,8 @@ preferences(key text primary key, value jsonb not null, updated_at bigint not nu
 - `time_h` 用 `double precision`，与上游 `number` 语义一致，避免整数化带来的曲线偏移。
 - 记录主体用 `jsonb` 的表（templates/quick doses/supplies/plan）是为了在早期快速跟上上游字段变化；稳定后再决定是否拆列。
 - `updated_at` 用 epoch 毫秒，保留上游的 last-write-wins 语义，导入合并时行为一致。
-- 两种模式（transfem/transmasc）各自独立，切换模式不共享记录，与上游一致。
+- 两种模式（transfem/transmasc）各自独立，切换模式不共享剂量/化验/方案记录；但**体重、出生年、PK 参数、校准方式和历史模式是全局设置**，与上游 `SHARED_SUFFIXES` 的行为一致。
+- 默认校准为 `mipd` / `retrospective`，与上游 `normalizeCalibrationMethod` 和 `cal-history-mode` 的缺省行为一致；年龄修正默认关闭，由设置中的开关启用。
 - 不建 `users`、`sessions`、`shares`、`community_vote`、`f2f_*` 等表。
 
 ### 5.2 迁移
@@ -264,7 +265,11 @@ preferences(key text primary key, value jsonb not null, updated_at bigint not nu
 
 ### 6.4 验收
 
-M1 结束时，`core` 必须通过 M0 导出的全部向量；未覆盖的测试类别要列出清单，不能默认“应该没问题”。
+M1 结束时，`core` 必须通过 M0 导出的**全部**向量，覆盖两种模式、所有已建模路由与酯类、CPA、睾酮、年龄修正和四种校准方法（`off`/`ekf`/`ou_kalman`/`mipd`）。
+
+不接受“先支持主线路由、其余以后再说”：未建模的路由如果能在 UI 里选到，就会静默产生错误曲线。确实不建模的药物（上游 `UNMODELLED_DRUGS`）只记录、不参与仿真，并在 UI 中明确标注。
+
+如果某个类别暂时无法移植，必须在 UI 中禁用对应入口，而不是让它返回近似值。
 
 ---
 
@@ -286,7 +291,8 @@ M1 结束时，`core` 必须通过 M0 导出的全部向量；未覆盖的测试
 | Add dose | 路由、酯/药物、剂量、时间、 extras |
 | History | 按天分组、编辑、删除 |
 | Plan / What-if | 方案编辑、频率、模拟对比 |
-| Settings | 模式、体重、出生年、PK 参数、校准方式、外观、语言 |
+| Settings | 模式、体重、出生年（含年龄修正开关）、PK 参数、校准方式、外观、语言 |
+| Labs（只读） | 导入的化验结果列表，确保被校准使用的数据可见 |
 | Export / Import | 完整备份导出、预览、合并/替换导入 |
 
 ### 7.3 第二版（M5+）
@@ -398,6 +404,8 @@ Postgres 集成测试使用临时 cluster（`initdb` + `pg_ctl`），不依赖�
 - 顶层字段：`format`、`formatVersion`、`createdAt`、`mode`、`modes`、`weight`、`weightUpdatedAt`、`pkParams`、`pkParamsUpdatedAt`、`calibration`、`preferences`。
 - `modes` 下：`events`、`labResults`、`doseTemplates`、`deletions`、`quickDoses`、`supplies`、`plan`。
 - 本应用没有账号，导出时省略 `sourceAccount`；导入时忽略该字段。
+- 上游 v1 备份没有 `birthYear` 字段。本应用在顶层增加可选扩展 `birthYear` 与 `birthYearUpdatedAt`；上游导入会忽略未知顶层字段，因此“本应用 → 上游 → 本应用”的往返会丢失出生年。导入预览必须提示这一点，不能宣称无损。
+- 除 `birthYear` 外，第一版不增加其他扩展字段；避免制造上游无法保留的私有数据。
 
 ### 10.2 导入
 
@@ -453,11 +461,11 @@ Postgres 集成测试使用临时 cluster（`initdb` + `pg_ctl`），不依赖�
 | M0 | 仓库、设计文档、向量提取、UI 清单、备份样例、CMake 骨架 | 文档批准；向量文件可生成；CI 空跑通过 |
 | M1 | `core` 模型 + 向量 runner；Postgres schema + migration；首次启动向导 | 全部向量通过；空库可初始化；导入/导出 CLI 可用 |
 | M2 | QML 壳、Overview、Add dose、History | 可以记录、编辑、删除、看到曲线 |
-| M3 | Plan/What-if、Settings、Export/Import UI | 完整备份往返不丢数据 |
-| M4 | Labs、Supplies、Forecast | 上游核心功能对齐 |
+| M3 | Plan/What-if、Settings、Export/Import UI、Labs 只读 | 完整备份往返不丢已知字段 |
+| M4 | Labs 编辑、Supplies、Forecast | 上游核心功能对齐 |
 | M5 | 打包、BSD CI、桌面集成、文档 | deb/rpm 可安装；FreeBSD 构建通过 |
 
-“第一版”定义为 M0–M3；M4–M5 是后续。
+“第一版”指 **M3**：能从源码构建、可以日常记录和查看曲线的版本，不包含公开二进制包。**M5 才是第一次公开二进制发布**。M4 不是 M3 的发布阻塞项，但导入的 Labs 必须在 M3 以只读形式可见，否则校准会使用用户看不见的数据。
 
 ---
 
@@ -505,7 +513,22 @@ Postgres 集成测试使用临时 cluster（`initdb` + `pg_ctl`），不依赖�
 
 ---
 
-## 17. 批准记录
+## 17. Builder check 处理记录
+
+设计文档写完后由独立实现者做了一次“能否据此排计划”的检查，六个问题及处理如下：
+
+| # | 问题 | 处理 |
+|---|------|------|
+| B1 | M1 要移植多少模型 | **完整移植**：两种模式、全部已建模路由、CPA、睾酮、年龄、四种校准。未覆盖的入口在 UI 中禁用，不返回近似值。这是较大的范围决定，所有者可以要求缩减，但缩减必须同时禁用对应入口。 |
+| B2 | 体重/出生年/PK/校准是全局还是按模式 | **全局**。schema 改为单行 `settings`，记录类仍按 `mode` 分区；与上游 `SHARED_SUFFIXES` 一致。 |
+| B3 | 出生年如何进出备份 | 顶层扩展字段 `birthYear`/`birthYearUpdatedAt`；上游会忽略，往返会丢失，导入预览提示。 |
+| B4 | 第一版指哪个里程碑 | **M3 是第一个可日常使用的源码版本；M5 是第一个公开二进制发布。** |
+| B5 | 只有存储、没有 UI 的备份类别怎么办 | M3 导入仍完整落库；Labs 提供只读列表，保证校准输入可见；Supplies/templates/quick doses 在导入预览显示数量，完整 UI 在 M4。 |
+| B6 | 模型默认值是否对齐上游 | **对齐**：`mipd` / `retrospective`；年龄修正默认关闭，由设置开关启用。 |
+
+---
+
+## 18. 批准记录
 
 - [ ] 所有者批准本设计文档
 - [ ] 批准后进入实现计划（`writing-plans`）
