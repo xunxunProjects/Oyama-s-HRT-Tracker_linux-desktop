@@ -11,9 +11,13 @@ pharmacokinetic model.  It currently provides:
 
 - **Overview** — current E2, CPA and testosterone values, the modeled E2 curve,
   and the five most recent doses.
-- **Add dose** — route, ester/drug, dose in mg, and “days ago”.  The dose is
-  written to PostgreSQL and the curve is recomputed immediately.
-- **History** — all doses for the selected mode, with delete.
+- **Add dose** — route, ester/drug, dose in mg, and “days ago”.  Route-specific
+  extras are available for sublingual (tier/theta), gel (site), and patches
+  (release rate/wear time).  The dose is written to PostgreSQL and the curve is
+  recomputed immediately.
+- **History** — all doses for the selected mode, with edit and delete.
+- **Settings** — body weight, birth year, calibration method/history, and PK
+  parameter overrides as JSON.  These values are shared by both modes.
 - **Mode switch** — `transfem` / `transmasc` in the header.
 - **Managed cluster lifecycle** — if the saved configuration selects a managed
   cluster, the app starts it at launch through `LocalCluster::ensure_running()`.
@@ -54,6 +58,14 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
 
 The same check is registered as CTest test `qt_shell_smoke`.
 
+### Controller integration test
+
+`app_controller_test` starts a throwaway PostgreSQL cluster, writes an
+`existing` backend config, then verifies settings round-trip, adding a dose
+with extras, in-place editing, curve generation, and deletion. It is
+registered as CTest test `app_controller_test` and skips with exit code 77
+when `initdb`/`pg_ctl` are unavailable.
+
 ## Architecture
 
 ```text
@@ -61,8 +73,9 @@ app/src/main.cpp             QGuiApplication + QQmlApplicationEngine
 app/src/app_controller.*     QObject exposed to QML as `app`
 app/qml/Main.qml             window, sidebar, mode switch, status bar
 app/qml/OverviewPage.qml      stat cards, Canvas curve, recent doses
-app/qml/AddDosePage.qml       dose form
-app/qml/HistoryPage.qml       dose list and delete
+app/qml/AddDosePage.qml       dose form, route extras, add/edit
+app/qml/HistoryPage.qml       dose list, edit and delete
+app/qml/SettingsPage.qml      shared body/model settings
 ```
 
 `AppController` loads `AppConfig`, starts a managed cluster when needed, applies
@@ -73,12 +86,10 @@ The display is downsampled to roughly 700 points.
 
 ## Known gaps
 
-- The add form does not yet expose route extras (sublingual tier/theta, gel
-  site, patch wear, release rate).  Those fields are parsed if present in the
-  database, but cannot be entered in the UI.
-- Doses can be added and deleted, but not edited in place.
-- Plan/What-if, Settings, Labs, Supplies, Forecast and backup import/export UI
-  are not in the M2 shell.
+- Plan/What-if, Labs, Supplies, Forecast and backup import/export UI are not in
+  the M2 shell.
+- PK parsing stores the calibration method/history but calibration itself is
+  not applied to the curve yet.
 - No i18n yet; the shell strings are English.
 - No single-instance guard, tray integration, or desktop notifications yet.
 - No packaging, install rules beyond the executable, or BSD/X11/Wayland test

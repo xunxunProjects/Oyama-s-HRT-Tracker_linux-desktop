@@ -128,6 +128,67 @@ oyama_pk_extras extras_from_json(const std::string& text) {
     return extras;
 }
 
+std::string extras_to_json(const QVariantMap& values) {
+    nlohmann::json out = nlohmann::json::object();
+    const auto put_number = [&](const char* key) {
+        const auto it = values.find(QString::fromLatin1(key));
+        if (it == values.end()) {
+            return;
+        }
+        bool ok = false;
+        const double value = it->toDouble(&ok);
+        if (ok && std::isfinite(value)) {
+            out[key] = value;
+        }
+    };
+    put_number("sublingualTheta");
+    put_number("sublingualTier");
+    put_number("gelSite");
+    put_number("releaseRateUGPerDay");
+    put_number("patchWearH");
+    return out.dump();
+}
+
+oyama_pk_params pk_params_from_json(const QString& text) {
+    oyama_pk_params params{};
+    oyama_pk_params_defaults(&params);
+    const auto parsed =
+        nlohmann::json::parse(text.toStdString(), nullptr, false);
+    if (parsed.is_discarded() || !parsed.is_object()) {
+        return params;
+    }
+    const auto set = [&](const char* key, double& field) {
+        const auto it = parsed.find(key);
+        if (it != parsed.end() && it->is_number()) {
+            field = it->get<double>();
+        }
+    };
+    set("e2_kClear", params.e2_kClear);
+    set("e2_kClearInj", params.e2_kClearInj);
+    set("e2_ff_EB", params.e2_ff_EB);
+    set("e2_ff_EV", params.e2_ff_EV);
+    set("e2_ff_EC", params.e2_ff_EC);
+    set("e2_ff_EN", params.e2_ff_EN);
+    set("e2_ff_EU", params.e2_ff_EU);
+    set("e2_oral_bio", params.e2_oral_bio);
+    set("e2_sl_quick", params.e2_sl_quick);
+    set("e2_sl_casual", params.e2_sl_casual);
+    set("e2_sl_standard", params.e2_sl_standard);
+    set("e2_sl_strict", params.e2_sl_strict);
+    set("e2_gel_arm", params.e2_gel_arm);
+    set("e2_gel_thigh", params.e2_gel_thigh);
+    set("e2_gel_scrotal", params.e2_gel_scrotal);
+    set("t_kClear", params.t_kClear);
+    set("t_kClearInj", params.t_kClearInj);
+    set("t_ff_TC", params.t_ff_TC);
+    set("t_ff_TE", params.t_ff_TE);
+    set("t_ff_TU", params.t_ff_TU);
+    set("t_gel_arm", params.t_gel_arm);
+    set("t_gel_thigh", params.t_gel_thigh);
+    set("t_gel_scrotal", params.t_gel_scrotal);
+    return params;
+}
+
 std::int64_t now_ms() {
     return QDateTime::currentMSecsSinceEpoch();
 }
@@ -253,8 +314,7 @@ void AppController::compute_curve(const std::vector<DoseEvent>& events) {
         return;
     }
 
-    oyama_pk_params params{};
-    oyama_pk_params_defaults(&params);
+    const auto params = pk_params_from_json(pkParamsJson());
     oyama_pk_request request{};
     request.events = doses.data();
     request.event_count = doses.size();
@@ -305,7 +365,8 @@ void AppController::compute_curve(const std::vector<DoseEvent>& events) {
 }
 
 bool AppController::addDose(const QString& route, const QString& ester,
-                            double dose_mg, double time_h) {
+                            double dose_mg, double time_h,
+                            const QVariantMap& extras) {
     if (!database_) {
         fail("Database is not connected.");
         return false;
@@ -331,7 +392,7 @@ bool AppController::addDose(const QString& route, const QString& ester,
         event.ester = ester.toStdString();
         event.time_h = time_h > 0.0 ? time_h : nowHours();
         event.dose_mg = dose_mg;
-        event.extras_json = "{}";
+        event.extras_json = extras_to_json(extras);
         event.created_at = now_ms();
         event.updated_at = event.created_at;
         DoseEventRepository(database_->connection()).upsert(event);
@@ -343,6 +404,130 @@ bool AppController::addDose(const QString& route, const QString& ester,
         fail(QString("Could not add dose: ") + QString::fromUtf8(error.what()));
         return false;
     }
+}
+
+bool AppController::updateDose(const QString& id, const QString& route,
+                               const QString& ester, double dose_mg,
+                               double time_h, const QVariantMap& extras) {
+    if (!database_) {
+        fail("No database is open.");
+        return false;
+    }
+    if (!std::isfinite(dose_mg) || dose_mg <= 0.0) {
+        fail("Dose must be greater than zero.");
+        return false;
+    }
+    if (!std::isfinite(time_h) || time_h <= 0.0) {
+        fail("Dose time is invalid.");
+        return false;
+    }
+    const auto mode = oyama::storage::parse_mode(mode_.toStdString());
+    const auto route_value = route_from(route);
+    const auto ester_value = ester_from(ester);
+    if (!mode || !route_value || !ester_value) {
+        fail("Invalid mode, route, or ester.");
+        return false;
+    }
+
+    try {
+        DoseEventRepository repository(database_->connection());
+        auto existing = repository.get(id.toStdString());
+        if (!existing.has_value()) {
+            fail("Dose not found.");
+            return false;
+        }
+        existing->mode = *mode;
+        existing->route = route.toStdString();
+        existing->ester = ester.toStdString();
+        existing->time_h = time_h;
+        existing->dose_mg = dose_mg;
+        existing->extras_json = extras_to_json(extras);
+        existing->updated_at = now_ms();
+        repository.upsert(*existing);
+        reload();
+        status_ = "Dose updated.";
+        emit changed();
+        return true;
+    } catch (const std::exception& error) {
+        fail(QString("Could not update dose: %1").arg(error.what()));
+        return false;
+    }
+}
+
+bool AppController::saveSettings(double weight, int birth_year,
+                                 const QString& calibration_method,
+                                 const QString& calibration_history,
+                                 const QString& pk_params_json) {
+    if (!database_) {
+        fail("No database is open.");
+        return false;
+    }
+    if (!std::isfinite(weight) || weight <= 0.0) {
+        fail("Body weight must be greater than zero.");
+        return false;
+    }
+    if (birth_year != 0 && (birth_year < 1900 || birth_year > 2200)) {
+        fail("Birth year must be between 1900 and 2200, or 0 to unset.");
+        return false;
+    }
+    const std::string method = calibration_method.toStdString();
+    if (method != "off" && method != "ekf" && method != "ou_kalman" &&
+        method != "mipd") {
+        fail("Invalid calibration method.");
+        return false;
+    }
+    const std::string history = calibration_history.toStdString();
+    if (history != "forward" && history != "retrospective") {
+        fail("Invalid calibration history mode.");
+        return false;
+    }
+
+    try {
+        SettingsRepository repository(database_->connection());
+        oyama::storage::Settings settings = repository.get();
+        settings.body_weight_kg = weight;
+        settings.weight_updated_at = now_ms();
+        settings.birth_year =
+            birth_year > 0 ? std::optional<int>(birth_year) : std::nullopt;
+        settings.birth_year_updated_at =
+            birth_year > 0 ? std::optional<std::int64_t>(now_ms())
+                           : std::nullopt;
+        settings.calibration_method = method;
+        settings.calibration_history_mode = history;
+        if (!pk_params_json.trimmed().isEmpty()) {
+            settings.pk_params_json = pk_params_json.toStdString();
+            settings.pk_params_updated_at = now_ms();
+        }
+        settings.updated_at = now_ms();
+        repository.save(settings);
+        reload();
+        status_ = "Settings saved.";
+        emit changed();
+        return true;
+    } catch (const std::exception& error) {
+        fail(QString("Could not save settings: %1").arg(error.what()));
+        return false;
+    }
+}
+
+double AppController::weight() const {
+    return settings_.body_weight_kg.value_or(70.0);
+}
+
+int AppController::birthYear() const {
+    return settings_.birth_year.value_or(0);
+}
+
+QString AppController::calibrationMethod() const {
+    return QString::fromStdString(settings_.calibration_method);
+}
+
+QString AppController::calibrationHistory() const {
+    return QString::fromStdString(settings_.calibration_history_mode);
+}
+
+QString AppController::pkParamsJson() const {
+    return QString::fromStdString(settings_.pk_params_json.value_or("{}"));
 }
 
 bool AppController::removeDose(const QString& id) {

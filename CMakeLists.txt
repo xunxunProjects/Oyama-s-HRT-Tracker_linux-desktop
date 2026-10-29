@@ -84,7 +84,8 @@ if(OYAMA_BUILD_QT_SHELL)
                 app/qml/Main.qml
                 app/qml/OverviewPage.qml
                 app/qml/AddDosePage.qml
-                app/qml/HistoryPage.qml)
+                app/qml/HistoryPage.qml
+                app/qml/SettingsPage.qml)
         target_link_libraries(oyama-hrt-app PRIVATE
             oyama_storage
             oyama_pk
@@ -181,6 +182,27 @@ if(BUILD_TESTING)
         add_test(NAME qt_shell_smoke COMMAND oyama-hrt-app --self-test)
         set_tests_properties(qt_shell_smoke PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;OYAMA_CONFIG_FILE=${CMAKE_CURRENT_BINARY_DIR}/qt-shell-smoke-no-config")
+
+        add_executable(app_controller_test
+            app/tests/app_controller_test.cpp
+            app/src/app_controller.cpp
+            app/src/app_controller.h)
+        target_include_directories(app_controller_test PRIVATE app/src)
+        target_link_libraries(app_controller_test PRIVATE
+            oyama_storage
+            oyama_pk
+            nlohmann_json::nlohmann_json
+            Qt6::Core)
+        target_compile_definitions(app_controller_test PRIVATE
+            OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
+            OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(app_controller_test PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+        add_test(NAME app_controller_test
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/app/tests/run_app_controller_test.sh
+                    $<TARGET_FILE:app_controller_test>)
+        set_tests_properties(app_controller_test PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 endif()
 

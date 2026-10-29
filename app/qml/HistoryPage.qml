@@ -4,126 +4,94 @@ import QtQuick.Layouts
 
 Item {
     id: page
+    signal editRequested(var dose)
 
     ColumnLayout {
         anchors.fill: parent
         anchors.margins: 28
         spacing: 14
 
-        RowLayout {
-            Layout.fillWidth: true
-            ColumnLayout {
-                spacing: 2
-                Label {
-                    text: "History"
-                    color: "#f4f6f8"
-                    font.pixelSize: 26
-                    font.weight: Font.DemiBold
-                }
-                Label {
-                    text: app.doses.length + " dose(s) in " + app.mode
-                    color: "#7f8c9a"
-                    font.pixelSize: 12
-                }
-            }
-            Item { Layout.fillWidth: true }
+        Label {
+            text: qsTr("History")
+            font.pixelSize: 30
+            font.bold: true
+            color: "#f4f6f8"
+        }
+        Label {
+            text: qsTr("Doses recorded for %1 mode. Edit or delete an entry.").arg(app.mode)
+            color: "#8a98a8"
+            font.pixelSize: 13
         }
 
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            radius: 18
-            color: "#151c23"
-            border.width: 1
-            border.color: "#24313c"
-
-            Label {
-                anchors.centerIn: parent
-                visible: app.doses.length === 0
-                text: "No doses recorded yet.\nAdd one from the Add dose page."
-                color: "#677684"
-                font.pixelSize: 13
-                horizontalAlignment: Text.AlignHCenter
-            }
+            radius: 14
+            color: "#182028"
+            border.color: "#26313c"
 
             ListView {
                 id: list
                 anchors.fill: parent
-                anchors.margins: 10
+                anchors.margins: 12
                 clip: true
                 spacing: 8
                 model: app.doses
 
                 delegate: Rectangle {
+                    required property var modelData
                     width: list.width
-                    height: 72
-                    radius: 12
-                    color: "#11171d"
-                    border.width: 1
-                    border.color: "#1f2b35"
+                    height: 66
+                    radius: 10
+                    color: "#111820"
+                    border.color: "#26313c"
 
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 16
                         anchors.rightMargin: 12
-                        spacing: 16
+                        spacing: 12
 
                         Rectangle {
-                            Layout.preferredWidth: 40
-                            Layout.preferredHeight: 40
-                            radius: 12
-                            color: "#26313c"
-                            Label {
-                                anchors.centerIn: parent
-                                text: modelData.ester
-                                color: "#e8a0b4"
-                                font.pixelSize: 11
-                                font.weight: Font.DemiBold
-                            }
+                            Layout.preferredWidth: 4
+                            Layout.preferredHeight: 38
+                            radius: 2
+                            color: "#e8a0b4"
                         }
 
                         ColumnLayout {
-                            Layout.fillWidth: true
                             spacing: 2
                             Label {
                                 text: modelData.route + " · " + modelData.ester
-                                color: "#e8eef3"
-                                font.pixelSize: 14
-                                font.weight: Font.DemiBold
+                                color: "#f4f6f8"
+                                font.pixelSize: 15
+                                font.bold: true
                             }
                             Label {
-                                text: modelData.timeLabel
-                                color: "#677684"
-                                font.pixelSize: 11
+                                text: modelData.timeLabel + " · " + Number(modelData.doseMG).toFixed(2) + " mg"
+                                color: "#8a98a8"
+                                font.pixelSize: 12
                             }
                         }
 
-                        Label {
-                            text: modelData.doseMG + " mg"
-                            color: "#d8e0e7"
-                            font.pixelSize: 14
-                        }
+                        Item { Layout.fillWidth: true }
 
                         Button {
-                            text: "Delete"
-                            Layout.preferredWidth: 82
-                            Layout.preferredHeight: 34
+                            text: qsTr("Edit")
+                            onClicked: page.editRequested(modelData)
+                        }
+                        Button {
+                            text: qsTr("Delete")
                             onClicked: app.removeDose(modelData.id)
-                            background: Rectangle {
-                                radius: 8
-                                color: parent.down ? "#3a2028" : "transparent"
-                                border.width: 1
-                                border.color: "#5a3a43"
-                            }
-                            contentItem: Text {
-                                text: parent.text
-                                color: "#e8a0b4"
-                                font.pixelSize: 11
-                                horizontalAlignment: Text.AlignHCenter
-                                verticalAlignment: Text.AlignVCenter
-                            }
                         }
                     }
+                }
+
+                Label {
+                    anchors.centerIn: parent
+                    visible: list.count === 0
+                    text: qsTr("No doses yet. Add one from the Add dose page.")
+                    color: "#8a98a8"
                 }
             }
         }

@@ -11,10 +11,11 @@ harness that checks it against the upstream TypeScript model to machine
 precision. `storage/` contains the PostgreSQL schema, forward-only migration
 runner, typed repositories, the application-managed cluster lifecycle, and the
 LWW/tombstone backup merge; `cli/` exposes setup, migration, data, and backup
-commands. `app/` now has a Qt 6/QML shell with Overview, Add dose, and History
-screens wired to the local database and the PK model. It is an early milestone:
-Settings, Labs, Plan, Supplies, Forecast, packaging, and full upstream UI parity
-are still ahead.
+commands. `app/` now has a Qt 6/QML shell with Overview, Add dose, History, and
+Settings screens wired to the local database and the PK model, including
+route-specific dose extras and in-place dose editing. It is an early milestone:
+Labs, Plan, Supplies, Forecast, packaging, and full upstream UI parity are still
+ahead.
 
 - Design: [`docs/superpowers/specs/2026-10-29-linux-desktop-design.md`](docs/superpowers/specs/2026-10-29-linux-desktop-design.md)
 - PK comparison: [`tools/compare/README.md`](tools/compare/README.md)
@@ -49,6 +50,8 @@ The Qt shell is `build/oyama-hrt-app`. It uses the database configured by
 `oyama-hrt-cli db setup`. A headless QML smoke check is available with
 `build/oyama-hrt-app --self-test` (run it with `QT_QPA_PLATFORM=offscreen
 QT_QUICK_BACKEND=software`); CTest exposes the same check as `qt_shell_smoke`.
+CTest also runs `app_controller_test`, which exercises settings, dose extras,
+in-place editing, and deletion against a throwaway PostgreSQL cluster.
 See [`app/README.md`](app/README.md) for the screen scope, supported dose
 extras, and current limitations.
 
@@ -172,8 +175,9 @@ managed cluster running on exit; use `oyama-hrt-cli db stop` to stop it.
 （36 个场景、413,323 个字段，最大相对误差约 1.1e-15）。PostgreSQL 存储层、
 迁移调度、托管本地 cluster 生命周期、首次设置向导、备份导入/导出与
 LWW/删除合并、基础 CLI 也已经落地。Qt 6/QML 桌面壳已经进入 M2：Overview、
-Add dose、History 三个页面已接入本地数据库和 PK 模型；设置页、Plan、Labs、
-Supplies、Forecast、桌面打包以及完整界面对齐仍未完成。
+Add dose、History、Settings 四个页面已接入本地数据库和 PK 模型，并支持
+按给药途径的 extras 与剂量就地编辑；Plan、Labs、Supplies、Forecast、
+桌面打包以及完整界面对齐仍未完成。
 
 ## Repository layout
 
