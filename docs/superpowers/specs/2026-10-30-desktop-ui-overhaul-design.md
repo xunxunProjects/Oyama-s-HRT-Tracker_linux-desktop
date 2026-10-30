@@ -379,6 +379,15 @@
 6. **字体**：FreeBSD 上中文与波斯语不出现方块；如缺字体，文档记录安装包名。
 7. **回归**：模型向量、存储、备份、CLI 测试全部通过。
 
+**2026-10-30 FreeBSD 验收记录**
+
+- 分支 `desktop-ui-overhaul`，代码提交 `dcf0fde`（本次构建与测试基于该提交；其后仅有文档提交）；源码以 git bundle 同步到 `/home/oyama/oyama-src`，旧的非 git 源码保留为 `~/oyama-src.pre-ui-overhaul`。
+- 环境：FreeBSD 15.1-RELEASE amd64，Qt 6.11.2，CMake 3.31.12，Ninja 1.13.2，PostgreSQL 18.6。
+- 构建：`cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOYAMA_BUILD_QT_SHELL=ON` 成功，118/118 个目标完成。
+- 测试：CTest **18/18** 通过，耗时 28.77 s（包含 6 个 Qt shell 冒烟用例与 `app_controller_test`）。
+- 字体：FreeBSD ports 中对应包名为 `noto-sc`（不存在 `font-noto-cjk` 包）；安装后 `fc-list :lang=zh` 可列出 Noto Sans CJK SC。波斯语继续使用随应用打包的 Vazirmatn。
+- 截图：在 FreeBSD 上用 `--screenshot` 配合 `QT_QPA_PLATFORM=offscreen`、`QT_QUICK_BACKEND=software` 生成 `zh-light.png`、`fa-light.png`、`fa-dark.png`（1200×800），已复制到主机 `/tmp/opencode/freebsd-shots/` 检查。中文与波斯文字形均正常显示，波斯语侧栏镜像到右侧，暗色主题颜色正确。
+
 ---
 
 ## 11. 风险与缓解
