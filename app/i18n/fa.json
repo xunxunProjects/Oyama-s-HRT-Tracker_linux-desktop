@@ -34,6 +34,7 @@
   "overview.t": "تستوسترون",
   "overview.chart_title": "غلظت مدل‌شده",
   "overview.chart_subtitle": "منحنی E2 از مدل محلی C99. زمان‌ها محلی هستند.",
+  "overview.chart_loading": "در حال بارگذاری منحنی…",
   "overview.chart_empty": "هنوز دوزی نیست. برای دیدن منحنی یکی اضافه کنید.",
   "overview.recent": "دوزهای اخیر",
   "overview.recent_empty": "برای این حالت دوزی ثبت نشده است.",

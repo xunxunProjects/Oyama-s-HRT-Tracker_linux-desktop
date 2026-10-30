@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(oyama_hrt_linux_desktop
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "Oyama's HRT Tracker - Linux/BSD desktop"
     LANGUAGES C CXX)
 
@@ -107,6 +107,7 @@ if(OYAMA_BUILD_QT_SHELL)
             app/qml/SettingsPage.qml
             app/qml/T.qml
             app/qml/Theme.qml
+            app/qml/CurveMath.qml
             app/qml/Icon.qml
             app/qml/Card.qml
             app/qml/NavItem.qml
@@ -123,6 +124,8 @@ if(OYAMA_BUILD_QT_SHELL)
         set_source_files_properties(app/qml/T.qml
             PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
         set_source_files_properties(app/qml/Theme.qml
+            PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+        set_source_files_properties(app/qml/CurveMath.qml
             PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
         qt_add_qml_module(oyama-hrt-app
             URI OyamaHrt

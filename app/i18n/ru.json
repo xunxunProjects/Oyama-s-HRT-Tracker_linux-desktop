@@ -34,6 +34,7 @@
   "overview.t": "ТЕСТОСТЕРОН",
   "overview.chart_title": "Модельная концентрация",
   "overview.chart_subtitle": "Кривая E2 по локальной модели C99. Время местное.",
+  "overview.chart_loading": "Загрузка кривой…",
   "overview.chart_empty": "Доз пока нет. Добавьте дозу, чтобы увидеть кривую.",
   "overview.recent": "Последние дозы",
   "overview.recent_empty": "Для этого режима дозы не записаны.",

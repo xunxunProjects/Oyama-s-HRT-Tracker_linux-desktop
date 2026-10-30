@@ -34,6 +34,7 @@
   "overview.t": "TESTOSTERONE",
   "overview.chart_title": "Modeled concentration",
   "overview.chart_subtitle": "E2 curve from the local C99 model. Times are local.",
+  "overview.chart_loading": "Loading curve…",
   "overview.chart_empty": "No doses yet. Add one to see the curve.",
   "overview.recent": "Recent doses",
   "overview.recent_empty": "No doses recorded for this mode.",

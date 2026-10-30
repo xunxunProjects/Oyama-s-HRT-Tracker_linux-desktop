@@ -34,6 +34,7 @@
   "overview.t": "睾酮",
   "overview.chart_title": "模型浓度",
   "overview.chart_subtitle": "本地 C99 模型的 E2 曲线。时间为本地时间。",
+  "overview.chart_loading": "曲线加载中…",
   "overview.chart_empty": "还没有剂量。添加一次即可查看曲线。",
   "overview.recent": "最近剂量",
   "overview.recent_empty": "此模式下还没有记录。",

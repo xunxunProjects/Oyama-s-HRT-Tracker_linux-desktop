@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 Item {
@@ -68,13 +69,35 @@ Item {
                     Layout.fillHeight: true
                     spacing: 8
 
-                    Text {
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: T.t("overview.chart_title")
-                        color: Theme.text
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSection
-                        font.weight: Font.DemiBold
+                        spacing: 8
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: T.t("overview.chart_title")
+                            color: Theme.text
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontSection
+                            font.weight: Font.DemiBold
+                        }
+
+                        BusyIndicator {
+                            id: curveBusy
+                            Layout.alignment: Qt.AlignVCenter
+                            implicitWidth: 18
+                            implicitHeight: 18
+                            running: chart.curveProgress < 1
+                            visible: running
+                        }
+
+                        Text {
+                            visible: curveBusy.running
+                            text: T.t("overview.chart_loading")
+                            color: Theme.textMuted
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontLabel
+                        }
                     }
 
                     Text {
@@ -86,110 +109,238 @@ Item {
                         wrapMode: Text.Wrap
                     }
 
-                    Canvas {
-                        id: chart
+                    Item {
+                        id: chartHost
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         Layout.minimumHeight: 320
                         visible: app.curve.length >= 2
+                        clip: true
 
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            ctx.clearRect(0, 0, width, height)
-                            ctx.fillStyle = Theme.surface
-                            ctx.fillRect(0, 0, width, height)
+                        Canvas {
+                            id: chart
+                            anchors.fill: parent
+                            property real curveProgress: 1
+                            property int hoverIndex: -1
+                            property real hoverX: -1
+                            onCurveProgressChanged: requestPaint()
+                            onHoverIndexChanged: requestPaint()
 
-                            var points = app.curve
-                            if (!points || points.length < 2)
-                                return
+                            NumberAnimation {
+                                id: curveAnim
+                                target: chart
+                                property: "curveProgress"
+                                from: 0
+                                to: 1
+                                duration: 480
+                                easing.type: Easing.OutCubic
+                            }
 
-                            var left = 48
-                            var right = 16
-                            var top = 12
-                            var bottom = 32
-                            var plotW = Math.max(10, width - left - right)
-                            var plotH = Math.max(10, height - top - bottom)
-                            var minT = points[0].t
-                            var maxT = points[points.length - 1].t
-                            var maxE2 = 0
-                            for (var i = 0; i < points.length; i++)
-                                maxE2 = Math.max(maxE2, points[i].e2)
-                            if (maxT <= minT)
-                                maxT = minT + 1
-                            maxE2 = Math.max(10, Math.ceil(maxE2 / 10) * 10)
+                            Component.onCompleted: {
+                                if (app.curve.length >= 2) {
+                                    curveProgress = 0
+                                    curveAnim.start()
+                                }
+                            }
 
-                            ctx.strokeStyle = Theme.chartGrid
-                            ctx.lineWidth = 1
-                            ctx.fillStyle = Theme.textMuted
-                            ctx.font = "11px sans-serif"
-                            ctx.textAlign = "right"
-                            ctx.textBaseline = "middle"
-                            for (var g = 0; g <= 4; g++) {
-                                var gy = top + plotH * g / 4
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.clearRect(0, 0, width, height)
+                                ctx.fillStyle = Theme.surface
+                                ctx.fillRect(0, 0, width, height)
+
+                                var points = app.curve
+                                if (!points || points.length < 2)
+                                    return
+
+                                var left = 48
+                                var right = 16
+                                var top = 12
+                                var bottom = 32
+                                var plotW = Math.max(10, width - left - right)
+                                var plotH = Math.max(10, height - top - bottom)
+                                var minT = points[0].t
+                                var maxT = points[points.length - 1].t
+                                var maxE2 = 0
+                                for (var i = 0; i < points.length; i++)
+                                    maxE2 = Math.max(maxE2, points[i].e2)
+                                if (maxT <= minT)
+                                    maxT = minT + 1
+                                maxE2 = Math.max(10, Math.ceil(maxE2 / 10) * 10)
+
+                                ctx.strokeStyle = Theme.chartGrid
+                                ctx.lineWidth = 1
+                                ctx.fillStyle = Theme.textMuted
+                                ctx.font = "11px sans-serif"
+                                ctx.textAlign = "right"
+                                ctx.textBaseline = "middle"
+                                for (var g = 0; g <= 4; g++) {
+                                    var gy = top + plotH * g / 4
+                                    ctx.beginPath()
+                                    ctx.moveTo(left, gy)
+                                    ctx.lineTo(left + plotW, gy)
+                                    ctx.stroke()
+                                    var value = maxE2 * (1 - g / 4)
+                                    ctx.fillText(value.toFixed(0), left - 8, gy)
+                                }
+
+                                function xFor(t) {
+                                    return left + (t - minT) / (maxT - minT) * plotW
+                                }
+                                function yFor(e2) {
+                                    return top + (1 - e2 / maxE2) * plotH
+                                }
+
+                                var progress = Math.max(0, Math.min(1, chart.curveProgress))
+                                var lastVisible = Math.max(1,
+                                    Math.round((points.length - 1) * progress))
+
                                 ctx.beginPath()
-                                ctx.moveTo(left, gy)
-                                ctx.lineTo(left + plotW, gy)
+                                ctx.moveTo(xFor(points[0].t), top + plotH)
+                                for (var f = 0; f <= lastVisible; f++)
+                                    ctx.lineTo(xFor(points[f].t), yFor(points[f].e2))
+                                ctx.lineTo(xFor(points[lastVisible].t),
+                                           top + plotH)
+                                ctx.closePath()
+                                ctx.save()
+                                ctx.globalAlpha = 0.10
+                                ctx.fillStyle = Theme.chartLine
+                                ctx.fill()
+                                ctx.restore()
+
+                                ctx.strokeStyle = Theme.chartLine
+                                ctx.lineWidth = 2.5
+                                ctx.lineCap = "round"
+                                ctx.lineJoin = "round"
+                                ctx.beginPath()
+                                for (var j = 0; j <= lastVisible; j++) {
+                                    var x = xFor(points[j].t)
+                                    var y = yFor(points[j].e2)
+                                    if (j === 0)
+                                        ctx.moveTo(x, y)
+                                    else
+                                        ctx.lineTo(x, y)
+                                }
                                 ctx.stroke()
-                                var value = maxE2 * (1 - g / 4)
-                                ctx.fillText(value.toFixed(0), left - 8, gy)
+
+                                ctx.fillStyle = Theme.textMuted
+                                ctx.font = "11px sans-serif"
+                                ctx.textBaseline = "alphabetic"
+                                ctx.textAlign = "left"
+                                ctx.fillText(app.formatTime(points[0].t), left,
+                                             height - 8)
+                                ctx.textAlign = "right"
+                                ctx.fillText(
+                                    app.formatTime(points[points.length - 1].t),
+                                    left + plotW, height - 8)
+                                ctx.textAlign = "left"
+
+                                if (chart.hoverIndex >= 0 &&
+                                        chart.hoverIndex <= lastVisible) {
+                                    var hoverX = xFor(points[chart.hoverIndex].t)
+                                    var hoverY = yFor(points[chart.hoverIndex].e2)
+                                    ctx.save()
+                                    ctx.globalAlpha = 0.55
+                                    ctx.strokeStyle = Theme.textMuted
+                                    ctx.lineWidth = 1
+                                    ctx.setLineDash([4, 4])
+                                    ctx.beginPath()
+                                    ctx.moveTo(hoverX, top)
+                                    ctx.lineTo(hoverX, top + plotH)
+                                    ctx.stroke()
+                                    ctx.restore()
+
+                                    ctx.beginPath()
+                                    ctx.arc(hoverX, hoverY, 4.5, 0, Math.PI * 2)
+                                    ctx.fillStyle = Theme.chartLine
+                                    ctx.fill()
+                                    ctx.strokeStyle = Theme.surface
+                                    ctx.lineWidth = 2
+                                    ctx.stroke()
+                                }
                             }
 
-                            function xFor(t) {
-                                return left + (t - minT) / (maxT - minT) * plotW
-                            }
-                            function yFor(e2) {
-                                return top + (1 - e2 / maxE2) * plotH
+                            Connections {
+                                target: app
+                                function onChanged() {
+                                    chart.hoverIndex = -1
+                                    chart.hoverX = -1
+                                    if (app.curve.length >= 2) {
+                                        chart.curveProgress = 0
+                                        curveAnim.restart()
+                                    } else {
+                                        curveAnim.stop()
+                                        chart.curveProgress = 1
+                                    }
+                                    chart.requestPaint()
+                                }
                             }
 
-                            ctx.beginPath()
-                            ctx.moveTo(xFor(points[0].t), top + plotH)
-                            for (var f = 0; f < points.length; f++)
-                                ctx.lineTo(xFor(points[f].t), yFor(points[f].e2))
-                            ctx.lineTo(xFor(points[points.length - 1].t),
-                                       top + plotH)
-                            ctx.closePath()
-                            ctx.save()
-                            ctx.globalAlpha = 0.10
-                            ctx.fillStyle = Theme.chartLine
-                            ctx.fill()
-                            ctx.restore()
-
-                            ctx.strokeStyle = Theme.chartLine
-                            ctx.lineWidth = 2.5
-                            ctx.lineCap = "round"
-                            ctx.lineJoin = "round"
-                            ctx.beginPath()
-                            for (var j = 0; j < points.length; j++) {
-                                var x = xFor(points[j].t)
-                                var y = yFor(points[j].e2)
-                                if (j === 0)
-                                    ctx.moveTo(x, y)
-                                else
-                                    ctx.lineTo(x, y)
+                            Connections {
+                                target: Theme
+                                function onDarkChanged() { chart.requestPaint() }
                             }
-                            ctx.stroke()
-
-                            ctx.fillStyle = Theme.textMuted
-                            ctx.font = "11px sans-serif"
-                            ctx.textBaseline = "alphabetic"
-                            ctx.textAlign = "left"
-                            ctx.fillText(app.formatTime(points[0].t), left,
-                                         height - 8)
-                            ctx.textAlign = "right"
-                            ctx.fillText(
-                                app.formatTime(points[points.length - 1].t),
-                                left + plotW, height - 8)
-                            ctx.textAlign = "left"
                         }
 
-                        Connections {
-                            target: app
-                            function onChanged() { chart.requestPaint() }
+                        MouseArea {
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            acceptedButtons: Qt.NoButton
+                            cursorShape: Qt.CrossCursor
+                            onPositionChanged: {
+                                chart.hoverX = mouse.x
+                                chart.hoverIndex = CurveMath.pointIndexAt(
+                                    app.curve, mouse.x, 48,
+                                    Math.max(10, chart.width - 64))
+                            }
+                            onExited: {
+                                chart.hoverIndex = -1
+                                chart.hoverX = -1
+                            }
                         }
 
-                        Connections {
-                            target: Theme
-                            function onDarkChanged() { chart.requestPaint() }
+                        Rectangle {
+                            id: hoverCard
+                            readonly property var point:
+                                chart.hoverIndex >= 0 &&
+                                chart.hoverIndex < app.curve.length
+                                ? app.curve[chart.hoverIndex] : null
+                            visible: point !== null && chart.curveProgress >= 1
+                            z: 2
+                            x: Math.min(chartHost.width - width - 8,
+                                        Math.max(8, chart.hoverX + 12))
+                            y: 8
+                            width: hoverColumn.implicitWidth + 20
+                            height: hoverColumn.implicitHeight + 14
+                            radius: 10
+                            color: Theme.surfaceAlt
+                            border.color: Theme.border
+                            border.width: 1
+
+                            Column {
+                                id: hoverColumn
+                                anchors.centerIn: parent
+                                spacing: 2
+
+                                Text {
+                                    text: hoverCard.point
+                                        ? app.formatTime(hoverCard.point.t) : ""
+                                    color: Theme.textMuted
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontCaption
+                                }
+
+                                Text {
+                                    text: hoverCard.point
+                                        ? T.t("overview.e2") + " · " +
+                                          Number(hoverCard.point.e2).toFixed(1) +
+                                          " pg/mL" : ""
+                                    color: Theme.text
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontLabel
+                                    font.weight: Font.DemiBold
+                                }
+                            }
                         }
                     }
 
