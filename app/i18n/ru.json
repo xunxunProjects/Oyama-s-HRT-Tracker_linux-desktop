@@ -98,6 +98,7 @@
   "settings.calibration_method": "Метод калибровки",
   "settings.calibration_history": "История калибровки",
   "settings.pk_overrides": "Переопределения параметров PK (JSON)",
+  "settings.invalid_json": "Параметры PK должны быть объектом JSON.",
   "settings.save": "Сохранить настройки",
   "settings.appearance_section": "Язык и оформление",
   "settings.about_section": "О программе",

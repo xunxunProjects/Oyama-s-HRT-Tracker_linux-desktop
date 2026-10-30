@@ -98,6 +98,7 @@
   "settings.calibration_method": "校准方法",
   "settings.calibration_history": "校准历史",
   "settings.pk_overrides": "PK 参数覆盖（JSON）",
+  "settings.invalid_json": "PK 参数必须是 JSON 对象。",
   "settings.save": "保存设置",
   "settings.appearance_section": "语言与外观",
   "settings.about_section": "关于",

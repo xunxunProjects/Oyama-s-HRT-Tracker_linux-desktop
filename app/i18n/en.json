@@ -98,6 +98,7 @@
   "settings.calibration_method": "Calibration method",
   "settings.calibration_history": "Calibration history",
   "settings.pk_overrides": "PK parameter overrides (JSON)",
+  "settings.invalid_json": "PK parameters must be a JSON object.",
   "settings.save": "Save settings",
   "settings.appearance_section": "Language & appearance",
   "settings.about_section": "About",

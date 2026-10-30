@@ -98,6 +98,7 @@
   "settings.calibration_method": "روش کالیبراسیون",
   "settings.calibration_history": "تاریخچه کالیبراسیون",
   "settings.pk_overrides": "بازنویسی پارامترهای PK (JSON)",
+  "settings.invalid_json": "پارامترهای PK باید یک شیء JSON باشند.",
   "settings.save": "ذخیره تنظیمات",
   "settings.appearance_section": "زبان و ظاهر",
   "settings.about_section": "درباره",
