@@ -31,6 +31,7 @@
   "chart.range_all": "All",
   "chart.target": "Target",
   "chart.title": "Hormone level timeline",
+  "chart.loading": "Loading curve…",
   "db.cta_disabled": "Set up the local database before logging a dose",
   "db.not_set_up": "The local database isn't set up yet. Run oyama-hrt-cli db setup in a terminal, then open the app again",
   "disclaimer.local": "Your records stay in a PostgreSQL database on this computer. The app makes no network requests",

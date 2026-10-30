@@ -31,6 +31,7 @@
   "chart.range_all": "全部",
   "chart.target": "目标范围",
   "chart.title": "激素浓度变化曲线",
+  "chart.loading": "曲线加载中…",
   "db.cta_disabled": "请先设置本地数据库再记录剂量",
   "db.not_set_up": "本地数据库还没有设置。先在终端运行 oyama-hrt-cli db setup，再重新打开应用",
   "disclaimer.local": "你的记录保存在这台电脑上的 PostgreSQL 数据库里，应用不会发出任何网络请求",

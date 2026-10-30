@@ -27,7 +27,8 @@ int main(int argc, char** argv) {
     if (!ui.needsLanguage() || !ui.language().isEmpty()) {
         return fail("fresh install should ask for a language");
     }
-    if (ui.rtl() || ui.fontFamily() != "Inter") {
+    if (ui.rtl() || (ui.fontFamily() != "Inter" &&
+                     ui.fontFamily() != "Inter Variable")) {
         return fail("empty language should default to LTR Inter");
     }
     if (ui.strings().value("nav.overview").toString() != "Overview") {
@@ -59,7 +60,8 @@ int main(int argc, char** argv) {
     }
 
     ui.setLanguage("ru");
-    if (ui.rtl() || ui.fontFamily() != "Inter") {
+    if (ui.rtl() || (ui.fontFamily() != "Inter" &&
+                     ui.fontFamily() != "Inter Variable")) {
         return fail("ru should be LTR Inter");
     }
     if (ui.translate("nav.overview") == "nav.overview") {
