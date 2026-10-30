@@ -260,6 +260,13 @@ Item {
                             font.letterSpacing: -0.15
                         }
 
+                        UiText {
+                            visible: chart.loading && chart.curve.length >= 2
+                            text: T.t("chart.loading")
+                            color: Theme.textMuted
+                            size: Theme.caption
+                        }
+
                         Segmented {
                             options: [
                                 { value: "7d", label: T.t("chart.range_7d") },

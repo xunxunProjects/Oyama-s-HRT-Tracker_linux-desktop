@@ -32,7 +32,7 @@ using oyama::storage::Mode;
 using oyama::storage::Settings;
 using oyama::storage::SettingsRepository;
 
-constexpr const char* kVersion = "0.1.0";
+constexpr const char* kVersion = "0.1.1";
 
 struct GlobalOptions {
     ConnectionConfig config;

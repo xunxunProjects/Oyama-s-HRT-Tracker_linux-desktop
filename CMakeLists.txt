@@ -1,9 +1,13 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(oyama_hrt_linux_desktop
-    VERSION 0.1.0
+    VERSION 0.1.1
     DESCRIPTION "Oyama's HRT Tracker - Linux/BSD desktop"
     LANGUAGES C CXX)
+
+if(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+    message(STATUS "OpenBSD native build: Qt 6 and libpq come from packages")
+endif()
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)

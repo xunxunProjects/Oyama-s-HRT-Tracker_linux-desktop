@@ -19,6 +19,15 @@ Canvas {
     property string nowLabel: ""
     property string targetLabel: ""
     property real sweep: 1
+    property bool hoverActive: false
+    property real hoverT: 0
+    property real hoverX: -1
+    property real windowStart: 0
+    property real windowEnd: 1
+    property real plotLeft: 0
+    property real plotRight: 0
+    readonly property string primaryKey: transmasc ? "tLevel" : "e2"
+    readonly property bool loading: sweepAnim.running
 
     readonly property int day: 24
     readonly property real cpaMin: 0.1
@@ -80,6 +89,20 @@ Canvas {
         return pts[pts.length - 1][key]
     }
 
+    function timeAtX(x) {
+        if (!(windowEnd > windowStart) || plotRight <= plotLeft)
+            return NaN
+        if (x < plotLeft || x > plotRight)
+            return NaN
+        const f = (x - plotLeft) / (plotRight - plotLeft)
+        return windowStart + f * (windowEnd - windowStart)
+    }
+
+    function formatHoverTime(t) {
+        if (!isFinite(t)) return ""
+        return Qt.formatDateTime(new Date(t * 3600000), "yyyy-MM-dd HH:mm")
+    }
+
     onPaint: {
         const ctx = getContext("2d")
         ctx.reset()
@@ -100,6 +123,8 @@ Canvas {
             if (t1 > fullMax) { t1 = fullMax; t0 = Math.max(fullMin, t1 - span) }
         }
         if (t1 <= t0) t1 = t0 + 1
+        windowStart = t0
+        windowEnd = t1
 
         // What the window holds, for the axes.
         let pLo = Infinity, pHi = -Infinity, sLo = Infinity, sHi = -Infinity
@@ -132,6 +157,8 @@ Canvas {
         const mT = 32, mB = 26
         const plotW = Math.max(0, width - mL - mR)
         const plotH = Math.max(0, height - mT - mB)
+        plotLeft = mL
+        plotRight = mL + plotW
         const gapH = secondary ? 42 : 0
         const sH = secondary ? Math.round((plotH - gapH) * 0.36) : 0
         const pH = Math.max(0, plotH - gapH - sH)
@@ -326,6 +353,32 @@ Canvas {
                 if (pv !== null) ring(X(nowH), YP(pv), 5, Theme.chartLine, Theme.chartDot, 2.5)
             }
         }
+
+        if (sweep >= 1 && hoverActive && hoverT >= t0 && hoverT <= t1) {
+            const hx = Math.round(X(hoverT)) + 0.5
+            ctx.save()
+            ctx.strokeStyle = Theme.chartAxis
+            ctx.lineWidth = 1
+            ctx.setLineDash([2, 4])
+            const spans = secondary ? [[mT, mT + pH], [sTop, sTop + sH]]
+                                  : [[mT, mT + plotH]]
+            for (const s of spans) {
+                ctx.beginPath()
+                ctx.moveTo(hx, s[0])
+                ctx.lineTo(hx, s[1])
+                ctx.stroke()
+            }
+            ctx.restore()
+
+            const hp = valueAt(pKey, hoverT)
+            if (hp !== null)
+                ring(X(hoverT), YP(hp), 4.5, Theme.chartLine, Theme.chartDot, 2.5)
+            if (secondary) {
+                const hs = valueAt("cpa", hoverT)
+                if (hs !== null)
+                    ring(X(hoverT), YS(hs), 3.5, Theme.chartSecond, Theme.chartDot, 2)
+            }
+        }
     }
 
     // Once per run of the app, like the web's entrance sweep.
@@ -353,9 +406,77 @@ Canvas {
     onSecondaryChanged: requestPaint()
     onTransmascChanged: requestPaint()
     onPrimaryLabelChanged: requestPaint()
+    onHoverTChanged: requestPaint()
+    onHoverActiveChanged: requestPaint()
     Connections {
         target: Theme
         function onDarkChanged() { chart.requestPaint() }
         function onFontFamilyChanged() { chart.requestPaint() }
+    }
+
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        acceptedButtons: Qt.NoButton
+        cursorShape: Qt.CrossCursor
+        onPositionChanged: {
+            const t = chart.timeAtX(mouse.x)
+            if (isFinite(t)) {
+                chart.hoverX = mouse.x
+                chart.hoverT = t
+                chart.hoverActive = true
+            } else {
+                chart.hoverActive = false
+            }
+        }
+        onExited: chart.hoverActive = false
+    }
+
+    Rectangle {
+        id: hoverCard
+        visible: chart.hoverActive && chart.hoverT >= chart.windowStart &&
+                 chart.hoverT <= chart.windowEnd
+        z: 2
+        x: Math.min(chart.width - width - 8,
+                    Math.max(8, chart.hoverX + 12))
+        y: 8
+        width: hoverColumn.implicitWidth + 20
+        height: hoverColumn.implicitHeight + 14
+        radius: Theme.radiusMd
+        color: Theme.surfaceMuted
+        border.color: Theme.border
+        border.width: 1
+
+        Column {
+            id: hoverColumn
+            anchors.centerIn: parent
+            spacing: 2
+
+            Text {
+                text: chart.formatHoverTime(chart.hoverT)
+                color: Theme.textMuted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.caption
+            }
+
+            Text {
+                text: (chart.transmasc ? T.t("label.total_t") : T.t("label.e2")) +
+                      " · " + chart.fmt(chart.valueAt(chart.primaryKey, chart.hoverT)) +
+                      " " + (chart.transmasc ? "ng/dL" : "pg/mL")
+                color: Theme.text
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.body
+                font.weight: Font.DemiBold
+            }
+
+            Text {
+                visible: chart.secondary
+                text: T.t("label.cpa_chart") + " · " +
+                      chart.fmt(chart.valueAt("cpa", chart.hoverT)) + " ng/mL"
+                color: Theme.textMuted
+                font.family: Theme.fontFamily
+                font.pixelSize: Theme.caption
+            }
+        }
     }
 }

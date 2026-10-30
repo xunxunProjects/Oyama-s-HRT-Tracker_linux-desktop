@@ -40,6 +40,18 @@ TestCase {
         confirmText: "Delete"
     }
 
+    HormoneChart {
+        id: chart
+        x: 1000
+        y: 1000
+        width: 200
+        height: 300
+        windowStart: 0
+        windowEnd: 10
+        plotLeft: 20
+        plotRight: 120
+    }
+
     SignalSpy {
         id: confirmed
         target: prompt
@@ -63,8 +75,7 @@ TestCase {
 
     // Choices unfold in place, under the field, as rows with a tick; there
     // is no pop-up to open.
-    function test_choiceUnfoldsInPlace() {
-        const rows = findAll(choice, function(i) { return i.selected !== undefined && i.title !== undefined })
+    function test_choiceUnfoldsInPlace() {        const rows = findAll(choice, function(i) { return i.selected !== undefined && i.title !== undefined })
         compare(rows.length, choice.model.length)
         for (let i = 0; i < rows.length; ++i)
             compare(rows[i].title, choice.model[i].label)
@@ -74,6 +85,7 @@ TestCase {
         tryVerify(function() { return choice.height > closedHeight + 100 })
 
         verify(rows[0].selected)
+        wait(400)
         mouseClick(rows[2])
         compare(choice.currentValue, "injection")
         compare(activated.count, 1)
@@ -85,6 +97,7 @@ TestCase {
     function test_inlinePromptAnswers() {
         const buttons = findAll(prompt, function(i) { return i.variant !== undefined })
         compare(buttons.length, 2)
+        wait(100)
         mouseClick(buttons[1])
         compare(confirmed.count, 1)
         mouseClick(buttons[0])
@@ -92,6 +105,14 @@ TestCase {
         prompt.focusKeep()
         keyClick(Qt.Key_Escape)
         compare(cancelled.count, 2)
+    }
+
+    function test_chartTimeAtX() {
+        compare(chart.timeAtX(20), 0)
+        compare(chart.timeAtX(70), 5)
+        compare(chart.timeAtX(120), 10)
+        verify(isNaN(chart.timeAtX(10)))
+        verify(isNaN(chart.timeAtX(130)))
     }
 
     // What the dose form offers, as on the web.
