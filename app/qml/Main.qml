@@ -6,138 +6,114 @@ ApplicationWindow {
     id: window
     width: 1200
     height: 800
+    minimumWidth: 980
+    minimumHeight: 680
     visible: true
-    title: "Oyama's HRT Tracker"
-    color: "#0e1318"
+    title: T.t("app.name")
+    color: Theme.bg
+    LayoutMirroring.enabled: T.rtl
+    LayoutMirroring.childrenInherit: true
 
     property int pageIndex: 0
     property var editingDose: null
+    property real pageOpacity: 1
+    property real pageOffset: 0
 
-    readonly property var navItems: [
-        { label: "Overview", icon: "◉" },
-        { label: "Add dose", icon: "＋" },
-        { label: "History", icon: "≡" },
-        { label: "Settings", icon: "⚙" }
-    ]
+    function goTo(index) {
+        if (index === pageIndex) return
+        pageOpacity = 0
+        pageOffset = 8
+        pageIndex = index
+        pageAnim.restart()
+    }
 
-    header: Rectangle {
-        height: 64
-        color: "#141b22"
-
-        RowLayout {
-            anchors.fill: parent
-            anchors.leftMargin: 24
-            anchors.rightMargin: 24
-            spacing: 16
-
-            Text {
-                text: "Oyama's HRT Tracker"
-                color: "#f4f6f8"
-                font.pixelSize: 20
-                font.weight: Font.DemiBold
-            }
-
-            Item { Layout.fillWidth: true }
-
-            ComboBox {
-                id: modeBox
-                model: ["transfem", "transmasc"]
-                currentIndex: app.mode === "transmasc" ? 1 : 0
-                onActivated: app.mode = currentText
-            }
-
-            Text {
-                text: app.backend
-                color: "#8a98a8"
-                font.pixelSize: 12
-            }
-        }
+    ParallelAnimation {
+        id: pageAnim
+        NumberAnimation { target: window; property: "pageOpacity"; from: 0; to: 1; duration: Theme.durationPage; easing.type: Easing.OutCubic }
+        NumberAnimation { target: window; property: "pageOffset"; from: 8; to: 0; duration: Theme.durationPage; easing.type: Easing.OutCubic }
     }
 
     RowLayout {
         anchors.fill: parent
         spacing: 0
-
-        Rectangle {
-            Layout.preferredWidth: 220
+        Sidebar {
             Layout.fillHeight: true
-            color: "#101821"
-
+            currentIndex: window.pageIndex
+            onNavigate: function(index) {
+                if (index === 1) addPage.resetForm()
+                window.goTo(index)
+            }
+        }
+        Item {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 14
-                spacing: 6
-
-                Repeater {
-                    model: window.navItems
-
-                    delegate: Button {
-                        required property int index
-                        required property var modelData
-                        Layout.fillWidth: true
-                        text: modelData.icon + "  " + modelData.label
-                        flat: true
-                        highlighted: window.pageIndex === index
-                        onClicked: {
-                            if (index === 1) {
-                                window.editingDose = null;
-                                addPage.resetForm();
-                            }
-                            window.pageIndex = index;
+                spacing: 0
+                Rectangle {
+                    visible: app.backend === "none"
+                    Layout.fillWidth: true
+                    Layout.leftMargin: Theme.pageMargin
+                    Layout.rightMargin: Theme.pageMargin
+                    Layout.topMargin: 20
+                    height: 48
+                    radius: Theme.radiusControl
+                    color: Theme.accentSubtle
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.margins: 12
+                        Icon { name: "database"; size: 18; color: Theme.accentInk }
+                        Text {
+                            Layout.fillWidth: true
+                            text: T.t("db.banner")
+                            color: Theme.accentInk
+                            font.family: Theme.fontFamily
+                            font.pixelSize: Theme.fontLabel
+                            wrapMode: Text.Wrap
                         }
                     }
                 }
-
-                Item { Layout.fillHeight: true }
-
-                Text {
-                    text: "Local · socket only"
-                    color: "#5f6d7c"
-                    font.pixelSize: 11
+                StackLayout {
+                    currentIndex: window.pageIndex
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    opacity: window.pageOpacity
+                    transform: Translate { y: window.pageOffset }
+                    OverviewPage {
+                        id: overviewPage
+                        onViewAllRequested: window.goTo(2)
+                        onAddRequested: window.goTo(1)
+                    }
+                    AddDosePage {
+                        id: addPage
+                        onSaved: {
+                            window.editingDose = null
+                            window.goTo(0)
+                        }
+                    }
+                    HistoryPage {
+                        onEditRequested: function(dose) {
+                            window.editingDose = dose
+                            addPage.loadDose(dose)
+                            window.goTo(1)
+                        }
+                        onAddRequested: {
+                            window.editingDose = null
+                            addPage.resetForm()
+                            window.goTo(1)
+                        }
+                    }
+                    SettingsPage {}
                 }
             }
-        }
-
-        StackLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            currentIndex: window.pageIndex
-
-            OverviewPage {}
-
-            AddDosePage {
-                id: addPage
-                onSaved: {
-                    window.editingDose = null;
-                    window.pageIndex = 0;
-                }
-            }
-
-            HistoryPage {
-                onEditRequested: function(dose) {
-                    window.editingDose = dose;
-                    addPage.loadDose(dose);
-                    window.pageIndex = 1;
-                }
-            }
-
-            SettingsPage {}
         }
     }
 
-    footer: Rectangle {
-        height: 34
-        color: "#0b1015"
-
-        Text {
-            anchors.fill: parent
-            anchors.leftMargin: 24
-            anchors.rightMargin: 24
-            verticalAlignment: Text.AlignVCenter
-            text: app.status
-            color: "#8a98a8"
-            elide: Text.ElideRight
-            font.pixelSize: 12
-        }
+    LanguagePicker { anchors.fill: parent }
+    Toast {
+        id: toast
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 24
     }
 }

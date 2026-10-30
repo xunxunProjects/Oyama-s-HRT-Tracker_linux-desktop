@@ -4,96 +4,167 @@ import QtQuick.Layouts
 
 Item {
     id: page
+    Layout.fillWidth: true
+    Layout.fillHeight: true
+
+    property var pendingDelete: null
+
     signal editRequested(var dose)
+    signal addRequested()
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: 28
-        spacing: 14
+        anchors.margins: Theme.pageMargin
+        spacing: 24
 
-        Label {
-            text: qsTr("History")
-            font.pixelSize: 30
-            font.bold: true
-            color: "#f4f6f8"
-        }
-        Label {
-            text: qsTr("Doses recorded for %1 mode. Edit or delete an entry.").arg(app.mode)
-            color: "#8a98a8"
-            font.pixelSize: 13
+        PageHeader {
+            title: T.t("history.title")
+            subtitle: T.t("history.subtitle", [T.t("mode." + app.mode)])
+            Layout.fillWidth: true
         }
 
-        Rectangle {
+        Text {
+            Layout.fillWidth: true
+            text: T.t("history.count", [app.doses.length])
+            color: Theme.textMuted
+            font.family: Theme.fontFamily
+            font.pixelSize: Theme.fontLabel
+        }
+
+        Card {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            radius: 14
-            color: "#182028"
-            border.color: "#26313c"
+            spacing: 0
 
             ListView {
                 id: list
-                anchors.fill: parent
-                anchors.margins: 12
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: app.doses.length > 0
                 clip: true
-                spacing: 8
+                spacing: 4
                 model: app.doses
 
                 delegate: Rectangle {
+                    id: row
                     required property var modelData
+
                     width: list.width
-                    height: 66
-                    radius: 10
-                    color: "#111820"
-                    border.color: "#26313c"
+                    height: 64
+                    radius: Theme.radiusControl
+                    color: hover.hovered ? Theme.surfaceHover : "transparent"
+
+                    HoverHandler { id: hover }
 
                     RowLayout {
                         anchors.fill: parent
-                        anchors.leftMargin: 16
-                        anchors.rightMargin: 12
+                        anchors.leftMargin: 4
+                        anchors.rightMargin: 4
                         spacing: 12
 
                         Rectangle {
-                            Layout.preferredWidth: 4
-                            Layout.preferredHeight: 38
-                            radius: 2
-                            color: "#e8a0b4"
+                            implicitWidth: 36
+                            implicitHeight: 36
+                            radius: 18
+                            color: Theme.accentSubtle
+
+                            Icon {
+                                anchors.centerIn: parent
+                                name: "pill"
+                                size: 18
+                                color: Theme.accentInk
+                            }
                         }
 
                         ColumnLayout {
+                            Layout.fillWidth: true
                             spacing: 2
-                            Label {
-                                text: modelData.route + " · " + modelData.ester
-                                color: "#f4f6f8"
-                                font.pixelSize: 15
-                                font.bold: true
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: T.t("route." + row.modelData.route) + " · " +
+                                      T.t("ester." + row.modelData.ester)
+                                color: Theme.text
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontBody
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
                             }
-                            Label {
-                                text: modelData.timeLabel + " · " + Number(modelData.doseMG).toFixed(2) + " mg"
-                                color: "#8a98a8"
-                                font.pixelSize: 12
+
+                            Text {
+                                Layout.fillWidth: true
+                                text: row.modelData.timeLabel + " · " +
+                                      Number(row.modelData.doseMG).toFixed(2) + " mg"
+                                color: Theme.textMuted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontLabel
                             }
                         }
 
-                        Item { Layout.fillWidth: true }
-
-                        Button {
-                            text: qsTr("Edit")
-                            onClicked: page.editRequested(modelData)
+                        AppButton {
+                            implicitWidth: 36
+                            implicitHeight: 36
+                            leftPadding: 0
+                            rightPadding: 0
+                            variant: "ghost"
+                            iconName: "pencil"
+                            Accessible.name: T.t("common.edit")
+                            onClicked: page.editRequested(row.modelData)
                         }
-                        Button {
-                            text: qsTr("Delete")
-                            onClicked: app.removeDose(modelData.id)
+
+                        AppButton {
+                            implicitWidth: 36
+                            implicitHeight: 36
+                            leftPadding: 0
+                            rightPadding: 0
+                            variant: "danger"
+                            iconName: "trash"
+                            Accessible.name: T.t("common.delete")
+                            onClicked: {
+                                page.pendingDelete = row.modelData
+                                confirm.open()
+                            }
                         }
                     }
                 }
+            }
 
-                Label {
-                    anchors.centerIn: parent
-                    visible: list.count === 0
-                    text: qsTr("No doses yet. Add one from the Add dose page.")
-                    color: "#8a98a8"
-                }
+            EmptyState {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                visible: app.doses.length === 0
+                iconName: "pill"
+                title: T.t("history.empty_title")
+                body: T.t("history.empty_body")
+                actionText: T.t("dose.add")
+                actionEnabled: app.backend !== "none"
+                onActionClicked: page.addRequested()
             }
         }
+    }
+
+    ConfirmDialog {
+        id: confirm
+        anchors.fill: parent
+        title: T.t("history.delete_title")
+        body: T.t("history.delete_body")
+        confirmText: T.t("common.delete")
+        onConfirmed: {
+            if (!page.pendingDelete)
+                return
+            const ok = app.removeDose(page.pendingDelete.id)
+            toast.show(app.statusKey ? T.t(app.statusKey, app.statusArgs)
+                                     : app.status, !ok)
+            page.pendingDelete = null
+        }
+        onCancelled: page.pendingDelete = null
+    }
+
+    Toast {
+        id: toast
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        anchors.margins: 24
+        z: 60
     }
 }

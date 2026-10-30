@@ -15,6 +15,7 @@ Makefile
 moc_*.cpp
 qrc_*.cpp
 ui_*.h
+!app/src/ui_preferences.h
 *.qmlc
 *.jsc
 
