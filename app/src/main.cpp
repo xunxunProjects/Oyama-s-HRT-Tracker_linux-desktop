@@ -1,9 +1,11 @@
 #include "app_controller.h"
+#include "ui_preferences.h"
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
+#include <QtQml/qqml.h>
 
 #include <cstdlib>
 
@@ -14,6 +16,8 @@ int main(int argc, char* argv[]) {
     QQuickStyle::setStyle("Basic");
 
     AppController controller;
+    UiPreferences ui;
+    qmlRegisterSingletonInstance("OyamaHrt", 1, 0, "Ui", &ui);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("app", &controller);
 

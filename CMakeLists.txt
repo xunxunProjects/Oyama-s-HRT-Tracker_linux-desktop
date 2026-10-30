@@ -73,19 +73,38 @@ if(OYAMA_BUILD_QT_SHELL)
         qt_standard_project_setup()
         qt_policy(SET QTP0001 NEW)
         qt_policy(SET QTP0004 NEW)
+
+        function(oyama_add_app_assets target)
+            qt_add_resources(${target} "app_i18n"
+                PREFIX "/i18n"
+                BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n"
+                FILES
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/en.json"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/zh.json"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/ru.json"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/fa.json")
+        endfunction()
+
         qt_add_executable(oyama-hrt-app
             app/src/main.cpp
             app/src/app_controller.cpp
-            app/src/app_controller.h)
+            app/src/app_controller.h
+            app/src/ui_preferences.cpp
+            app/src/ui_preferences.h)
+        set(OYAMA_QML_FILES
+            app/qml/Main.qml
+            app/qml/OverviewPage.qml
+            app/qml/AddDosePage.qml
+            app/qml/HistoryPage.qml
+            app/qml/SettingsPage.qml
+            app/qml/T.qml)
+        set_source_files_properties(app/qml/T.qml
+            PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
         qt_add_qml_module(oyama-hrt-app
             URI OyamaHrt
             VERSION 1.0
-            QML_FILES
-                app/qml/Main.qml
-                app/qml/OverviewPage.qml
-                app/qml/AddDosePage.qml
-                app/qml/HistoryPage.qml
-                app/qml/SettingsPage.qml)
+            QML_FILES ${OYAMA_QML_FILES})
+        oyama_add_app_assets(oyama-hrt-app)
         target_link_libraries(oyama-hrt-app PRIVATE
             oyama_storage
             oyama_pk
@@ -101,6 +120,17 @@ if(OYAMA_BUILD_QT_SHELL)
             target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
         endif()
         install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+        qt_add_executable(ui_preferences_test
+            app/tests/ui_preferences_test.cpp
+            app/src/ui_preferences.cpp
+            app/src/ui_preferences.h)
+        target_include_directories(ui_preferences_test PRIVATE app/src)
+        target_link_libraries(ui_preferences_test PRIVATE Qt6::Core Qt6::Gui)
+        oyama_add_app_assets(ui_preferences_test)
+        add_test(NAME ui_preferences_test COMMAND ui_preferences_test)
+        set_tests_properties(ui_preferences_test PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
     else()
         message(STATUS "Qt 6.4+ not found; skipping the Qt/QML shell")
     endif()
