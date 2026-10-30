@@ -97,6 +97,11 @@ ApplicationWindow {
                             addPage.loadDose(dose)
                             window.goTo(1)
                         }
+                        onAddRequested: {
+                            window.editingDose = null
+                            addPage.resetForm()
+                            window.goTo(1)
+                        }
                     }
                     SettingsPage {}
                 }
