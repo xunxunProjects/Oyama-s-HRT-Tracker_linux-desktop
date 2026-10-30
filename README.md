@@ -40,6 +40,18 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
+For the short path on Linux, FreeBSD, or OpenBSD, use the portable wrapper:
+
+```sh
+make            # configure + Release build in build/
+make test
+sudo make install
+```
+
+The package names and platform-specific notes are in
+[`依赖清单.md`](依赖清单.md). OpenBSD is a native build target; its binary is
+not interchangeable with the Linux or FreeBSD builds.
+
 The PK test binary is `build/pk_smoke_test`; the comparison dumper is
 `build/oyama_pk_dump` (see `tools/compare/README.md`). The storage tests are
 `build/storage_test` and `build/backup_test`; the integration CTests start
