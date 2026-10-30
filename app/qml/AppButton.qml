@@ -35,7 +35,7 @@ Button {
     bottomPadding: 0
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
-    opacity: busy ? 0.7 : 1
+    opacity: busy ? 0.7 : (enabled ? 1 : 0.45)
     Accessible.name: text
 
     background: Rectangle {

@@ -8,7 +8,8 @@ Rectangle {
     property int spacing: 12
     property color fill: Theme.surface
     property bool hoverable: false
-    implicitWidth: 320
+    implicitWidth: Math.max(320, layout.implicitWidth + padding * 2)
+    implicitHeight: layout.implicitHeight + padding * 2
     color: hoverable && hover.hovered ? Theme.surfaceHover : fill
     radius: Theme.radiusCard
     Behavior on color { ColorAnimation { duration: Theme.durationTheme } }
