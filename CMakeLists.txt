@@ -107,7 +107,17 @@ if(OYAMA_BUILD_QT_SHELL)
             app/qml/SettingsPage.qml
             app/qml/T.qml
             app/qml/Theme.qml
-            app/qml/Icon.qml)
+            app/qml/Icon.qml
+            app/qml/Card.qml
+            app/qml/NavItem.qml
+            app/qml/AppButton.qml
+            app/qml/AppTextField.qml
+            app/qml/AppComboBox.qml
+            app/qml/PageHeader.qml
+            app/qml/StatCard.qml
+            app/qml/EmptyState.qml
+            app/qml/Toast.qml
+            app/qml/ConfirmDialog.qml)
         set_source_files_properties(app/qml/T.qml
             PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
         set_source_files_properties(app/qml/Theme.qml
