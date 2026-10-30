@@ -83,6 +83,14 @@ if(OYAMA_BUILD_QT_SHELL)
                   "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/zh.json"
                   "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/ru.json"
                   "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/fa.json")
+            qt_add_resources(${target} "app_fonts"
+                PREFIX "/fonts"
+                BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts"
+                FILES
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts/InterVariable.ttf"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts/Vazirmatn-Regular.ttf"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts/Vazirmatn-Medium.ttf"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts/Vazirmatn-SemiBold.ttf")
         endfunction()
 
         qt_add_executable(oyama-hrt-app
@@ -97,8 +105,12 @@ if(OYAMA_BUILD_QT_SHELL)
             app/qml/AddDosePage.qml
             app/qml/HistoryPage.qml
             app/qml/SettingsPage.qml
-            app/qml/T.qml)
+            app/qml/T.qml
+            app/qml/Theme.qml
+            app/qml/Icon.qml)
         set_source_files_properties(app/qml/T.qml
+            PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+        set_source_files_properties(app/qml/Theme.qml
             PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
         qt_add_qml_module(oyama-hrt-app
             URI OyamaHrt
@@ -114,6 +126,7 @@ if(OYAMA_BUILD_QT_SHELL)
             Qt6::Quick
             Qt6::QuickControls2)
         target_compile_definitions(oyama-hrt-app PRIVATE
+            OYAMA_APP_VERSION="${PROJECT_VERSION}"
             OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
             OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
         if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")

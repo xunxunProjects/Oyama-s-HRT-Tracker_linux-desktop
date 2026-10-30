@@ -103,6 +103,17 @@ int main(int argc, char** argv) {
         return fail("expected four available languages");
     }
 
+    for (const QString& path : {QStringLiteral(":/fonts/InterVariable.ttf"),
+                               QStringLiteral(":/fonts/Vazirmatn-Regular.ttf"),
+                               QStringLiteral(":/fonts/Vazirmatn-Medium.ttf"),
+                               QStringLiteral(":/fonts/Vazirmatn-SemiBold.ttf")}) {
+        if (!QFile::exists(path)) {
+            std::cerr << "ui_preferences_test: missing " << path.toStdString()
+                      << '\n';
+            return 1;
+        }
+    }
+
     std::cout << "ui_preferences_test: ok\n";
     return 0;
 }

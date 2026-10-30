@@ -1,6 +1,8 @@
 #include "app_controller.h"
 #include "ui_preferences.h"
 
+#include <QDebug>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -13,6 +15,15 @@ int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName("Oyama's HRT Tracker");
     QGuiApplication::setOrganizationName("Oyama");
+    QGuiApplication::setApplicationVersion(OYAMA_APP_VERSION);
+    for (const QString& path : {QStringLiteral(":/fonts/InterVariable.ttf"),
+                                QStringLiteral(":/fonts/Vazirmatn-Regular.ttf"),
+                                QStringLiteral(":/fonts/Vazirmatn-Medium.ttf"),
+                                QStringLiteral(":/fonts/Vazirmatn-SemiBold.ttf")}) {
+        if (QFontDatabase::addApplicationFont(path) < 0) {
+            qWarning() << "Could not load font" << path;
+        }
+    }
     QQuickStyle::setStyle("Basic");
 
     AppController controller;
