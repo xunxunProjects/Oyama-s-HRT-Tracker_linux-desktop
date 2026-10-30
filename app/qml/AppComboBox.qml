@@ -64,6 +64,8 @@ ComboBox {
             boundsBehavior: Flickable.StopAtBounds
             delegate: ItemDelegate {
                 id: entry
+                required property var model
+                required property int index
                 width: ListView.view.width
                 height: 36
                 text: root.textRole ? model[root.textRole] : modelData

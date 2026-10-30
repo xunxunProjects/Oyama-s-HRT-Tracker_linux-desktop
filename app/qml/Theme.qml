@@ -2,8 +2,10 @@ pragma Singleton
 import QtQuick
 
 QtObject {
-    readonly property bool dark: Ui.theme === "dark" ||
-        (Ui.theme === "system" && Ui.systemDark)
+    // `Ui` is the C++ UiPreferences singleton registered by the app. Keeping the
+    // fallback lets previews and QML component tests load Theme without it.
+    readonly property bool dark: typeof Ui !== "undefined" &&
+        (Ui.theme === "dark" || (Ui.theme === "system" && Ui.systemDark))
 
     readonly property color bg: dark ? "#1F1D1A" : "#EFE6D0"
     readonly property color sidebar: dark ? "#1B1917" : "#F5EDDF"
@@ -43,7 +45,7 @@ QtObject {
     readonly property int durationTheme: 240
     readonly property int durationSuccess: 320
 
-    readonly property string fontFamily: Ui.fontFamily
+    readonly property string fontFamily: typeof Ui !== "undefined" ? Ui.fontFamily : "Inter"
     readonly property int pageMargin: 40
     readonly property int cardPadding: 20
 }

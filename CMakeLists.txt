@@ -156,6 +156,23 @@ if(OYAMA_BUILD_QT_SHELL)
         add_test(NAME ui_preferences_test COMMAND ui_preferences_test)
         set_tests_properties(ui_preferences_test PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+        if(TARGET Qt6::qmake)
+            get_target_property(_oyama_qmake Qt6::qmake IMPORTED_LOCATION)
+            if(_oyama_qmake)
+                get_filename_component(_oyama_qt_bin_dir "${_oyama_qmake}" DIRECTORY)
+            endif()
+        endif()
+        find_program(OYAMA_QMLTESTRUNNER NAMES qmltestrunner
+            HINTS "${_oyama_qt_bin_dir}")
+        if(OYAMA_QMLTESTRUNNER)
+            add_test(NAME qml_components
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/app/tests/run_qml_tests.sh
+                        ${CMAKE_CURRENT_BINARY_DIR}
+                        ${OYAMA_QMLTESTRUNNER})
+            set_tests_properties(qml_components PROPERTIES
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        endif()
     else()
         message(STATUS "Qt 6.4+ not found; skipping the Qt/QML shell")
     endif()

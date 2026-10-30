@@ -19,7 +19,6 @@ Button {
         color: root.selected
             ? Theme.surfacePressed
             : root.hovered ? Theme.surfaceHover : "transparent"
-        Behavior on color { ColorAnimation { duration: Theme.durationHover } }
     }
 
     contentItem: RowLayout {
