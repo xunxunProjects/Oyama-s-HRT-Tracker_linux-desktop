@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(oyama_hrt_linux_desktop
-    VERSION 0.1.1
+    VERSION 0.1.2
     DESCRIPTION "Oyama's HRT Tracker - Linux/BSD desktop"
     LANGUAGES C CXX)
 
