@@ -213,8 +213,16 @@ void AppController::setMode(const QString& mode) {
     reload();
 }
 
-void AppController::fail(const QString& message) {
+void AppController::setStatus(const QString& key, const QString& message,
+                              const QStringList& args) {
+    status_key_ = key;
+    status_args_ = args;
     status_ = message;
+}
+
+void AppController::fail(const QString& key, const QString& message,
+                         const QStringList& args) {
+    setStatus(key, message, args);
     doses_.clear();
     curve_.clear();
     current_e2_ = 0.0;
@@ -236,7 +244,7 @@ void AppController::reload() {
         const auto config = oyama::storage::load_app_config();
         if (!config.has_value()) {
             backend_ = "none";
-            fail("No database configured. Run `oyama-hrt-cli db setup`.");
+            fail("status.no_database", "No database configured. Run `oyama-hrt-cli db setup`.");
             return;
         }
         app_config_ = *config;
@@ -254,7 +262,7 @@ void AppController::reload() {
         settings_ = SettingsRepository(database_->connection()).get();
         const auto parsed_mode = oyama::storage::parse_mode(mode_.toStdString());
         if (!parsed_mode.has_value()) {
-            fail("Invalid mode: " + mode_);
+            fail("status.invalid_mode", "Invalid mode: " + mode_, {mode_});
             return;
         }
         auto events = DoseEventRepository(database_->connection())
@@ -272,11 +280,13 @@ void AppController::reload() {
             doses_.append(item);
         }
         compute_curve(events);
-        status_ = "Connected to " + QString::fromStdString(app_config_.dbname) +
-                  " via " + backend_;
+        setStatus("status.connected",
+                  "Connected to " + QString::fromStdString(app_config_.dbname) +
+                      " via " + backend_,
+                  {QString::fromStdString(app_config_.dbname), backend_});
         emit changed();
     } catch (const std::exception& error) {
-        fail(QString("Database error: ") + QString::fromUtf8(error.what()));
+        fail("status.database_error", QString("Database error: ") + QString::fromUtf8(error.what()), {QString::fromUtf8(error.what())});
     }
 }
 
@@ -368,20 +378,20 @@ bool AppController::addDose(const QString& route, const QString& ester,
                             double dose_mg, double time_h,
                             const QVariantMap& extras) {
     if (!database_) {
-        fail("Database is not connected.");
+        fail("status.db_not_connected", "Database is not connected.");
         return false;
     }
     if (!std::isfinite(dose_mg) || dose_mg <= 0.0 || !std::isfinite(time_h)) {
-        fail("Enter a valid dose and time.");
+        fail("status.invalid_dose_time", "Enter a valid dose and time.");
         return false;
     }
     const auto parsed_mode = oyama::storage::parse_mode(mode_.toStdString());
     if (!parsed_mode.has_value()) {
-        fail("Invalid mode.");
+        fail("status.invalid_mode_plain", "Invalid mode.");
         return false;
     }
     if (!route_from(route).has_value() || !ester_from(ester).has_value()) {
-        fail("Unsupported route or ester.");
+        fail("status.unsupported_route", "Unsupported route or ester.");
         return false;
     }
     try {
@@ -397,11 +407,11 @@ bool AppController::addDose(const QString& route, const QString& ester,
         event.updated_at = event.created_at;
         DoseEventRepository(database_->connection()).upsert(event);
         reload();
-        status_ = "Dose added.";
+        setStatus("status.dose_added", "Dose added.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
-        fail(QString("Could not add dose: ") + QString::fromUtf8(error.what()));
+        fail("status.add_failed", QString("Could not add dose: ") + QString::fromUtf8(error.what()), {QString::fromUtf8(error.what())});
         return false;
     }
 }
@@ -410,22 +420,22 @@ bool AppController::updateDose(const QString& id, const QString& route,
                                const QString& ester, double dose_mg,
                                double time_h, const QVariantMap& extras) {
     if (!database_) {
-        fail("No database is open.");
+        fail("status.no_db_open", "No database is open.");
         return false;
     }
     if (!std::isfinite(dose_mg) || dose_mg <= 0.0) {
-        fail("Dose must be greater than zero.");
+        fail("status.dose_positive", "Dose must be greater than zero.");
         return false;
     }
     if (!std::isfinite(time_h) || time_h <= 0.0) {
-        fail("Dose time is invalid.");
+        fail("status.invalid_time", "Dose time is invalid.");
         return false;
     }
     const auto mode = oyama::storage::parse_mode(mode_.toStdString());
     const auto route_value = route_from(route);
     const auto ester_value = ester_from(ester);
     if (!mode || !route_value || !ester_value) {
-        fail("Invalid mode, route, or ester.");
+        fail("status.invalid_combination", "Invalid mode, route, or ester.");
         return false;
     }
 
@@ -433,7 +443,7 @@ bool AppController::updateDose(const QString& id, const QString& route,
         DoseEventRepository repository(database_->connection());
         auto existing = repository.get(id.toStdString());
         if (!existing.has_value()) {
-            fail("Dose not found.");
+            fail("status.dose_not_found", "Dose not found.");
             return false;
         }
         existing->mode = *mode;
@@ -445,11 +455,11 @@ bool AppController::updateDose(const QString& id, const QString& route,
         existing->updated_at = now_ms();
         repository.upsert(*existing);
         reload();
-        status_ = "Dose updated.";
+        setStatus("status.dose_updated", "Dose updated.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
-        fail(QString("Could not update dose: %1").arg(error.what()));
+        fail("status.update_failed", QString("Could not update dose: %1").arg(error.what()), {QString::fromUtf8(error.what())});
         return false;
     }
 }
@@ -459,26 +469,26 @@ bool AppController::saveSettings(double weight, int birth_year,
                                  const QString& calibration_history,
                                  const QString& pk_params_json) {
     if (!database_) {
-        fail("No database is open.");
+        fail("status.no_db_open", "No database is open.");
         return false;
     }
     if (!std::isfinite(weight) || weight <= 0.0) {
-        fail("Body weight must be greater than zero.");
+        fail("status.weight_positive", "Body weight must be greater than zero.");
         return false;
     }
     if (birth_year != 0 && (birth_year < 1900 || birth_year > 2200)) {
-        fail("Birth year must be between 1900 and 2200, or 0 to unset.");
+        fail("status.birth_year_range", "Birth year must be between 1900 and 2200, or 0 to unset.");
         return false;
     }
     const std::string method = calibration_method.toStdString();
     if (method != "off" && method != "ekf" && method != "ou_kalman" &&
         method != "mipd") {
-        fail("Invalid calibration method.");
+        fail("status.invalid_calibration", "Invalid calibration method.");
         return false;
     }
     const std::string history = calibration_history.toStdString();
     if (history != "forward" && history != "retrospective") {
-        fail("Invalid calibration history mode.");
+        fail("status.invalid_history", "Invalid calibration history mode.");
         return false;
     }
 
@@ -501,11 +511,11 @@ bool AppController::saveSettings(double weight, int birth_year,
         settings.updated_at = now_ms();
         repository.save(settings);
         reload();
-        status_ = "Settings saved.";
+        setStatus("status.settings_saved", "Settings saved.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
-        fail(QString("Could not save settings: %1").arg(error.what()));
+        fail("status.save_failed", QString("Could not save settings: %1").arg(error.what()), {QString::fromUtf8(error.what())});
         return false;
     }
 }
@@ -532,19 +542,21 @@ QString AppController::pkParamsJson() const {
 
 bool AppController::removeDose(const QString& id) {
     if (!database_) {
-        fail("Database is not connected.");
+        fail("status.db_not_connected", "Database is not connected.");
         return false;
     }
     try {
         (void)DoseEventRepository(database_->connection())
             .remove(id.toStdString());
         reload();
-        status_ = "Dose removed.";
+        setStatus("status.dose_removed", "Dose removed.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
-        fail(QString("Could not remove dose: ") +
-             QString::fromUtf8(error.what()));
+        fail("status.remove_failed",
+             QString("Could not remove dose: ") +
+                 QString::fromUtf8(error.what()),
+             {QString::fromUtf8(error.what())});
         return false;
     }
 }

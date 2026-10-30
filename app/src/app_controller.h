@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -13,6 +14,8 @@
 class AppController : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(QString statusKey READ statusKey NOTIFY changed)
+    Q_PROPERTY(QStringList statusArgs READ statusArgs NOTIFY changed)
     Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)
     Q_PROPERTY(QString backend READ backend NOTIFY changed)
     Q_PROPERTY(QVariantList doses READ doses NOTIFY changed)
@@ -31,6 +34,8 @@ public:
     ~AppController() override;
 
     [[nodiscard]] QString status() const { return status_; }
+    [[nodiscard]] QString statusKey() const { return status_key_; }
+    [[nodiscard]] QStringList statusArgs() const { return status_args_; }
     [[nodiscard]] QString mode() const { return mode_; }
     [[nodiscard]] QString backend() const { return backend_; }
     [[nodiscard]] QVariantList doses() const { return doses_; }
@@ -66,7 +71,10 @@ signals:
     void modeChanged();
 
 private:
-    void fail(const QString& message);
+    void setStatus(const QString& key, const QString& message,
+                   const QStringList& args = {});
+    void fail(const QString& key, const QString& message,
+              const QStringList& args = {});
     void load_data();
     void compute_curve(const std::vector<oyama::storage::DoseEvent>& events);
 
@@ -76,6 +84,8 @@ private:
     oyama::storage::Settings settings_;
 
     QString status_{"Starting..."};
+    QString status_key_;
+    QStringList status_args_;
     QString mode_{"transfem"};
     QString backend_{"none"};
     QVariantList doses_;

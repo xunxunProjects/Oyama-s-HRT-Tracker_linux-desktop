@@ -25,6 +25,10 @@ int main(int argc, char** argv) {
                   << controller.status().toStdString() << '\n';
         return fail("controller did not connect to the test database");
     }
+    if (controller.statusKey() != "status.connected" ||
+        controller.statusArgs().size() != 2) {
+        return fail("connected status key/args are wrong");
+    }
     if (std::abs(controller.weight() - 70.0) > 1e-9) {
         return fail("unset weight should fall back to 70 kg");
     }
@@ -38,6 +42,9 @@ int main(int argc, char** argv) {
                   << controller.status().toStdString() << '\n';
         return 1;
     }
+    if (controller.statusKey() != "status.settings_saved") {
+        return fail("settings status key is wrong");
+    }
     if (std::abs(controller.weight() - 68.5) > 1e-9 ||
         controller.birthYear() != 1991 ||
         controller.calibrationMethod() != "mipd" ||
@@ -47,10 +54,17 @@ int main(int argc, char** argv) {
     }
 
     const double now = controller.nowHours();
+    if (controller.addDose("oral", "E2", 0.0, now - 24.0, {}) ||
+        controller.statusKey() != "status.invalid_dose_time") {
+        return fail("invalid dose did not set the expected status key");
+    }
     if (!controller.addDose("oral", "E2", 2.0, now - 24.0, {})) {
         std::cerr << "addDose failed: "
                   << controller.status().toStdString() << '\n';
         return 1;
+    }
+    if (controller.statusKey() != "status.dose_added") {
+        return fail("add status key is wrong");
     }
     if (controller.doses().size() != 1) {
         return fail("expected exactly one dose");
@@ -67,11 +81,18 @@ int main(int argc, char** argv) {
 
     QVariantMap extras;
     extras.insert("sublingualTier", 2);
+    if (controller.updateDose(id, "sublingual", "EV", 0.0, now - 24.0, {}) ||
+        controller.statusKey() != "status.dose_positive") {
+        return fail("invalid update did not set the expected status key");
+    }
     if (!controller.updateDose(id, "sublingual", "EV", 4.0, now - 24.0,
                                extras)) {
         std::cerr << "updateDose failed: "
                   << controller.status().toStdString() << '\n';
         return 1;
+    }
+    if (controller.statusKey() != "status.dose_updated") {
+        return fail("update status key is wrong");
     }
     if (controller.doses().size() != 1) {
         return fail("editing must not create a second dose");
@@ -91,6 +112,9 @@ int main(int argc, char** argv) {
     }
     if (!controller.doses().isEmpty()) {
         return fail("dose was not removed");
+    }
+    if (controller.statusKey() != "status.dose_removed") {
+        return fail("remove status key is wrong");
     }
 
     std::cout << "app_controller_test: ok\n";
