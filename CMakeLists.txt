@@ -101,25 +101,52 @@ if(OYAMA_BUILD_QT_SHELL)
             app/src/ui_preferences.h)
         set(OYAMA_QML_FILES
             app/qml/Main.qml
+            app/qml/Sidebar.qml
+            app/qml/NavItem.qml
+            app/qml/FirstRun.qml
             app/qml/OverviewPage.qml
-            app/qml/AddDosePage.qml
             app/qml/HistoryPage.qml
             app/qml/SettingsPage.qml
+            app/qml/SubPage.qml
+            app/qml/ModeSettings.qml
+            app/qml/WeightSettings.qml
+            app/qml/AgeSettings.qml
+            app/qml/CalibrationSettings.qml
+            app/qml/ParamsSettings.qml
+            app/qml/LanguageSettings.qml
+            app/qml/AppearanceSettings.qml
+            app/qml/DisclaimerPage.qml
+            app/qml/DoseForm.qml
+            app/qml/DateTimePicker.qml
+            app/qml/HormoneChart.qml
+            app/qml/DoseHeatmap.qml
+            app/qml/LevelRail.qml
+            app/qml/Reading.qml
             app/qml/T.qml
             app/qml/Theme.qml
+            app/qml/UiText.qml
             app/qml/Icon.qml
-            app/qml/Card.qml
-            app/qml/NavItem.qml
+            app/qml/Doodle.qml
+            app/qml/Tick.qml
             app/qml/AppButton.qml
             app/qml/AppTextField.qml
-            app/qml/AppComboBox.qml
+            app/qml/AppScrollBar.qml
+            app/qml/LineField.qml
+            app/qml/FigureField.qml
+            app/qml/InkRule.qml
+            app/qml/ChoiceField.qml
+            app/qml/ChoiceRow.qml
+            app/qml/SettingsRow.qml
+            app/qml/GroupHeading.qml
+            app/qml/Hairline.qml
+            app/qml/Fold.qml
+            app/qml/InlinePrompt.qml
             app/qml/PageHeader.qml
-            app/qml/StatCard.qml
-            app/qml/EmptyState.qml
-            app/qml/Toast.qml
-            app/qml/ConfirmDialog.qml
-            app/qml/Sidebar.qml
-            app/qml/LanguagePicker.qml)
+            app/qml/PageColumn.qml
+            app/qml/Segmented.qml
+            app/qml/Tabs.qml
+            app/qml/Drawings.js
+            app/qml/Doses.js)
         set_source_files_properties(app/qml/T.qml
             PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
         set_source_files_properties(app/qml/Theme.qml
@@ -127,7 +154,8 @@ if(OYAMA_BUILD_QT_SHELL)
         qt_add_qml_module(oyama-hrt-app
             URI OyamaHrt
             VERSION 1.0
-            QML_FILES ${OYAMA_QML_FILES})
+            QML_FILES ${OYAMA_QML_FILES}
+            RESOURCES app/assets/app-icon.png)
         oyama_add_app_assets(oyama-hrt-app)
         target_link_libraries(oyama-hrt-app PRIVATE
             oyama_storage

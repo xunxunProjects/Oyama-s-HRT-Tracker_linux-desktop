@@ -4,39 +4,32 @@
 #include <QDebug>
 #include <QFontDatabase>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QImage>
+#include <QMouseEvent>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickStyle>
 #include <QQuickWindow>
+#include <QSurfaceFormat>
 #include <QTimer>
 #include <QtQml/qqml.h>
 
 #include <cstdlib>
 
-namespace {
-int pageIndexFor(const QString& name) {
-    if (name == "overview") {
-        return 0;
-    }
-    if (name == "add") {
-        return 1;
-    }
-    if (name == "history") {
-        return 2;
-    }
-    if (name == "settings") {
-        return 3;
-    }
-    return -1;
-}
-}  // namespace
-
 int main(int argc, char* argv[]) {
+    // The interface is drawn lines (Qt Quick Shapes): multisampling keeps
+    // their edges smooth on the default renderer.
+    QSurfaceFormat format = QSurfaceFormat::defaultFormat();
+    format.setSamples(4);
+    QSurfaceFormat::setDefaultFormat(format);
+
     QGuiApplication app(argc, argv);
     QGuiApplication::setApplicationName("Oyama's HRT Tracker");
     QGuiApplication::setOrganizationName("Oyama");
     QGuiApplication::setApplicationVersion(OYAMA_APP_VERSION);
+    QGuiApplication::setWindowIcon(
+        QIcon(QStringLiteral(":/qt/qml/OyamaHrt/app/assets/app-icon.png")));
 
     QString screenshotPath;
     QString pageName = "overview";
@@ -77,12 +70,20 @@ int main(int argc, char* argv[]) {
     if (!screenshotPath.isEmpty()) {
         auto* window =
             qobject_cast<QQuickWindow*>(engine.rootObjects().constFirst());
-        const int pageIndex = pageIndexFor(pageName);
-        QTimer::singleShot(700, &app, [window, pageIndex, screenshotPath, &app]() {
-            if (window != nullptr && pageIndex >= 0) {
-                window->setProperty("pageIndex", pageIndex);
+        QTimer::singleShot(700, &app, [window, pageName, screenshotPath, &app]() {
+            if (window != nullptr) {
+                QMetaObject::invokeMethod(window, "openRoute",
+                                          Q_ARG(QVariant, QVariant(pageName)));
             }
-            QTimer::singleShot(400, &app, [window, screenshotPath]() {
+            // The offscreen pointer rests at the window's corner, over the
+            // sidebar, which opens while it is pointed at. Move it away.
+            if (window != nullptr) {
+                const QPointF away(window->width() / 2.0, window->height() - 4);
+                QMouseEvent move(QEvent::MouseMove, away, window->mapToGlobal(away),
+                                 Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+                QCoreApplication::sendEvent(window, &move);
+            }
+            QTimer::singleShot(1400, &app, [window, screenshotPath]() {
                 if (window != nullptr) {
                     const QImage image = window->grabWindow();
                     if (image.isNull() || !image.save(screenshotPath)) {

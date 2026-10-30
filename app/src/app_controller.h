@@ -65,6 +65,8 @@ public:
     Q_INVOKABLE bool removeDose(const QString& id);
     [[nodiscard]] Q_INVOKABLE double nowHours() const;
     [[nodiscard]] Q_INVOKABLE QString formatTime(double time_h) const;
+    // The model's parameter defaults, by the keys pkParamsJson uses.
+    [[nodiscard]] Q_INVOKABLE QVariantMap pkDefaults() const;
 
 signals:
     void changed();

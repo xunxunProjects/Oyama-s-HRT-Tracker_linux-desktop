@@ -15,6 +15,7 @@ class UiPreferences : public QObject {
     Q_PROPERTY(QVariantMap strings READ strings NOTIFY languageChanged)
     Q_PROPERTY(QVariantList availableLanguages READ availableLanguages CONSTANT)
     Q_PROPERTY(bool needsLanguage READ needsLanguage NOTIFY languageChanged)
+    Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)
 
 public:
     explicit UiPreferences(QObject* parent = nullptr);
@@ -29,6 +30,8 @@ public:
     QVariantMap strings() const;
     QVariantList availableLanguages() const;
     bool needsLanguage() const;
+    QString mode() const;
+    void setMode(const QString& mode);
 
     Q_INVOKABLE QString translate(const QString& key,
                                   const QVariantList& args = {}) const;
@@ -38,6 +41,7 @@ signals:
     void languageChanged();
     void themeChanged();
     void systemDarkChanged();
+    void modeChanged();
 
 private:
     static bool validLanguage(const QString& code);
@@ -47,6 +51,7 @@ private:
 
     QString language_;
     QString theme_{"light"};
+    QString mode_;
     QVariantMap strings_;
     QVariantMap fallbackStrings_;
 };

@@ -189,6 +189,12 @@ oyama_pk_params pk_params_from_json(const QString& text) {
     return params;
 }
 
+// A patch removal records only when the patch came off, as upstream does: it
+// has no amount of its own. Every other route needs a dose above zero.
+bool dose_allowed(const QString& route, double dose_mg) {
+    return route == "patchRemove" ? dose_mg >= 0.0 : dose_mg > 0.0;
+}
+
 std::int64_t now_ms() {
     return QDateTime::currentMSecsSinceEpoch();
 }
@@ -355,7 +361,10 @@ void AppController::compute_curve(const std::vector<DoseEvent>& events) {
         if (oyama_pk_simulate(&request, &result) != OYAMA_PK_OK) {
             return;
         }
-        const std::size_t stride = std::max<std::size_t>(1, n / 700);
+        // The model steps about once an hour. Keep that resolution for the
+        // timeline (a 7-day window needs it for a daily pill's peaks), thinning
+        // only very long histories.
+        const std::size_t stride = std::max<std::size_t>(1, n / 10000);
         for (std::size_t i = 0; i < n; i += stride) {
             QVariantMap point;
             point["t"] = time[i];
@@ -381,7 +390,8 @@ bool AppController::addDose(const QString& route, const QString& ester,
         fail("status.db_not_connected", "Database is not connected.");
         return false;
     }
-    if (!std::isfinite(dose_mg) || dose_mg <= 0.0 || !std::isfinite(time_h)) {
+    if (!std::isfinite(dose_mg) || !dose_allowed(route, dose_mg) ||
+        !std::isfinite(time_h)) {
         fail("status.invalid_dose_time", "Enter a valid dose and time.");
         return false;
     }
@@ -423,7 +433,7 @@ bool AppController::updateDose(const QString& id, const QString& route,
         fail("status.no_db_open", "No database is open.");
         return false;
     }
-    if (!std::isfinite(dose_mg) || dose_mg <= 0.0) {
+    if (!std::isfinite(dose_mg) || !dose_allowed(route, dose_mg)) {
         fail("status.dose_positive", "Dose must be greater than zero.");
         return false;
     }
@@ -518,6 +528,36 @@ bool AppController::saveSettings(double weight, int birth_year,
         fail("status.save_failed", QString("Could not save settings: %1").arg(error.what()), {QString::fromUtf8(error.what())});
         return false;
     }
+}
+
+QVariantMap AppController::pkDefaults() const {
+    oyama_pk_params params{};
+    oyama_pk_params_defaults(&params);
+    return {
+        {"e2_kClear", params.e2_kClear},
+        {"e2_kClearInj", params.e2_kClearInj},
+        {"e2_ff_EB", params.e2_ff_EB},
+        {"e2_ff_EV", params.e2_ff_EV},
+        {"e2_ff_EC", params.e2_ff_EC},
+        {"e2_ff_EN", params.e2_ff_EN},
+        {"e2_ff_EU", params.e2_ff_EU},
+        {"e2_oral_bio", params.e2_oral_bio},
+        {"e2_sl_quick", params.e2_sl_quick},
+        {"e2_sl_casual", params.e2_sl_casual},
+        {"e2_sl_standard", params.e2_sl_standard},
+        {"e2_sl_strict", params.e2_sl_strict},
+        {"e2_gel_arm", params.e2_gel_arm},
+        {"e2_gel_thigh", params.e2_gel_thigh},
+        {"e2_gel_scrotal", params.e2_gel_scrotal},
+        {"t_kClear", params.t_kClear},
+        {"t_kClearInj", params.t_kClearInj},
+        {"t_ff_TC", params.t_ff_TC},
+        {"t_ff_TE", params.t_ff_TE},
+        {"t_ff_TU", params.t_ff_TU},
+        {"t_gel_arm", params.t_gel_arm},
+        {"t_gel_thigh", params.t_gel_thigh},
+        {"t_gel_scrotal", params.t_gel_scrotal},
+    };
 }
 
 double AppController::weight() const {

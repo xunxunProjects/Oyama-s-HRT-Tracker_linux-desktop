@@ -6,114 +6,98 @@ ApplicationWindow {
     id: window
     width: 1200
     height: 800
-    minimumWidth: 980
-    minimumHeight: 680
+    minimumWidth: 760
+    minimumHeight: 560
     visible: true
     title: T.t("app.name")
     color: Theme.bg
     LayoutMirroring.enabled: T.rtl
     LayoutMirroring.childrenInherit: true
 
+    // 0 Overview, 1 History, 2 Settings. A tab chosen in the sidebar is
+    // simply there; only a page reached from another one moves in.
     property int pageIndex: 0
-    property var editingDose: null
-    property real pageOpacity: 1
-    property real pageOffset: 0
+    // The intro runs once, before the app, until it is finished: choosing a
+    // language on its first step must not end it.
+    property bool firstRun: false
 
-    function goTo(index) {
-        if (index === pageIndex) return
-        pageOpacity = 0
-        pageOffset = 8
-        pageIndex = index
-        pageAnim.restart()
+    Component.onCompleted: {
+        firstRun = Ui.needsLanguage
+        if (Ui.mode !== "")
+            app.mode = Ui.mode
     }
 
-    ParallelAnimation {
-        id: pageAnim
-        NumberAnimation { target: window; property: "pageOpacity"; from: 0; to: 1; duration: Theme.durationPage; easing.type: Easing.OutCubic }
-        NumberAnimation { target: window; property: "pageOffset"; from: 8; to: 0; duration: Theme.durationPage; easing.type: Easing.OutCubic }
+    Connections {
+        target: app
+        function onModeChanged() { Ui.mode = app.mode }
+    }
+
+    // Where the app opens, for screenshots and tests: overview, history,
+    // add, history/edit, history/delete, settings, settings/<page> or
+    // first-run.
+    function openRoute(name) {
+        const parts = String(name).split("/")
+        if (parts[0] === "first-run") {
+            firstRun = true
+            return
+        }
+        firstRun = false
+        if (parts[0] === "history" || parts[0] === "add") {
+            pageIndex = 1
+            if (parts[0] === "add")
+                historyPage.openAdd()
+            else if (parts.length > 1)
+                historyPage.openFirst(parts[1] === "delete")
+        } else if (parts[0] === "settings") {
+            pageIndex = 2
+            settingsPage.open(parts.length > 1 ? parts[1] : "")
+        } else {
+            pageIndex = 0
+        }
     }
 
     RowLayout {
         anchors.fill: parent
         spacing: 0
+        visible: !window.firstRun
+
         Sidebar {
             Layout.fillHeight: true
             currentIndex: window.pageIndex
             onNavigate: function(index) {
-                if (index === 1) addPage.resetForm()
-                window.goTo(index)
+                if (index === window.pageIndex && index === 2)
+                    settingsPage.open("")
+                window.pageIndex = index
             }
         }
-        Item {
+
+        StackLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 0
-                Rectangle {
-                    visible: app.backend === "none"
-                    Layout.fillWidth: true
-                    Layout.leftMargin: Theme.pageMargin
-                    Layout.rightMargin: Theme.pageMargin
-                    Layout.topMargin: 20
-                    height: 48
-                    radius: Theme.radiusControl
-                    color: Theme.accentSubtle
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.margins: 12
-                        Icon { name: "database"; size: 18; color: Theme.accentInk }
-                        Text {
-                            Layout.fillWidth: true
-                            text: T.t("db.banner")
-                            color: Theme.accentInk
-                            font.family: Theme.fontFamily
-                            font.pixelSize: Theme.fontLabel
-                            wrapMode: Text.Wrap
-                        }
-                    }
+            currentIndex: window.pageIndex
+
+            OverviewPage {
+                id: overviewPage
+                onLogRequested: {
+                    window.pageIndex = 1
+                    historyPage.openAdd()
                 }
-                StackLayout {
-                    currentIndex: window.pageIndex
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    opacity: window.pageOpacity
-                    transform: Translate { y: window.pageOffset }
-                    OverviewPage {
-                        id: overviewPage
-                        onViewAllRequested: window.goTo(2)
-                        onAddRequested: window.goTo(1)
-                    }
-                    AddDosePage {
-                        id: addPage
-                        onSaved: {
-                            window.editingDose = null
-                            window.goTo(0)
-                        }
-                    }
-                    HistoryPage {
-                        onEditRequested: function(dose) {
-                            window.editingDose = dose
-                            addPage.loadDose(dose)
-                            window.goTo(1)
-                        }
-                        onAddRequested: {
-                            window.editingDose = null
-                            addPage.resetForm()
-                            window.goTo(1)
-                        }
-                    }
-                    SettingsPage {}
-                }
+            }
+
+            HistoryPage {
+                id: historyPage
+            }
+
+            SettingsPage {
+                id: settingsPage
+                onIntroRequested: window.firstRun = true
             }
         }
     }
 
-    LanguagePicker { anchors.fill: parent }
-    Toast {
-        id: toast
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        anchors.margins: 24
+    FirstRun {
+        anchors.fill: parent
+        visible: window.firstRun
+        onFinished: window.firstRun = false
     }
 }

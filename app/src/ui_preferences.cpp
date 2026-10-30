@@ -2,6 +2,7 @@
 
 #include <QFile>
 #include <QFont>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -32,6 +33,11 @@ UiPreferences::UiPreferences(QObject* parent) : QObject(parent) {
         theme = QSettings().value("ui/theme", "light").toString();
     }
     theme_ = validTheme(theme) ? theme : QStringLiteral("light");
+
+    const QString mode = QSettings().value("ui/mode").toString();
+    if (mode == "transfem" || mode == "transmasc") {
+        mode_ = mode;
+    }
 
     if (auto* app = qobject_cast<QGuiApplication*>(QCoreApplication::instance())) {
         app->setFont(QFont(fontFamily(), 11));
@@ -78,6 +84,17 @@ bool UiPreferences::systemDark() const {
     return false;
 }
 
+QString UiPreferences::mode() const { return mode_; }
+
+void UiPreferences::setMode(const QString& mode) {
+    if ((mode != "transfem" && mode != "transmasc") || mode == mode_) {
+        return;
+    }
+    mode_ = mode;
+    QSettings().setValue("ui/mode", mode);
+    emit modeChanged();
+}
+
 bool UiPreferences::rtl() const { return language_ == "fa"; }
 
 QString UiPreferences::fontFamily() const {
@@ -87,7 +104,11 @@ QString UiPreferences::fontFamily() const {
     if (language_ == "zh") {
         return QStringLiteral("Noto Sans CJK SC");
     }
-    return QStringLiteral("Inter");
+    // The bundled variable font names its family "Inter Variable"; a system
+    // Inter, where that is what is installed, is plain "Inter".
+    static const bool variable =
+        QFontDatabase::families().contains(QStringLiteral("Inter Variable"));
+    return variable ? QStringLiteral("Inter Variable") : QStringLiteral("Inter");
 }
 
 QVariantMap UiPreferences::strings() const { return strings_; }
