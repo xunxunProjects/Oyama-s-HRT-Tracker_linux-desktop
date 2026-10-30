@@ -117,7 +117,9 @@ if(OYAMA_BUILD_QT_SHELL)
             app/qml/StatCard.qml
             app/qml/EmptyState.qml
             app/qml/Toast.qml
-            app/qml/ConfirmDialog.qml)
+            app/qml/ConfirmDialog.qml
+            app/qml/Sidebar.qml
+            app/qml/LanguagePicker.qml)
         set_source_files_properties(app/qml/T.qml
             PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
         set_source_files_properties(app/qml/Theme.qml
@@ -235,6 +237,21 @@ if(BUILD_TESTING)
         add_test(NAME qt_shell_smoke COMMAND oyama-hrt-app --self-test)
         set_tests_properties(qt_shell_smoke PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;OYAMA_CONFIG_FILE=${CMAKE_CURRENT_BINARY_DIR}/qt-shell-smoke-no-config")
+
+        foreach(locale en zh ru fa)
+            add_test(NAME qt_shell_smoke_${locale}
+                COMMAND oyama-hrt-app --self-test)
+            set_tests_properties(qt_shell_smoke_${locale} PROPERTIES
+                ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;OYAMA_UI_LANGUAGE=${locale};OYAMA_CONFIG_FILE=${CMAKE_CURRENT_BINARY_DIR}/qt-shell-smoke-no-config")
+        endforeach()
+
+        file(REMOVE_RECURSE "${CMAKE_CURRENT_BINARY_DIR}/qt-first-run")
+        add_test(NAME qt_shell_smoke_first_run
+            COMMAND oyama-hrt-app --self-test)
+        set_tests_properties(qt_shell_smoke_first_run PROPERTIES
+            ENVIRONMENT
+            "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;XDG_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/qt-first-run;OYAMA_CONFIG_FILE=${CMAKE_CURRENT_BINARY_DIR}/qt-shell-smoke-no-config")
 
         add_executable(app_controller_test
             app/tests/app_controller_test.cpp
