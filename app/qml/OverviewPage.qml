@@ -1,262 +1,336 @@
 import QtQuick
-import QtQuick.Controls
 import QtQuick.Layouts
 
 Item {
     id: page
+    Layout.fillWidth: true
+    Layout.fillHeight: true
 
-    component StatCard: Rectangle {
-        id: card
-        property string label
-        property string value
-        property string unit
-        property color accent: "#e8a0b4"
-        Layout.fillWidth: true
-        Layout.preferredHeight: 112
-        radius: 16
-        color: "#151c23"
-        border.width: 1
-        border.color: "#24313c"
+    signal viewAllRequested()
+    signal addRequested()
 
-        ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 18
-            spacing: 2
-            Label {
-                text: card.label
-                color: "#8492a0"
-                font.pixelSize: 11
-                font.letterSpacing: 1.0
-            }
-            Item { Layout.fillHeight: true }
-            RowLayout {
-                spacing: 6
-                Label {
-                    text: card.value
-                    color: "#f4f6f8"
-                    font.pixelSize: 30
-                    font.weight: Font.DemiBold
-                }
-                Label {
-                    text: card.unit
-                    color: card.accent
-                    font.pixelSize: 12
-                    Layout.alignment: Qt.AlignBottom
-                    Layout.bottomMargin: 6
-                }
-            }
-        }
-    }
-
-    ScrollView {
+    Flickable {
         anchors.fill: parent
+        contentWidth: width
+        contentHeight: content.implicitHeight + Theme.pageMargin * 2
         clip: true
-        contentWidth: availableWidth
+        boundsBehavior: Flickable.StopAtBounds
 
         ColumnLayout {
-            width: page.width
-            spacing: 18
-            anchors.margins: 28
-            Layout.leftMargin: 28
-            Layout.rightMargin: 28
-            Layout.topMargin: 24
-            Layout.bottomMargin: 24
+            id: content
+            x: Theme.pageMargin
+            y: Theme.pageMargin
+            width: page.width - Theme.pageMargin * 2
+            spacing: 24
 
-            RowLayout {
+            PageHeader {
+                title: T.t("overview.title")
+                subtitle: T.t("overview.subtitle")
                 Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.topMargin: 24
-                ColumnLayout {
-                    spacing: 2
-                    Label {
-                        text: "Overview"
-                        color: "#f4f6f8"
-                        font.pixelSize: 26
-                        font.weight: Font.DemiBold
-                    }
-                    Label {
-                        text: "Current exposure and the modeled curve for this mode."
-                        color: "#7f8c9a"
-                        font.pixelSize: 12
-                    }
-                }
-                Item { Layout.fillWidth: true }
-                Label {
-                    text: app.mode
-                    color: "#e8a0b4"
-                    font.pixelSize: 12
-                }
             }
 
             RowLayout {
                 Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                spacing: 14
+                spacing: 16
+
                 StatCard {
-                    label: "ESTRADIOL"
+                    Layout.fillWidth: true
+                    label: T.t("overview.e2")
                     value: app.currentE2.toFixed(1)
                     unit: "pg/mL"
+                    accentColor: Theme.accent
                 }
+
                 StatCard {
-                    label: "CYPROTERONE"
+                    Layout.fillWidth: true
+                    label: T.t("overview.cpa")
                     value: app.currentCPA.toFixed(2)
                     unit: "ng/mL"
-                    accent: "#9ec5a7"
+                    accentColor: Theme.green
                 }
+
                 StatCard {
-                    label: "TESTOSTERONE"
+                    Layout.fillWidth: true
+                    label: T.t("overview.t")
                     value: app.currentT.toFixed(1)
                     unit: "ng/dL"
-                    accent: "#c6b6e8"
+                    accentColor: Theme.brick
                 }
             }
 
-            Rectangle {
+            Card {
                 Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.preferredHeight: 340
-                radius: 18
-                color: "#151c23"
-                border.width: 1
-                border.color: "#24313c"
+                Layout.preferredHeight: 420
+                spacing: 8
 
                 ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 4
-                    Label {
-                        text: "Modeled concentration"
-                        color: "#f4f6f8"
-                        font.pixelSize: 15
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: 8
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: T.t("overview.chart_title")
+                        color: Theme.text
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSection
                         font.weight: Font.DemiBold
                     }
-                    Label {
-                        text: "E2 curve from the local C99 model. Times are local."
-                        color: "#7f8c9a"
-                        font.pixelSize: 11
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: T.t("overview.chart_subtitle")
+                        color: Theme.textMuted
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontLabel
+                        wrapMode: Text.Wrap
                     }
+
                     Canvas {
                         id: chart
                         Layout.fillWidth: true
                         Layout.fillHeight: true
-                        Layout.topMargin: 8
+                        Layout.minimumHeight: 320
+                        visible: app.curve.length >= 2
+
                         onPaint: {
-                            var ctx = getContext("2d");
-                            ctx.clearRect(0, 0, width, height);
-                            var points = app.curve;
-                            if (!points || points.length < 2) {
-                                ctx.fillStyle = "#677684";
-                                ctx.font = "13px sans-serif";
-                                ctx.fillText("No doses yet. Add one to see the curve.",
-                                             16, height / 2);
-                                return;
-                            }
-                            var left = 48, right = 12, top = 10, bottom = 30;
-                            var plotW = Math.max(10, width - left - right);
-                            var plotH = Math.max(10, height - top - bottom);
-                            var minT = points[0].t, maxT = points[points.length - 1].t;
-                            var maxY = 0;
-                            for (var i = 0; i < points.length; i++) {
-                                maxY = Math.max(maxY, points[i].e2);
-                            }
-                            if (maxT <= minT) maxT = minT + 1;
-                            maxY = Math.max(1, maxY * 1.15);
+                            var ctx = getContext("2d")
+                            ctx.clearRect(0, 0, width, height)
+                            ctx.fillStyle = Theme.surface
+                            ctx.fillRect(0, 0, width, height)
 
-                            ctx.strokeStyle = "#24313c";
-                            ctx.lineWidth = 1;
-                            ctx.fillStyle = "#677684";
-                            ctx.font = "10px sans-serif";
+                            var points = app.curve
+                            if (!points || points.length < 2)
+                                return
+
+                            var left = 48
+                            var right = 16
+                            var top = 12
+                            var bottom = 32
+                            var plotW = Math.max(10, width - left - right)
+                            var plotH = Math.max(10, height - top - bottom)
+                            var minT = points[0].t
+                            var maxT = points[points.length - 1].t
+                            var maxE2 = 0
+                            for (var i = 0; i < points.length; i++)
+                                maxE2 = Math.max(maxE2, points[i].e2)
+                            if (maxT <= minT)
+                                maxT = minT + 1
+                            maxE2 = Math.max(10, Math.ceil(maxE2 / 10) * 10)
+
+                            ctx.strokeStyle = Theme.chartGrid
+                            ctx.lineWidth = 1
+                            ctx.fillStyle = Theme.textMuted
+                            ctx.font = "11px sans-serif"
+                            ctx.textAlign = "right"
+                            ctx.textBaseline = "middle"
                             for (var g = 0; g <= 4; g++) {
-                                var gy = top + plotH * g / 4;
-                                ctx.beginPath();
-                                ctx.moveTo(left, gy);
-                                ctx.lineTo(left + plotW, gy);
-                                ctx.stroke();
-                                var value = maxY * (1 - g / 4);
-                                ctx.fillText(value.toFixed(0), 4, gy + 3);
+                                var gy = top + plotH * g / 4
+                                ctx.beginPath()
+                                ctx.moveTo(left, gy)
+                                ctx.lineTo(left + plotW, gy)
+                                ctx.stroke()
+                                var value = maxE2 * (1 - g / 4)
+                                ctx.fillText(value.toFixed(0), left - 8, gy)
                             }
-                            ctx.strokeStyle = "#5b6b7a";
-                            ctx.beginPath();
-                            ctx.moveTo(left, top);
-                            ctx.lineTo(left, top + plotH);
-                            ctx.lineTo(left + plotW, top + plotH);
-                            ctx.stroke();
 
-                            ctx.strokeStyle = "#e8a0b4";
-                            ctx.lineWidth = 2.5;
-                            ctx.lineJoin = "round";
-                            ctx.beginPath();
+                            function xFor(t) {
+                                return left + (t - minT) / (maxT - minT) * plotW
+                            }
+                            function yFor(e2) {
+                                return top + (1 - e2 / maxE2) * plotH
+                            }
+
+                            ctx.beginPath()
+                            ctx.moveTo(xFor(points[0].t), top + plotH)
+                            for (var f = 0; f < points.length; f++)
+                                ctx.lineTo(xFor(points[f].t), yFor(points[f].e2))
+                            ctx.lineTo(xFor(points[points.length - 1].t),
+                                       top + plotH)
+                            ctx.closePath()
+                            ctx.save()
+                            ctx.globalAlpha = 0.10
+                            ctx.fillStyle = Theme.chartLine
+                            ctx.fill()
+                            ctx.restore()
+
+                            ctx.strokeStyle = Theme.chartLine
+                            ctx.lineWidth = 2.5
+                            ctx.lineCap = "round"
+                            ctx.lineJoin = "round"
+                            ctx.beginPath()
                             for (var j = 0; j < points.length; j++) {
-                                var x = left + (points[j].t - minT) /
-                                        (maxT - minT) * plotW;
-                                var y = top + (1 - points[j].e2 / maxY) * plotH;
-                                if (j === 0) ctx.moveTo(x, y);
-                                else ctx.lineTo(x, y);
+                                var x = xFor(points[j].t)
+                                var y = yFor(points[j].e2)
+                                if (j === 0)
+                                    ctx.moveTo(x, y)
+                                else
+                                    ctx.lineTo(x, y)
                             }
-                            ctx.stroke();
+                            ctx.stroke()
 
-                            ctx.fillStyle = "#677684";
-                            ctx.font = "10px sans-serif";
-                            ctx.fillText(app.formatTime(minT), left, height - 8);
-                            ctx.fillText(app.formatTime(maxT), left + plotW - 92,
-                                         height - 8);
+                            ctx.fillStyle = Theme.textMuted
+                            ctx.font = "11px sans-serif"
+                            ctx.textBaseline = "alphabetic"
+                            ctx.textAlign = "left"
+                            ctx.fillText(app.formatTime(points[0].t), left,
+                                         height - 8)
+                            ctx.textAlign = "right"
+                            ctx.fillText(
+                                app.formatTime(points[points.length - 1].t),
+                                left + plotW, height - 8)
+                            ctx.textAlign = "left"
                         }
+
                         Connections {
                             target: app
                             function onChanged() { chart.requestPaint() }
+                        }
+
+                        Connections {
+                            target: Theme
+                            function onDarkChanged() { chart.requestPaint() }
+                        }
+                    }
+
+                    Item {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        Layout.minimumHeight: 320
+                        visible: app.curve.length < 2
+
+                        ColumnLayout {
+                            anchors.centerIn: parent
+                            spacing: 8
+
+                            Text {
+                                Layout.alignment: Qt.AlignHCenter
+                                text: T.t("overview.chart_empty")
+                                color: Theme.textMuted
+                                font.family: Theme.fontFamily
+                                font.pixelSize: Theme.fontBody
+                                horizontalAlignment: Text.AlignHCenter
+                                wrapMode: Text.Wrap
+                            }
+
+                            AppButton {
+                                Layout.alignment: Qt.AlignHCenter
+                                text: T.t("overview.add_cta")
+                                variant: "ghost"
+                                enabled: app.backend !== "none"
+                                onClicked: page.addRequested()
+                            }
                         }
                     }
                 }
             }
 
-            ColumnLayout {
+            Card {
                 Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.bottomMargin: 28
-                spacing: 8
-                Label {
-                    text: "Recent doses"
-                    color: "#f4f6f8"
-                    font.pixelSize: 15
-                    font.weight: Font.DemiBold
-                }
-                Label {
-                    visible: app.doses.length === 0
-                    text: "No doses recorded for this mode."
-                    color: "#7f8c9a"
-                    font.pixelSize: 12
-                }
-                Repeater {
-                    model: Math.min(app.doses.length, 5)
-                    delegate: Rectangle {
+                spacing: 12
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 12
+
+                    Text {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: 44
-                        radius: 10
-                        color: "#11171d"
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 14
-                            anchors.rightMargin: 14
-                            Label {
-                                text: app.doses[index].route + " · " +
-                                      app.doses[index].ester
-                                color: "#d8e0e7"
-                                font.pixelSize: 12
-                            }
-                            Item { Layout.fillWidth: true }
-                            Label {
-                                text: app.doses[index].doseMG + " mg"
-                                color: "#e8a0b4"
-                                font.pixelSize: 12
-                            }
-                            Label {
-                                text: app.doses[index].timeLabel
-                                color: "#677684"
-                                font.pixelSize: 11
+                        text: T.t("overview.recent")
+                        color: Theme.text
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.fontSection
+                        font.weight: Font.DemiBold
+                    }
+
+                    AppButton {
+                        text: T.t("common.view_all")
+                        variant: "ghost"
+                        onClicked: page.viewAllRequested()
+                    }
+                }
+
+                EmptyState {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 240
+                    visible: app.doses.length === 0
+                    iconName: "pill"
+                    title: T.t("overview.recent_empty")
+                    body: ""
+                    actionText: T.t("overview.add_cta")
+                    actionEnabled: app.backend !== "none"
+                    onActionClicked: page.addRequested()
+                }
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    visible: app.doses.length > 0
+
+                    Repeater {
+                        model: Math.min(app.doses.length, 5)
+
+                        delegate: Rectangle {
+                            id: doseRow
+                            required property int index
+                            property var dose: app.doses[index]
+
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: 56
+                            color: "transparent"
+
+                            RowLayout {
+                                anchors.fill: parent
+                                spacing: 12
+
+                                Rectangle {
+                                    implicitWidth: 36
+                                    implicitHeight: 36
+                                    radius: 18
+                                    color: Theme.accentSubtle
+
+                                    Icon {
+                                        anchors.centerIn: parent
+                                        name: "pill"
+                                        size: 18
+                                        color: Theme.accentInk
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 2
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: doseRow.dose
+                                              ? T.t("route." + doseRow.dose.route) + " · " +
+                                                T.t("ester." + doseRow.dose.ester)
+                                              : ""
+                                        color: Theme.text
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontBody
+                                        font.weight: Font.Medium
+                                        elide: Text.ElideRight
+                                    }
+
+                                    Text {
+                                        Layout.fillWidth: true
+                                        text: doseRow.dose ? doseRow.dose.timeLabel : ""
+                                        color: Theme.textMuted
+                                        font.family: Theme.fontFamily
+                                        font.pixelSize: Theme.fontLabel
+                                    }
+                                }
+
+                                Text {
+                                    text: doseRow.dose
+                                          ? Number(doseRow.dose.doseMG).toFixed(2) + " mg"
+                                          : ""
+                                    color: Theme.accent
+                                    font.family: Theme.fontFamily
+                                    font.pixelSize: Theme.fontBody
+                                    font.weight: Font.Medium
+                                }
                             }
                         }
                     }

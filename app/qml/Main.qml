@@ -79,7 +79,11 @@ ApplicationWindow {
                     Layout.fillHeight: true
                     opacity: window.pageOpacity
                     transform: Translate { y: window.pageOffset }
-                    OverviewPage { id: overviewPage }
+                    OverviewPage {
+                        id: overviewPage
+                        onViewAllRequested: window.goTo(2)
+                        onAddRequested: window.goTo(1)
+                    }
                     AddDosePage {
                         id: addPage
                         onSaved: {
