@@ -1,145 +1,113 @@
 import QtQuick
 import QtQuick.Layouts
 
-Rectangle {
+// With a mouse the sidebar rests as a strip of drawings and opens over the
+// page while it is pointed at, or while a key has moved focus into it. The
+// strip only holds its room in the layout; the panel inside it is what
+// widens, so the page never reflows under the pointer.
+Item {
     id: root
     property int currentIndex: 0
     signal navigate(int index)
 
-    Layout.preferredWidth: 236
-    Layout.fillHeight: true
-    color: Theme.sidebar
-    LayoutMirroring.enabled: T.rtl
-    LayoutMirroring.childrenInherit: true
+    readonly property bool opened: hover.hovered || panel.activeFocus || focusInside
+    property bool focusInside: false
 
+    Layout.preferredWidth: Theme.railWidth
+    Layout.fillHeight: true
+    z: 40
+
+    HoverHandler { id: hover }
+
+    // Anchored rather than placed, so in a right-to-left language the strip
+    // sits at the right edge and opens leftwards over the page.
     Rectangle {
-        width: 1
-        anchors.right: parent.right
+        id: panel
+        anchors.left: parent.left
         anchors.top: parent.top
         anchors.bottom: parent.bottom
-        color: Theme.border
-    }
+        width: root.opened ? Theme.sidebarWidth : Theme.railWidth
+        color: Theme.bgSubtle
+        clip: true
+        Behavior on width {
+            NumberAnimation { duration: Theme.durationSlow; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easeOut }
+        }
 
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 12
-        spacing: 4
+        Rectangle {
+            anchors.right: parent.right
+            width: Theme.hairline
+            height: parent.height
+            color: Theme.border
+        }
 
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.topMargin: 12
-            Layout.bottomMargin: 12
-            spacing: 10
+        ColumnLayout {
+            anchors.left: parent.left
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            width: Theme.sidebarWidth
+            spacing: 0
 
-            Rectangle {
-                implicitWidth: 36
-                implicitHeight: 36
-                radius: 10
-                color: Theme.accentSubtle
+            // The app icon in a rounded tile, then the name. The tile is the
+            // drawings' size and centred over them, so it stays in line with
+            // them in the narrow strip too.
+            Row {
+                Layout.leftMargin: 22
+                Layout.topMargin: 24
+                Layout.bottomMargin: 20
+                spacing: 14
 
-                Text {
-                    anchors.centerIn: parent
-                    text: "O"
-                    color: Theme.accentInk
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 18
-                    font.weight: Font.DemiBold
+                Image {
+                    width: 36
+                    height: 36
+                    source: "../assets/app-icon.png"
+                    smooth: true
+                    mipmap: true
+                }
+
+                Row {
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 4
+                    opacity: root.opened ? 1 : 0
+                    Behavior on opacity {
+                        NumberAnimation { duration: Theme.durationBase; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easeOut }
+                    }
+
+                    UiText {
+                        text: "Oyama"
+                        font.weight: Font.DemiBold
+                        font.letterSpacing: -0.3
+                    }
+                    UiText {
+                        text: "Tracker"
+                        color: Theme.textMuted
+                        font.letterSpacing: -0.3
+                    }
                 }
             }
 
-            ColumnLayout {
-                spacing: 0
+            Repeater {
+                model: [
+                    { key: "nav.home", doodle: "house" },
+                    { key: "nav.history", doodle: "notebook" },
+                    { key: "nav.settings", doodle: "gear" }
+                ]
 
-                Text {
-                    text: "Oyama"
-                    color: Theme.text
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 15
-                    font.weight: Font.DemiBold
+                delegate: NavItem {
+                    required property int index
+                    required property var modelData
+                    Layout.leftMargin: 12
+                    Layout.bottomMargin: 4
+                    Layout.preferredWidth: (root.opened ? Theme.sidebarWidth : Theme.railWidth) - 24
+                    text: T.t(modelData.key)
+                    doodle: modelData.doodle
+                    showLabel: root.opened
+                    selected: root.currentIndex === index
+                    onClicked: root.navigate(index)
+                    onActiveFocusChanged: root.focusInside = activeFocus && focusReason === Qt.TabFocusReason
                 }
-
-                Text {
-                    text: "Tracker"
-                    color: Theme.textMuted
-                    font.family: Theme.fontFamily
-                    font.pixelSize: 11
-                }
             }
 
-            Item { Layout.fillWidth: true }
+            Item { Layout.fillHeight: true }
         }
-
-        Repeater {
-            model: [
-                { key: "overview", icon: "home" },
-                { key: "add_dose", icon: "plus-circle" },
-                { key: "history", icon: "list" },
-                { key: "settings", icon: "sliders" }
-            ]
-
-            delegate: NavItem {
-                required property int index
-                required property var modelData
-                Layout.fillWidth: true
-                text: T.t("nav." + modelData.key)
-                iconName: modelData.icon
-                selected: root.currentIndex === index
-                onClicked: root.navigate(index)
-            }
-        }
-
-        Item { Layout.fillHeight: true }
-
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 6
-
-            AppButton {
-                Layout.fillWidth: true
-                text: T.t("mode.transfem")
-                variant: app.mode === "transfem" ? "primary" : "ghost"
-                onClicked: app.mode = "transfem"
-            }
-
-            AppButton {
-                Layout.fillWidth: true
-                text: T.t("mode.transmasc")
-                variant: app.mode === "transmasc" ? "primary" : "ghost"
-                onClicked: app.mode = "transmasc"
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            Layout.topMargin: 8
-            spacing: 8
-
-            Rectangle {
-                implicitWidth: 8
-                implicitHeight: 8
-                radius: 4
-                color: app.backend === "none" ? Theme.textFaint : Theme.green
-            }
-
-            Text {
-                text: T.t(app.backend === "none" ? "status.not_connected" : "status.local_socket")
-                color: Theme.textMuted
-                font.family: Theme.fontFamily
-                font.pixelSize: Theme.fontCaption
-                elide: Text.ElideRight
-                Layout.fillWidth: true
-            }
-        }
-
-        AppButton {
-            Layout.fillWidth: true
-            Layout.topMargin: 8
-            variant: "ghost"
-            iconName: Theme.dark ? "sun" : "moon"
-            Accessible.name: T.t("theme.label")
-            onClicked: Ui.theme = Theme.dark ? "light" : "dark"
-        }
-
-        Item { Layout.preferredHeight: 16 }
     }
 }

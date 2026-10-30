@@ -1,341 +1,366 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
+// The overview: the current estimated level as a large light figure, a tick
+// scale with the target band and where today sits on it, then the timeline.
+// With nothing logged it is the capsule, one line and the way to log a dose.
 Item {
     id: page
-    Layout.fillWidth: true
-    Layout.fillHeight: true
+    signal logRequested()
 
-    signal viewAllRequested()
-    signal addRequested()
+    readonly property bool transmasc: app.mode === "transmasc"
+    readonly property bool hasDoses: app.doses.length > 0
+    readonly property bool hasCPA: !transmasc && app.doses.some(function(d) { return d.ester === "CPA" })
+    property bool explainerOpen: false
+    property string range: "7d"
+
+    // The reading the page is about, with its band, and the one beside it.
+    readonly property var primary: transmasc
+        ? { label: T.t("label.total_t"), value: app.currentT, decimals: 0, unit: "ng/dL",
+            band: { low: 300, high: 1000 }, domain: [30, 3000] }
+        : { label: T.t("label.e2"), value: app.currentE2, decimals: 1, unit: "pg/mL",
+            band: { low: 100, high: 200 }, domain: [10, 1000] }
+    readonly property var companion: transmasc
+        ? (app.currentT > 0 ? { label: "", value: app.currentT / 28.842, decimals: 1, unit: "nmol/L" } : null)
+        : (hasCPA ? { label: T.t("label.cpa_chart"), value: app.currentCPA >= 0.1 ? app.currentCPA : 0,
+                      decimals: 1, unit: "ng/mL" } : null)
+
+    // Where the reading sits, said in words over its tick.
+    readonly property var status: {
+        if (transmasc) {
+            const c = app.currentT
+            if (c <= 0) return null
+            if (c > 1000) return { key: "status.level.t_high", tone: Theme.warning }
+            if (c >= 600) return { key: "status.level.t_upper", tone: Theme.statusPositive }
+            if (c >= 300) return { key: "status.level.t_male", tone: Theme.statusPositive }
+            if (c >= 100) return { key: "status.level.t_subtarget", tone: Theme.statusViolet }
+            return { key: "status.level.t_low", tone: Theme.statusNeutral }
+        }
+        const e = app.currentE2
+        if (e <= 0) return null
+        if (e > 300) return { key: "status.level.high", tone: Theme.warning }
+        if (e >= 100 && e <= 200) return { key: "status.level.mtf", tone: Theme.statusPositive }
+        if (e >= 70) return { key: "status.level.luteal", tone: Theme.statusInfo }
+        if (e >= 30) return { key: "status.level.follicular", tone: Theme.statusViolet }
+        if (e >= 8) return { key: "status.level.male", tone: Theme.statusNeutral }
+        return { key: "status.level.low", tone: Theme.warning }
+    }
+
+    onVisibleChanged: if (visible) chart.play()
+    Component.onCompleted: if (visible) chart.play()
+    Connections {
+        target: app
+        function onChanged() { if (page.visible) chart.play() }
+    }
 
     Flickable {
         anchors.fill: parent
         contentWidth: width
-        contentHeight: content.implicitHeight + Theme.pageMargin * 2
+        contentHeight: body.implicitHeight + 128
         clip: true
         boundsBehavior: Flickable.StopAtBounds
+        visible: page.hasDoses
+        ScrollBar.vertical: AppScrollBar {}
 
         ColumnLayout {
-            id: content
-            x: Theme.pageMargin
-            y: Theme.pageMargin
-            width: page.width - Theme.pageMargin * 2
-            spacing: 24
+            id: body
+            width: parent.width
+            spacing: 0
 
-            PageHeader {
-                title: T.t("overview.title")
-                subtitle: T.t("overview.subtitle")
+            // The header: readings and their scale, a rule under it that runs
+            // the full width of the pane.
+            Item {
                 Layout.fillWidth: true
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 16
-
-                StatCard {
-                    Layout.fillWidth: true
-                    label: T.t("overview.e2")
-                    value: app.currentE2.toFixed(1)
-                    unit: "pg/mL"
-                    accentColor: Theme.accent
-                }
-
-                StatCard {
-                    Layout.fillWidth: true
-                    label: T.t("overview.cpa")
-                    value: app.currentCPA.toFixed(2)
-                    unit: "ng/mL"
-                    accentColor: Theme.green
-                }
-
-                StatCard {
-                    Layout.fillWidth: true
-                    label: T.t("overview.t")
-                    value: app.currentT.toFixed(1)
-                    unit: "ng/dL"
-                    accentColor: Theme.brick
-                }
-            }
-
-            Card {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 420
-                spacing: 8
+                implicitHeight: header.implicitHeight + 24 + 20
 
                 ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    id: header
+                    x: Math.max(Theme.pageGutter, (parent.width - Theme.pageColumn) / 2)
+                    y: 24
+                    width: Math.min(Theme.pageColumn, parent.width - Theme.pageGutter * 2)
+                    spacing: 0
+
+                    // The whole title unfolds the explainer under it.
+                    AbstractButton {
+                        id: estimateTitle
+                        Layout.bottomMargin: 16
+                        implicitWidth: titleRow.implicitWidth
+                        implicitHeight: 22
+                        hoverEnabled: true
+                        focusPolicy: Qt.StrongFocus
+                        Accessible.name: T.t("status.estimate")
+                        onClicked: page.explainerOpen = !page.explainerOpen
+
+                        background: Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: -4
+                            radius: 6
+                            color: "transparent"
+                            border.width: estimateTitle.visualFocus ? 2 : 0
+                            border.color: Theme.focusRing
+                        }
+
+                        contentItem: Row {
+                            id: titleRow
+                            spacing: 6
+                            UiText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: T.t("status.estimate")
+                                color: page.explainerOpen || estimateTitle.hovered ? Theme.text : Theme.textMuted
+                            }
+                            Icon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: "info"
+                                size: 13
+                                color: page.explainerOpen || estimateTitle.hovered ? Theme.text : Theme.textMuted
+                                opacity: estimateTitle.hovered ? 1 : 0.7
+                            }
+                        }
+                    }
+
+                    // What the number is, unfolded in place under the title.
+                    Fold {
+                        open: page.explainerOpen
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.bottomMargin: 20
+                            spacing: 12
+
+                            UiText {
+                                Layout.fillWidth: true
+                                text: T.t("estimate.p1")
+                                color: Theme.textMuted
+                                wrapMode: Text.Wrap
+                                lineHeightMode: Text.ProportionalHeight
+                                lineHeight: 1.15
+                            }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: calloutText.implicitHeight + 24
+                                radius: Theme.radiusMd
+                                color: Theme.surfaceMuted
+                                UiText {
+                                    id: calloutText
+                                    x: 14
+                                    y: 12
+                                    width: parent.width - 28
+                                    text: T.t("estimate.p2")
+                                    font.weight: Font.Medium
+                                    size: Theme.caption
+                                    wrapMode: Text.Wrap
+                                    lineHeightMode: Text.ProportionalHeight
+                                    lineHeight: 1.0
+                                }
+                            }
+                            UiText {
+                                Layout.fillWidth: true
+                                text: T.t("estimate.p3")
+                                color: Theme.textMuted
+                                wrapMode: Text.Wrap
+                                lineHeightMode: Text.ProportionalHeight
+                                lineHeight: 1.15
+                            }
+                            UiText {
+                                Layout.fillWidth: true
+                                text: T.t("estimate.source")
+                                size: Theme.caption
+                                color: Theme.textMuted
+                                wrapMode: Text.Wrap
+                                lineHeightMode: Text.ProportionalHeight
+                                lineHeight: 1.0
+                            }
+                        }
+                    }
+
+                    // The readings: label over number, the second flush right
+                    // at the same size, both on one baseline.
+                    Item {
+                        Layout.fillWidth: true
+                        implicitHeight: 18 + 6 + primaryValue.height
+
+                        UiText {
+                            anchors.left: parent.left
+                            text: page.primary.label
+                            size: Theme.caption
+                            color: Theme.textMuted
+                            font.weight: Font.Medium
+                        }
+
+                        // Readings keep their digits left to right, so they are
+                            // placed by hand on the page's starting side.
+                        Reading {
+                            id: primaryValue
+                            x: T.rtl ? parent.width - width : 0
+                            y: 24
+                            value: page.primary.value
+                            decimals: page.primary.decimals
+                            unit: page.primary.unit
+                        }
+
+                        UiText {
+                            visible: page.companion !== null && page.companion.label !== ""
+                            anchors.right: parent.right
+                            text: page.companion ? page.companion.label : ""
+                            size: Theme.caption
+                            color: Theme.textMuted
+                            font.weight: Font.Medium
+                        }
+
+                        Reading {
+                            visible: page.companion !== null
+                            x: T.rtl ? 0 : parent.width - width
+                            y: 24
+                            value: page.companion ? page.companion.value : 0
+                            decimals: page.companion ? page.companion.decimals : 0
+                            unit: page.companion ? page.companion.unit : ""
+                        }
+                    }
+
+                    LevelRail {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        visible: page.primary.value > 0
+                        value: page.primary.value
+                        band: page.primary.band
+                        domain: page.primary.domain
+                        label: page.status ? T.t(page.status.key) : ""
+                        tone: page.status ? page.status.tone : Theme.statusNeutral
+                    }
+                }
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: Theme.hairline
+                    color: Theme.border
+                }
+            }
+
+            // The timeline.
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: timeline.implicitHeight + 20
+
+                ColumnLayout {
+                    id: timeline
+                    x: Math.max(Theme.pageGutter, (parent.width - Theme.pageColumn) / 2)
+                    y: 20
+                    width: Math.min(Theme.pageColumn, parent.width - Theme.pageGutter * 2)
                     spacing: 8
 
-                    Text {
+                    RowLayout {
                         Layout.fillWidth: true
-                        text: T.t("overview.chart_title")
-                        color: Theme.text
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSection
-                        font.weight: Font.DemiBold
+
+                        UiText {
+                            Layout.fillWidth: true
+                            text: T.t("chart.title")
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: -0.15
+                        }
+
+                        Segmented {
+                            options: [
+                                { value: "7d", label: T.t("chart.range_7d") },
+                                { value: "30d", label: T.t("chart.range_30d") },
+                                { value: "all", label: T.t("chart.range_all") }
+                            ]
+                            currentValue: page.range
+                            onPicked: function(value) { page.range = value }
+                        }
                     }
 
-                    Text {
-                        Layout.fillWidth: true
-                        text: T.t("overview.chart_subtitle")
-                        color: Theme.textMuted
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontLabel
-                        wrapMode: Text.Wrap
-                    }
-
-                    Canvas {
+                    HormoneChart {
                         id: chart
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.minimumHeight: 320
-                        visible: app.curve.length >= 2
-
-                        onPaint: {
-                            var ctx = getContext("2d")
-                            ctx.clearRect(0, 0, width, height)
-                            ctx.fillStyle = Theme.surface
-                            ctx.fillRect(0, 0, width, height)
-
-                            var points = app.curve
-                            if (!points || points.length < 2)
-                                return
-
-                            var left = 48
-                            var right = 16
-                            var top = 12
-                            var bottom = 32
-                            var plotW = Math.max(10, width - left - right)
-                            var plotH = Math.max(10, height - top - bottom)
-                            var minT = points[0].t
-                            var maxT = points[points.length - 1].t
-                            var maxE2 = 0
-                            for (var i = 0; i < points.length; i++)
-                                maxE2 = Math.max(maxE2, points[i].e2)
-                            if (maxT <= minT)
-                                maxT = minT + 1
-                            maxE2 = Math.max(10, Math.ceil(maxE2 / 10) * 10)
-
-                            ctx.strokeStyle = Theme.chartGrid
-                            ctx.lineWidth = 1
-                            ctx.fillStyle = Theme.textMuted
-                            ctx.font = "11px sans-serif"
-                            ctx.textAlign = "right"
-                            ctx.textBaseline = "middle"
-                            for (var g = 0; g <= 4; g++) {
-                                var gy = top + plotH * g / 4
-                                ctx.beginPath()
-                                ctx.moveTo(left, gy)
-                                ctx.lineTo(left + plotW, gy)
-                                ctx.stroke()
-                                var value = maxE2 * (1 - g / 4)
-                                ctx.fillText(value.toFixed(0), left - 8, gy)
-                            }
-
-                            function xFor(t) {
-                                return left + (t - minT) / (maxT - minT) * plotW
-                            }
-                            function yFor(e2) {
-                                return top + (1 - e2 / maxE2) * plotH
-                            }
-
-                            ctx.beginPath()
-                            ctx.moveTo(xFor(points[0].t), top + plotH)
-                            for (var f = 0; f < points.length; f++)
-                                ctx.lineTo(xFor(points[f].t), yFor(points[f].e2))
-                            ctx.lineTo(xFor(points[points.length - 1].t),
-                                       top + plotH)
-                            ctx.closePath()
-                            ctx.save()
-                            ctx.globalAlpha = 0.10
-                            ctx.fillStyle = Theme.chartLine
-                            ctx.fill()
-                            ctx.restore()
-
-                            ctx.strokeStyle = Theme.chartLine
-                            ctx.lineWidth = 2.5
-                            ctx.lineCap = "round"
-                            ctx.lineJoin = "round"
-                            ctx.beginPath()
-                            for (var j = 0; j < points.length; j++) {
-                                var x = xFor(points[j].t)
-                                var y = yFor(points[j].e2)
-                                if (j === 0)
-                                    ctx.moveTo(x, y)
-                                else
-                                    ctx.lineTo(x, y)
-                            }
-                            ctx.stroke()
-
-                            ctx.fillStyle = Theme.textMuted
-                            ctx.font = "11px sans-serif"
-                            ctx.textBaseline = "alphabetic"
-                            ctx.textAlign = "left"
-                            ctx.fillText(app.formatTime(points[0].t), left,
-                                         height - 8)
-                            ctx.textAlign = "right"
-                            ctx.fillText(
-                                app.formatTime(points[points.length - 1].t),
-                                left + plotW, height - 8)
-                            ctx.textAlign = "left"
-                        }
+                        Layout.leftMargin: -24
+                        Layout.rightMargin: -24
+                        Layout.preferredHeight: secondary ? 448 : 384
+                        curve: app.curve
+                        doses: app.doses
+                        transmasc: page.transmasc
+                        secondary: page.hasCPA
+                        range: page.range
+                        nowH: app.nowHours()
+                        primaryLabel: (page.transmasc ? T.t("label.total_t") + " ng/dL" : T.t("label.e2") + " pg/mL")
+                        secondaryLabel: T.t("label.cpa_chart") + " ng/mL"
+                        nowLabel: T.t("time.now")
+                        targetLabel: T.t("chart.target")
+                        sweep: played ? 1 : 0
 
                         Connections {
                             target: app
-                            function onChanged() { chart.requestPaint() }
+                            function onChanged() { chart.nowH = app.nowHours(); chart.requestPaint() }
                         }
-
                         Connections {
-                            target: Theme
-                            function onDarkChanged() { chart.requestPaint() }
+                            target: Ui
+                            function onLanguageChanged() { chart.requestPaint() }
                         }
                     }
 
-                    Item {
+                    DoseHeatmap {
                         Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.minimumHeight: 320
-                        visible: app.curve.length < 2
-
-                        ColumnLayout {
-                            anchors.centerIn: parent
-                            spacing: 8
-
-                            Text {
-                                Layout.alignment: Qt.AlignHCenter
-                                text: T.t("overview.chart_empty")
-                                color: Theme.textMuted
-                                font.family: Theme.fontFamily
-                                font.pixelSize: Theme.fontBody
-                                horizontalAlignment: Text.AlignHCenter
-                                wrapMode: Text.Wrap
-                            }
-
-                            AppButton {
-                                Layout.alignment: Qt.AlignHCenter
-                                text: T.t("overview.add_cta")
-                                variant: "ghost"
-                                enabled: app.backend !== "none"
-                                onClicked: page.addRequested()
-                            }
-                        }
+                        Layout.topMargin: 24
+                        doses: app.doses
                     }
                 }
             }
+        }
+    }
 
-            Card {
-                Layout.fillWidth: true
-                spacing: 12
+    // Nothing logged yet: the capsule, a line, and the way to log a dose.
+    ColumnLayout {
+        visible: !page.hasDoses
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 96
+        width: Math.min(360, parent.width - Theme.pageGutter * 2)
+        spacing: 0
 
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: 12
+        Doodle {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.bottomMargin: 24
+            name: "capsule"
+            size: 96
+        }
 
-                    Text {
-                        Layout.fillWidth: true
-                        text: T.t("overview.recent")
-                        color: Theme.text
-                        font.family: Theme.fontFamily
-                        font.pixelSize: Theme.fontSection
-                        font.weight: Font.DemiBold
-                    }
+        UiText {
+            Layout.fillWidth: true
+            text: T.t("home.empty_title")
+            font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+        }
 
-                    AppButton {
-                        text: T.t("common.view_all")
-                        variant: "ghost"
-                        onClicked: page.viewAllRequested()
-                    }
-                }
+        UiText {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.maximumWidth: 260
+            Layout.topMargin: 4
+            text: T.t("home.empty_subtitle")
+            color: Theme.textMuted
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+        }
 
-                EmptyState {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 240
-                    visible: app.doses.length === 0
-                    iconName: "pill"
-                    title: T.t("overview.recent_empty")
-                    body: ""
-                    actionText: T.t("overview.add_cta")
-                    actionEnabled: app.backend !== "none"
-                    onActionClicked: page.addRequested()
-                }
+        AppButton {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: 20
+            text: T.t("home.empty_cta")
+            enabled: app.backend !== "none"
+            onClicked: page.logRequested()
+        }
 
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-                    visible: app.doses.length > 0
-
-                    Repeater {
-                        model: Math.min(app.doses.length, 5)
-
-                        delegate: Rectangle {
-                            id: doseRow
-                            required property int index
-                            property var dose: app.doses[index]
-
-                            Layout.fillWidth: true
-                            Layout.preferredHeight: 56
-                            color: "transparent"
-
-                            RowLayout {
-                                anchors.fill: parent
-                                spacing: 12
-
-                                Rectangle {
-                                    implicitWidth: 36
-                                    implicitHeight: 36
-                                    radius: 18
-                                    color: Theme.accentSubtle
-
-                                    Icon {
-                                        anchors.centerIn: parent
-                                        name: "pill"
-                                        size: 18
-                                        color: Theme.accentInk
-                                    }
-                                }
-
-                                ColumnLayout {
-                                    Layout.fillWidth: true
-                                    spacing: 2
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: doseRow.dose
-                                              ? T.t("route." + doseRow.dose.route) + " · " +
-                                                T.t("ester." + doseRow.dose.ester)
-                                              : ""
-                                        color: Theme.text
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontBody
-                                        font.weight: Font.Medium
-                                        elide: Text.ElideRight
-                                    }
-
-                                    Text {
-                                        Layout.fillWidth: true
-                                        text: doseRow.dose ? doseRow.dose.timeLabel : ""
-                                        color: Theme.textMuted
-                                        font.family: Theme.fontFamily
-                                        font.pixelSize: Theme.fontLabel
-                                    }
-                                }
-
-                                Text {
-                                    text: doseRow.dose
-                                          ? Number(doseRow.dose.doseMG).toFixed(2) + " mg"
-                                          : ""
-                                    color: Theme.accent
-                                    font.family: Theme.fontFamily
-                                    font.pixelSize: Theme.fontBody
-                                    font.weight: Font.Medium
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+        UiText {
+            Layout.fillWidth: true
+            Layout.topMargin: 16
+            visible: app.backend === "none"
+            text: T.t("db.not_set_up")
+            size: Theme.caption
+            color: Theme.textMuted
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            lineHeightMode: Text.ProportionalHeight
+            lineHeight: 1.0
         }
     }
 }

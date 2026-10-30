@@ -2,48 +2,55 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// A page in the sidebar: its drawing and its name. The current page sits on a
+// filled pill; the rest lift to full text on hover. In the narrow strip each
+// pill is a square with its drawing in the middle.
 Button {
     id: root
-    property string iconName: ""
+    property string doodle: ""
     property bool selected: false
-    implicitHeight: 48
+    property bool showLabel: true
+    implicitHeight: 56
     padding: 0
-    leftPadding: 12
-    rightPadding: 12
+    leftPadding: 10
+    rightPadding: 10
     hoverEnabled: true
     focusPolicy: Qt.StrongFocus
     Accessible.name: text
+    clip: true
+
+    Behavior on Layout.preferredWidth {
+        NumberAnimation { duration: Theme.durationSlow; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easeOut }
+    }
 
     background: Rectangle {
-        radius: Theme.radiusControl
-        color: root.selected
-            ? Theme.surfacePressed
-            : root.hovered ? Theme.surfaceHover : "transparent"
+        radius: Theme.radiusMd
+        color: root.selected ? Theme.surfacePressed
+             : root.hovered ? Theme.surfaceHover : "transparent"
+        border.width: root.visualFocus ? 2 : 0
+        border.color: Theme.focusRing
     }
 
-    contentItem: RowLayout {
-        spacing: 10
+    contentItem: Row {
+        spacing: 14
 
-        Icon {
-            name: root.iconName
-            size: 20
-            color: root.selected ? Theme.accent : Theme.textMuted
+        Doodle {
+            anchors.verticalCenter: parent.verticalCenter
+            name: root.doodle
+            size: 36
         }
 
-        Text {
-            Layout.fillWidth: true
+        UiText {
+            anchors.verticalCenter: parent.verticalCenter
+            width: Theme.sidebarWidth - 24 - 20 - 36 - 14
             text: root.text
             color: root.selected || root.hovered ? Theme.text : Theme.textMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: Theme.fontBody
             font.weight: root.selected ? Font.Medium : Font.Normal
-            verticalAlignment: Text.AlignVCenter
             elide: Text.ElideRight
+            opacity: root.showLabel ? 1 : 0
+            Behavior on opacity {
+                NumberAnimation { duration: Theme.durationBase; easing.type: Easing.BezierSpline; easing.bezierCurve: Theme.easeOut }
+            }
         }
-    }
-
-    scale: down ? 0.98 : 1
-    Behavior on scale {
-        NumberAnimation { duration: 90; easing.type: Easing.OutCubic }
     }
 }

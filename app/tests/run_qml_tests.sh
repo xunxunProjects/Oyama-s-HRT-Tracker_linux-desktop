@@ -18,5 +18,5 @@ mkdir -p "$TMP_DIR/OyamaHrt"
 grep -v '^prefer ' "$BUILD_DIR/OyamaHrt/qmldir" > "$TMP_DIR/OyamaHrt/qmldir"
 ln -s "$REPO_DIR/app" "$TMP_DIR/OyamaHrt/app"
 
-QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen} \
+QT_QUICK_CONTROLS_STYLE=Basic QT_QPA_PLATFORM=${QT_QPA_PLATFORM:-offscreen} \
     "$RUNNER" -input "$SCRIPT_DIR/qml" -import "$TMP_DIR"
