@@ -104,7 +104,9 @@ if(OYAMA_BUILD_QT_SHELL)
         qt_add_executable(oyama-hrt-app
             app/src/main.cpp
             app/src/app_controller.cpp
-            app/src/app_controller.h)
+            app/src/app_controller.h
+            app/src/legacy_migration_worker.cpp
+            app/src/legacy_migration_worker.h)
         qt_add_qml_module(oyama-hrt-app
             URI OyamaHrt
             VERSION 1.0
@@ -333,7 +335,9 @@ if(BUILD_TESTING)
         add_executable(app_controller_test
             app/tests/app_controller_test.cpp
             app/src/app_controller.cpp
-            app/src/app_controller.h)
+            app/src/app_controller.h
+            app/src/legacy_migration_worker.cpp
+            app/src/legacy_migration_worker.h)
         target_include_directories(app_controller_test PRIVATE app/src)
         target_link_libraries(app_controller_test PRIVATE
             oyama_storage
@@ -351,6 +355,27 @@ if(BUILD_TESTING)
             COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/app/tests/run_app_controller_test.sh
                     $<TARGET_FILE:app_controller_test>)
         set_tests_properties(app_controller_test PROPERTIES SKIP_RETURN_CODE 77)
+
+        add_executable(legacy_migration_worker_test
+            app/tests/legacy_migration_worker_test.cpp
+            app/src/legacy_migration_worker.cpp
+            app/src/legacy_migration_worker.h)
+        target_include_directories(legacy_migration_worker_test PRIVATE app/src)
+        target_link_libraries(legacy_migration_worker_test PRIVATE
+            oyama_storage
+            nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
+            Qt6::Core)
+        target_compile_definitions(legacy_migration_worker_test PRIVATE
+            OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
+            OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(legacy_migration_worker_test PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+        add_test(NAME legacy_migration_worker_test
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/app/tests/run_legacy_migration_worker_test.sh
+                    $<TARGET_FILE:legacy_migration_worker_test>)
+        set_tests_properties(legacy_migration_worker_test PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 endif()
 

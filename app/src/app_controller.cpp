@@ -1,7 +1,10 @@
 #include "app_controller.h"
+#include "legacy_migration_worker.h"
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QMetaObject>
+#include <QThread>
 #include <QTimeZone>
 #include <QTimer>
 
@@ -18,6 +21,7 @@
 
 #include <oyama/pk.h>
 #include <oyama/storage/legacy_migration.h>
+#include <oyama/storage/legacy_promotion.h>
 #include <oyama/storage/passphrase.h>
 #include <oyama/storage/vault_dose_event_repository.h>
 #include <oyama/storage/vault_settings_repository.h>
@@ -37,8 +41,12 @@ using oyama::storage::VaultState;
 using oyama::storage::VaultStore;
 
 constexpr int kIdleLockMilliseconds = 15 * 60 * 1000;
-constexpr const char* kLegacyMigrationInstruction =
-    "Legacy data requires migration; run `oyama-hrt-cli db migrate-vault`.";
+constexpr const char* kLegacyMigrationSetupStatus =
+    "Set up a recovery phrase to migrate";
+constexpr const char* kPlaintextWarning =
+    "Deleting the old database directory removes the files this application "
+    "knows about. It does not guarantee erasure on SSDs, copy-on-write "
+    "filesystems, snapshots, RAID, or backups.";
 
 std::filesystem::path migrations_dir() {
     if (const char* value = std::getenv("OYAMA_MIGRATIONS_DIR");
@@ -223,7 +231,12 @@ AppController::AppController(QObject* parent) : QObject(parent) {
     reload();
 }
 
-AppController::~AppController() = default;
+AppController::~AppController() {
+    // A migration owns the old and target clusters.  Wait for it to finish so
+    // the process never exits with a half-written import, then zero the phrase.
+    join_migration_thread();
+    clear_pending_migration_phrase();
+}
 
 void AppController::setMode(const QString& mode) {
     if (mode != "transfem" && mode != "transmasc") {
@@ -307,6 +320,8 @@ void AppController::reload() {
     if (idle_timer_ != nullptr) {
         idle_timer_->stop();
     }
+    join_migration_thread();
+    clear_pending_migration_phrase();
     clear_setup();
     clear_models();
     vault_.reset();
@@ -348,7 +363,9 @@ void AppController::reload() {
             }
             if (app_config_.backend == Backend::Managed) {
                 legacy_pending_ = true;
-                fail(kLegacyMigrationInstruction);
+                set_vault_state("uninitialized");
+                status_ = QString::fromUtf8(kLegacyMigrationSetupStatus);
+                emit changed();
                 return;
             }
             fail("Legacy plaintext data requires the JSON export/import "
@@ -383,10 +400,9 @@ void AppController::reload() {
 }
 
 bool AppController::beginVaultSetup() {
-    if (vault_state_ != "uninitialized" || vault_ == nullptr) {
-        fail(legacy_pending_
-                 ? QString::fromUtf8(kLegacyMigrationInstruction)
-                 : QStringLiteral("Vault setup is not available."));
+    if (vault_state_ != "uninitialized" ||
+        (!legacy_pending_ && vault_ == nullptr)) {
+        fail(QStringLiteral("Vault setup is not available."));
         return false;
     }
     try {
@@ -402,7 +418,12 @@ bool AppController::beginVaultSetup() {
         for (const auto position : positions) {
             setup_challenge_.push_back(position);
         }
-        status_ = "Write down the recovery phrase, then answer the challenge.";
+        status_ = legacy_pending_
+                      ? "Write down the recovery phrase.  The old plaintext "
+                        "data is migrated into a new encrypted vault when you "
+                        "confirm."
+                      : "Write down the recovery phrase, then answer the "
+                        "challenge.";
         emit changed();
         return true;
     } catch (const std::exception& error) {
@@ -415,11 +436,8 @@ bool AppController::beginVaultSetup() {
 
 bool AppController::confirmVaultSetup(const QVariantList& answers,
                                       bool acknowledged) {
-    if (legacy_pending_) {
-        fail(QString::fromUtf8(kLegacyMigrationInstruction));
-        return false;
-    }
-    if (vault_state_ != "uninitialized" || vault_ == nullptr ||
+    if (vault_state_ != "uninitialized" ||
+        (!legacy_pending_ && vault_ == nullptr) ||
         setup_phrase_.isEmpty() || setup_challenge_.empty()) {
         fail("Vault setup is not in progress.");
         return false;
@@ -443,6 +461,21 @@ bool AppController::confirmVaultSetup(const QVariantList& answers,
         status_ = "The challenge words do not match. Try again.";
         emit changed();
         return false;
+    }
+
+    if (legacy_pending_) {
+        pending_migration_phrase_.assign(secret.data(), secret.size());
+        sodium_memzero(secret.data(), secret.size());
+        secret.clear();
+        clear_setup();
+        if (!start_migration_worker()) {
+            clear_pending_migration_phrase();
+            set_vault_busy(false);
+            set_vault_state("uninitialized");
+            fail("Could not start the legacy migration.");
+            return false;
+        }
+        return true;
     }
 
     set_vault_busy(true);
@@ -525,12 +558,18 @@ bool AppController::unlockVault(const QString& phrase) {
 }
 
 void AppController::lockVault() {
+    if (vault_state_ == "migrating" || migration_thread_ != nullptr) {
+        // The worker owns the clusters and the pending phrase.  The destructor
+        // joins the thread and zeroes the phrase before the process exits.
+        return;
+    }
     if (idle_timer_ != nullptr) {
         idle_timer_->stop();
     }
     if (vault_ != nullptr) {
         vault_->lock();
     }
+    clear_pending_migration_phrase();
     clear_setup();
     clear_models();
     if (vault_state_ == "unlocked") {
@@ -546,6 +585,201 @@ bool AppController::require_unlocked() {
         return false;
     }
     return true;
+}
+
+bool AppController::migrationRetryAvailable() const {
+    return legacy_pending_ && vault_state_ == "migrating" &&
+           !vault_busy_ && migration_thread_ == nullptr &&
+           !pending_migration_phrase_.empty();
+}
+
+void AppController::clear_pending_migration_phrase() {
+    if (!pending_migration_phrase_.empty()) {
+        sodium_memzero(pending_migration_phrase_.data(),
+                       pending_migration_phrase_.size());
+        pending_migration_phrase_.clear();
+    }
+}
+
+bool AppController::start_migration_worker() {
+    if (migration_thread_ != nullptr || !legacy_pending_ ||
+        pending_migration_phrase_.empty() ||
+        app_config_.backend != Backend::Managed ||
+        app_config_.data_dir.empty() || app_config_.socket_dir.empty()) {
+        return false;
+    }
+    if (idle_timer_ != nullptr) {
+        idle_timer_->stop();
+    }
+
+    auto* thread = new QThread(this);
+    auto* worker = new LegacyMigrationWorker;
+    worker->moveToThread(thread);
+    connect(worker, &LegacyMigrationWorker::progress, this,
+            &AppController::on_migration_progress, Qt::QueuedConnection);
+    connect(worker, &LegacyMigrationWorker::finished, this,
+            &AppController::on_migration_finished, Qt::QueuedConnection);
+    connect(worker, &LegacyMigrationWorker::failed, this,
+            &AppController::on_migration_failed, Qt::QueuedConnection);
+    connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+    migration_thread_ = thread;
+
+    set_vault_busy(true);
+    set_vault_state("migrating");
+    status_ = "Migrating legacy data...";
+    emit changed();
+
+    thread->start();
+    QString data_dir = QString::fromStdString(app_config_.data_dir);
+    QString socket_dir = QString::fromStdString(app_config_.socket_dir);
+    QString phrase = QString::fromStdString(pending_migration_phrase_);
+    QMetaObject::invokeMethod(
+        worker,
+        [worker, data_dir, socket_dir, phrase]() mutable {
+            worker->run(data_dir, socket_dir, phrase);
+            phrase.fill(QChar(0));
+            phrase.clear();
+        },
+        Qt::QueuedConnection);
+    phrase.fill(QChar(0));
+    phrase.clear();
+    return true;
+}
+
+void AppController::join_migration_thread() {
+    QThread* thread = migration_thread_;
+    if (thread == nullptr) {
+        return;
+    }
+    migration_thread_ = nullptr;
+    thread->quit();
+    thread->wait();
+    delete thread;
+}
+
+bool AppController::retryLegacyMigration() {
+    if (!migrationRetryAvailable()) {
+        return false;
+    }
+    if (!start_migration_worker()) {
+        fail("Could not restart the legacy migration.");
+        return false;
+    }
+    return true;
+}
+
+void AppController::cancelLegacyMigration() {
+    if (vault_state_ != "migrating" || vault_busy_ ||
+        migration_thread_ != nullptr) {
+        return;
+    }
+    clear_pending_migration_phrase();
+    clear_setup();
+    legacy_pending_ = true;
+    set_vault_state("uninitialized");
+    status_ = "Migration cancelled. Set up a recovery phrase to migrate.";
+    emit changed();
+}
+
+QString AppController::migration_plaintext_path() const {
+    try {
+        if (app_config_.data_dir.empty() || app_config_.socket_dir.empty()) {
+            return {};
+        }
+        const auto paths = oyama::storage::make_legacy_paths(
+            app_config_.data_dir, app_config_.socket_dir);
+        const auto plaintext =
+            oyama::storage::find_plaintext_dirs(paths);
+        if (plaintext.size() == 1) {
+            return QString::fromStdString(plaintext.front().string());
+        }
+    } catch (const std::exception&) {
+    }
+    return {};
+}
+
+void AppController::on_migration_progress(const QString& kind, int done,
+                                          int total) {
+    if (vault_state_ != "migrating") {
+        return;
+    }
+    if (total > 0) {
+        status_ = QStringLiteral("Migrating %1 (%2/%3)...")
+                      .arg(kind)
+                      .arg(done)
+                      .arg(total);
+    } else {
+        status_ = QStringLiteral("Migrating %1...").arg(kind);
+    }
+    emit changed();
+}
+
+void AppController::on_migration_finished() {
+    join_migration_thread();
+    if (vault_state_ != "migrating" || !legacy_pending_ ||
+        pending_migration_phrase_.empty()) {
+        return;
+    }
+
+    std::string phrase = pending_migration_phrase_;
+    clear_pending_migration_phrase();
+    set_vault_busy(false);
+    legacy_pending_ = false;
+    reload();
+
+    if (vault_state_ == "locked") {
+        QString qphrase = QString::fromStdString(phrase);
+        sodium_memzero(phrase.data(), phrase.size());
+        phrase.clear();
+        const bool unlocked = unlockVault(qphrase);
+        qphrase.fill(QChar(0));
+        qphrase.clear();
+        if (unlocked) {
+            const QString plaintext = migration_plaintext_path();
+            status_ = plaintext.isEmpty()
+                          ? QStringLiteral("Legacy data migrated to the new "
+                                           "encrypted vault.")
+                          : QStringLiteral(
+                                "Legacy data migrated. Old plaintext data is "
+                                "kept at %1. %2")
+                                .arg(plaintext,
+                                     QString::fromUtf8(kPlaintextWarning));
+        } else {
+            status_ = QStringLiteral(
+                "The migration finished, but the new vault could not be "
+                "unlocked. Use the recovery phrase you wrote down.");
+        }
+    } else {
+        sodium_memzero(phrase.data(), phrase.size());
+        phrase.clear();
+        status_ = QStringLiteral(
+                      "The migration finished, but the new vault is not "
+                      "available: ") +
+                  status_;
+    }
+    emit changed();
+}
+
+void AppController::on_migration_failed(const QString& message,
+                                        const QString& plaintext_path) {
+    join_migration_thread();
+    if (vault_state_ != "migrating" || !legacy_pending_) {
+        return;
+    }
+    set_vault_busy(false);
+    QString text = QStringLiteral("Migration failed: ") + message;
+    if (!plaintext_path.isEmpty()) {
+        text += QStringLiteral(
+                    " A plaintext copy of the old cluster is at %1; inspect "
+                    "the migration directories before retrying.")
+                    .arg(plaintext_path);
+    } else if (!app_config_.data_dir.empty()) {
+        text += QStringLiteral(" Your old data is unchanged at %1.")
+                    .arg(QString::fromStdString(app_config_.data_dir));
+    }
+    text += QStringLiteral(" Retry or cancel.");
+    status_ = text;
+    emit changed();
 }
 
 void AppController::load_data() {

@@ -1,18 +1,23 @@
 #include "app_controller.h"
 
 #include <QCoreApplication>
+#include <QElapsedTimer>
+#include <QEventLoop>
 #include <QMetaObject>
 #include <QString>
 #include <QStringList>
+#include <QThread>
 #include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
 
 #include <oyama/storage/app_config.h>
 #include <oyama/storage/connection.h>
+#include <oyama/storage/legacy_promotion.h>
 
 #include <cmath>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -63,6 +68,43 @@ QVariantList answers_for(const QStringList& words,
         answers << words.at(position.toInt());
     }
     return answers;
+}
+
+bool target_directory_exists() {
+    const auto config = load_app_config();
+    if (!config.has_value()) {
+        return false;
+    }
+    const std::filesystem::path data_dir(config->data_dir);
+    return std::filesystem::exists(
+        data_dir.parent_path() /
+        (data_dir.filename().string() + "-migrate"));
+}
+
+std::size_t plaintext_sibling_count() {
+    const auto config = load_app_config();
+    if (!config.has_value()) {
+        return 0;
+    }
+    return oyama::storage::find_plaintext_dirs(
+               oyama::storage::make_legacy_paths(config->data_dir,
+                                                 config->socket_dir))
+        .size();
+}
+
+template <typename Predicate>
+bool wait_for_migration(QCoreApplication& application, Predicate done,
+                        int timeout_ms = 180000) {
+    QElapsedTimer timer;
+    timer.start();
+    while (!done()) {
+        if (timer.elapsed() >= timeout_ms) {
+            return false;
+        }
+        QCoreApplication::processEvents(QEventLoop::AllEvents, 25);
+        QThread::msleep(10);
+    }
+    return true;
 }
 
 int run_existing_database_scenario(QCoreApplication& application,
@@ -282,34 +324,191 @@ int run_existing_database_scenario(QCoreApplication& application,
 int run_managed_legacy_scenario(AppController& controller) {
     REQUIRE(controller.backend() == "managed",
             "expected the managed-backend fixture");
-    REQUIRE(controller.vaultState() == "unavailable",
-            "managed legacy data must report the vault as unavailable");
-    REQUIRE(controller.status().contains("migrate-vault"),
-            "managed legacy data must point at the migration command");
+    REQUIRE(controller.vaultState() == "uninitialized",
+            "managed legacy data must wait for a recovery phrase");
+    REQUIRE(controller.status().contains("recovery phrase"),
+            "managed legacy data must ask for a recovery phrase");
     REQUIRE(controller.setupPhrase().isEmpty(),
-            "managed legacy data must not generate a phrase");
+            "managed legacy data must not generate a phrase on reload");
     REQUIRE(controller.setupChallenge().isEmpty(),
-            "managed legacy data must not generate a challenge");
-    REQUIRE(!controller.beginVaultSetup(),
-            "setup must be refused while legacy migration is pending");
-    REQUIRE(controller.vaultState() == "unavailable",
-            "refused setup must keep the legacy state unavailable");
-    REQUIRE(!controller.confirmVaultSetup({}, true),
-            "setup confirmation must be refused while migration is pending");
-    REQUIRE(controller.status().contains("migrate-vault"),
-            "refused confirmation must point at the migration command");
+            "managed legacy data must not generate a challenge on reload");
     REQUIRE(!vault_meta_relation_exists(),
             "legacy detection must not create vault_meta");
+    REQUIRE(!target_directory_exists(),
+            "reload must not start the migration worker");
+    REQUIRE(!controller.retryLegacyMigration(),
+            "retry must be refused before a phrase is confirmed");
+    REQUIRE(controller.beginVaultSetup(),
+            "setup must be allowed while legacy migration is pending");
+    REQUIRE(controller.setupPhrase().split(' ', Qt::SkipEmptyParts).size() ==
+                7,
+            "legacy setup must generate seven words");
+    REQUIRE(controller.setupChallenge().size() == 3,
+            "legacy setup must choose three challenge positions");
+    controller.cancelVaultSetup();
+    REQUIRE(controller.vaultState() == "uninitialized",
+            "cancel must keep the legacy setup pending");
+    REQUIRE(controller.setupPhrase().isEmpty(),
+            "cancel must clear the setup phrase");
+    REQUIRE(!controller.retryLegacyMigration(),
+            "cancel must clear the pending migration phrase");
+    REQUIRE(!vault_meta_relation_exists(),
+            "cancel must not create vault_meta");
+    REQUIRE(!target_directory_exists(),
+            "cancel must not start the migration worker");
 
     controller.reload();
-    REQUIRE(controller.vaultState() == "unavailable",
-            "reload must keep managed legacy data unavailable");
-    REQUIRE(controller.status().contains("migrate-vault"),
-            "reload must repeat the migration instructions");
+    REQUIRE(controller.vaultState() == "uninitialized",
+            "reload must keep managed legacy data waiting for setup");
+    REQUIRE(controller.status().contains("recovery phrase"),
+            "reload must repeat the recovery-phrase instruction");
     REQUIRE(!vault_meta_relation_exists(),
             "reload must not migrate or create vault_meta");
+    REQUIRE(!target_directory_exists(),
+            "reload must not create a migration target");
     REQUIRE(controller.doses().isEmpty(),
             "legacy data must never be loaded in plaintext");
+    return 0;
+}
+
+int run_managed_legacy_migration_scenario(QCoreApplication& application,
+                                          AppController& controller) {
+    REQUIRE(controller.backend() == "managed",
+            "expected the managed-backend fixture");
+    REQUIRE(controller.vaultState() == "uninitialized",
+            "managed legacy data must start uninitialized");
+    REQUIRE(!vault_meta_relation_exists(),
+            "no vault_meta may exist before migration");
+    REQUIRE(controller.beginVaultSetup(), "begin legacy migration setup");
+    const QString phrase = controller.setupPhrase();
+    const QStringList words = phrase.split(' ', Qt::SkipEmptyParts);
+    REQUIRE(words.size() == 7, "migration phrase must have seven words");
+    const QVariantList answers =
+        answers_for(words, controller.setupChallenge());
+    REQUIRE(controller.confirmVaultSetup(answers, true),
+            "confirming legacy setup must start the migration");
+    REQUIRE(controller.vaultState() == "migrating",
+            "the vault state must become migrating");
+    REQUIRE(controller.vaultBusy(),
+            "the migration must report busy while running");
+    REQUIRE(!vault_meta_relation_exists(),
+            "the old cluster must not receive vault_meta");
+    REQUIRE(!controller.retryLegacyMigration(),
+            "retry must be refused while the worker is running");
+
+    REQUIRE(wait_for_migration(application, [&controller]() {
+                return !controller.vaultBusy() &&
+                       controller.vaultState() != "migrating";
+            }),
+            "the migration must finish");
+    REQUIRE(controller.vaultState() == "unlocked",
+            "a successful migration must unlock the new vault");
+    REQUIRE(!controller.vaultBusy(), "migration must clear the busy flag");
+    REQUIRE(vault_meta_row_exists(),
+            "the promoted cluster must contain vault_meta");
+    REQUIRE(!target_directory_exists(),
+            "the promotion must consume the target directory");
+    REQUIRE(plaintext_sibling_count() == 1,
+            "the old cluster must be kept as one plaintext sibling");
+    REQUIRE(controller.status().contains("plaintext"),
+            "success must report the plaintext sibling path");
+    REQUIRE(controller.doses().size() == 1,
+            "the migrated vault must load the seeded dose event");
+    REQUIRE(std::abs(controller.weight() - 60.0) < 1e-9,
+            "the migrated vault must load the seeded settings");
+    REQUIRE(!controller.migrationRetryAvailable(),
+            "retry must not be offered after success");
+
+    QTimer* idle_timer =
+        controller.findChild<QTimer*>("vaultIdleTimer");
+    REQUIRE(idle_timer != nullptr && idle_timer->isActive(),
+            "the idle timer must run after a successful migration");
+
+    controller.lockVault();
+    REQUIRE(controller.vaultState() == "locked",
+            "the migrated vault must lock");
+    REQUIRE(controller.unlockVault(phrase),
+            "the migration phrase must unlock the promoted vault");
+    REQUIRE(controller.vaultState() == "unlocked",
+            "the migrated vault must unlock with the handoff phrase");
+
+    controller.reload();
+    REQUIRE(controller.vaultState() == "locked",
+            "reload after migration must show the locked vault");
+    REQUIRE(!target_directory_exists(),
+            "reload after migration must not restart a worker");
+    return 0;
+}
+
+int run_managed_legacy_retry_scenario(QCoreApplication& application,
+                                      AppController& controller) {
+    REQUIRE(controller.backend() == "managed",
+            "expected the managed-backend fixture");
+    REQUIRE(controller.vaultState() == "uninitialized",
+            "managed legacy data must start uninitialized");
+    REQUIRE(controller.beginVaultSetup(), "begin failed migration setup");
+    const QString phrase = controller.setupPhrase();
+    const QStringList words = phrase.split(' ', Qt::SkipEmptyParts);
+    REQUIRE(words.size() == 7, "migration phrase must have seven words");
+    const QVariantList answers =
+        answers_for(words, controller.setupChallenge());
+    REQUIRE(controller.confirmVaultSetup(answers, true),
+            "confirming setup must start the migration");
+
+    REQUIRE(wait_for_migration(application, [&controller]() {
+                return !controller.vaultBusy();
+            }),
+            "the failing migration must report completion");
+    REQUIRE(controller.vaultState() == "migrating",
+            "a failed migration must stay in the migrating state");
+    REQUIRE(!controller.vaultBusy(),
+            "a failed migration must clear the busy flag");
+    REQUIRE(controller.migrationRetryAvailable(),
+            "a failed migration must keep the phrase and offer retry");
+    REQUIRE(controller.status().contains("Migration failed"),
+            "a failed migration must report the error");
+    REQUIRE(controller.status().contains("old data"),
+            "a failed migration must report the retained old data");
+    REQUIRE(std::filesystem::exists(load_app_config()->data_dir),
+            "a failed migration must keep the old data directory");
+    REQUIRE(plaintext_sibling_count() == 0,
+            "a failed migration must not promote anything");
+    REQUIRE(target_directory_exists(),
+            "a failed migration must keep its target for resume");
+
+    {
+        Connection connection(load_app_config()->connection_config());
+        const auto rows = connection.exec("SELECT count(*) FROM dose_events");
+        REQUIRE(rows.integer(0, 0) == 3,
+                "the old legacy rows must remain untouched");
+        (void)connection.exec(
+            "UPDATE dose_events SET route = 'oral' "
+            "WHERE id = '00000000-0000-0000-0000-0000000000aa'");
+    }
+
+    REQUIRE(controller.retryLegacyMigration(),
+            "retry must use the retained migration phrase");
+    REQUIRE(controller.vaultState() == "migrating" && controller.vaultBusy(),
+            "retry must restart the worker");
+    REQUIRE(wait_for_migration(application, [&controller]() {
+                return !controller.vaultBusy() &&
+                       controller.vaultState() != "migrating";
+            }),
+            "the retried migration must finish");
+    REQUIRE(controller.vaultState() == "unlocked",
+            "the retried migration must unlock the vault");
+    REQUIRE(controller.doses().size() == 2,
+            "the retried migration must import the repaired row");
+    REQUIRE(vault_meta_row_exists(),
+            "the retried migration must write vault_meta");
+    REQUIRE(plaintext_sibling_count() == 1,
+            "the retried migration must promote exactly once");
+    REQUIRE(!controller.migrationRetryAvailable(),
+            "retry must not be offered after success");
+
+    controller.lockVault();
+    REQUIRE(controller.unlockVault(phrase),
+            "the handoff phrase must unlock the retried vault");
     return 0;
 }
 
@@ -323,6 +522,26 @@ int main(int argc, char** argv) {
     if (scenario != nullptr &&
         std::string(scenario) == "managed-legacy") {
         const int status = run_managed_legacy_scenario(controller);
+        if (status != 0) {
+            return status;
+        }
+        std::cout << "app_controller_test: ok\n";
+        return 0;
+    }
+    if (scenario != nullptr &&
+        std::string(scenario) == "managed-legacy-migrate") {
+        const int status =
+            run_managed_legacy_migration_scenario(application, controller);
+        if (status != 0) {
+            return status;
+        }
+        std::cout << "app_controller_test: ok\n";
+        return 0;
+    }
+    if (scenario != nullptr &&
+        std::string(scenario) == "managed-legacy-retry") {
+        const int status =
+            run_managed_legacy_retry_scenario(application, controller);
         if (status != 0) {
             return status;
         }

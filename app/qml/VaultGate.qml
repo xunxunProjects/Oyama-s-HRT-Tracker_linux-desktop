@@ -49,7 +49,8 @@ Item {
 
                 BusyIndicator {
                     Layout.alignment: Qt.AlignHCenter
-                    running: true
+                    running: app.vaultBusy
+                    visible: app.vaultBusy
                 }
 
                 Label {
@@ -62,12 +63,33 @@ Item {
                 }
 
                 Label {
+                    objectName: "migrationStatusText"
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     text: app.status
                     color: "#8a98a8"
                     font.pixelSize: 13
                     wrapMode: Text.WordWrap
+                }
+
+                RowLayout {
+                    Layout.alignment: Qt.AlignHCenter
+                    spacing: 12
+                    visible: !app.vaultBusy
+
+                    Button {
+                        objectName: "retryMigrationButton"
+                        text: qsTr("Retry migration")
+                        highlighted: true
+                        enabled: app.migrationRetryAvailable
+                        onClicked: app.retryLegacyMigration()
+                    }
+
+                    Button {
+                        objectName: "cancelMigrationButton"
+                        text: qsTr("Cancel")
+                        onClicked: app.cancelLegacyMigration()
+                    }
                 }
             }
         }

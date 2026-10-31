@@ -7,11 +7,13 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <oyama/storage/storage.h>
 #include <oyama/storage/vault_store.h>
 
+class QThread;
 class QTimer;
 
 class AppController : public QObject {
@@ -21,6 +23,8 @@ class AppController : public QObject {
     Q_PROPERTY(QString backend READ backend NOTIFY changed)
     Q_PROPERTY(QString vaultState READ vaultState NOTIFY changed)
     Q_PROPERTY(bool vaultBusy READ vaultBusy NOTIFY changed)
+    Q_PROPERTY(bool migrationRetryAvailable READ migrationRetryAvailable
+                   NOTIFY changed)
     Q_PROPERTY(QString setupPhrase READ setupPhrase NOTIFY changed)
     Q_PROPERTY(QVariantList setupChallenge READ setupChallenge NOTIFY changed)
     Q_PROPERTY(QVariantList doses READ doses NOTIFY changed)
@@ -43,6 +47,7 @@ public:
     [[nodiscard]] QString backend() const { return backend_; }
     [[nodiscard]] QString vaultState() const { return vault_state_; }
     [[nodiscard]] bool vaultBusy() const { return vault_busy_; }
+    [[nodiscard]] bool migrationRetryAvailable() const;
     [[nodiscard]] QString setupPhrase() const { return setup_phrase_; }
     [[nodiscard]] QVariantList setupChallenge() const;
     [[nodiscard]] QVariantList doses() const { return doses_; }
@@ -65,6 +70,8 @@ public:
     Q_INVOKABLE void cancelVaultSetup();
     Q_INVOKABLE bool unlockVault(const QString& phrase);
     Q_INVOKABLE void lockVault();
+    Q_INVOKABLE bool retryLegacyMigration();
+    Q_INVOKABLE void cancelLegacyMigration();
     Q_INVOKABLE bool addDose(const QString& route, const QString& ester,
                              double dose_mg, double time_h,
                              const QVariantMap& extras = {});
@@ -83,6 +90,12 @@ signals:
     void changed();
     void modeChanged();
 
+private slots:
+    void on_migration_progress(const QString& kind, int done, int total);
+    void on_migration_finished();
+    void on_migration_failed(const QString& message,
+                             const QString& plaintext_path);
+
 private:
     void fail(const QString& message);
     void load_data();
@@ -93,6 +106,10 @@ private:
     void clear_models();
     void start_idle_timer();
     [[nodiscard]] bool require_unlocked();
+    [[nodiscard]] bool start_migration_worker();
+    void join_migration_thread();
+    void clear_pending_migration_phrase();
+    [[nodiscard]] QString migration_plaintext_path() const;
 
     std::unique_ptr<oyama::storage::Database> database_;
     std::unique_ptr<oyama::storage::LocalCluster> cluster_;
@@ -108,6 +125,8 @@ private:
     QString setup_phrase_;
     std::vector<std::size_t> setup_challenge_;
     bool legacy_pending_{false};
+    std::string pending_migration_phrase_;
+    QThread* migration_thread_{nullptr};
     QTimer* idle_timer_{nullptr};
     QVariantList doses_;
     QVariantList curve_;
