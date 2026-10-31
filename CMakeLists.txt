@@ -118,6 +118,7 @@ if(OYAMA_BUILD_QT_SHELL)
             oyama_storage
             oyama_pk
             nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
             Qt6::Core
             Qt6::Qml
             Qt6::Quick
@@ -335,6 +336,7 @@ if(BUILD_TESTING)
             oyama_storage
             oyama_pk
             nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
             Qt6::Core)
         target_compile_definitions(app_controller_test PRIVATE
             OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"

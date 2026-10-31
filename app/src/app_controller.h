@@ -5,16 +5,24 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include <cstddef>
 #include <memory>
 #include <vector>
 
 #include <oyama/storage/storage.h>
+#include <oyama/storage/vault_store.h>
+
+class QTimer;
 
 class AppController : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString status READ status NOTIFY changed)
     Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)
     Q_PROPERTY(QString backend READ backend NOTIFY changed)
+    Q_PROPERTY(QString vaultState READ vaultState NOTIFY changed)
+    Q_PROPERTY(bool vaultBusy READ vaultBusy NOTIFY changed)
+    Q_PROPERTY(QString setupPhrase READ setupPhrase NOTIFY changed)
+    Q_PROPERTY(QVariantList setupChallenge READ setupChallenge NOTIFY changed)
     Q_PROPERTY(QVariantList doses READ doses NOTIFY changed)
     Q_PROPERTY(QVariantList curve READ curve NOTIFY changed)
     Q_PROPERTY(double currentE2 READ currentE2 NOTIFY changed)
@@ -33,6 +41,10 @@ public:
     [[nodiscard]] QString status() const { return status_; }
     [[nodiscard]] QString mode() const { return mode_; }
     [[nodiscard]] QString backend() const { return backend_; }
+    [[nodiscard]] QString vaultState() const { return vault_state_; }
+    [[nodiscard]] bool vaultBusy() const { return vault_busy_; }
+    [[nodiscard]] QString setupPhrase() const { return setup_phrase_; }
+    [[nodiscard]] QVariantList setupChallenge() const;
     [[nodiscard]] QVariantList doses() const { return doses_; }
     [[nodiscard]] QVariantList curve() const { return curve_; }
     [[nodiscard]] double currentE2() const { return current_e2_; }
@@ -47,6 +59,12 @@ public:
     void setMode(const QString& mode);
 
     Q_INVOKABLE void reload();
+    Q_INVOKABLE bool beginVaultSetup();
+    Q_INVOKABLE bool confirmVaultSetup(const QVariantList& answers,
+                                      bool acknowledged);
+    Q_INVOKABLE void cancelVaultSetup();
+    Q_INVOKABLE bool unlockVault(const QString& phrase);
+    Q_INVOKABLE void lockVault();
     Q_INVOKABLE bool addDose(const QString& route, const QString& ester,
                              double dose_mg, double time_h,
                              const QVariantMap& extras = {});
@@ -69,15 +87,28 @@ private:
     void fail(const QString& message);
     void load_data();
     void compute_curve(const std::vector<oyama::storage::DoseEvent>& events);
+    void set_vault_state(const QString& state);
+    void set_vault_busy(bool busy);
+    void clear_setup();
+    void clear_models();
+    void start_idle_timer();
+    [[nodiscard]] bool require_unlocked();
 
     std::unique_ptr<oyama::storage::Database> database_;
     std::unique_ptr<oyama::storage::LocalCluster> cluster_;
+    std::unique_ptr<oyama::storage::VaultStore> vault_;
     oyama::storage::AppConfig app_config_;
     oyama::storage::Settings settings_;
 
     QString status_{"Starting..."};
     QString mode_{"transfem"};
     QString backend_{"none"};
+    QString vault_state_{"unavailable"};
+    bool vault_busy_{false};
+    QString setup_phrase_;
+    std::vector<std::size_t> setup_challenge_;
+    bool legacy_pending_{false};
+    QTimer* idle_timer_{nullptr};
     QVariantList doses_;
     QVariantList curve_;
     double current_e2_{0.0};
