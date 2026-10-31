@@ -265,22 +265,25 @@ guaranteed erasure.
 > blood levels. Do not start, stop, or adjust any medication based on this
 > application alone.
 
-## 中文简介
+## Project status
 
-这是 Oyama's HRT Tracker 的 Linux / BSD 原生桌面版，使用 Qt 6 + QML 重写界面，
-核心药代动力学模型用 C99 实现。它只在本机运行，没有登录、云同步、遥测或分享功能；
-数据存在本地 PostgreSQL 中，通过导出/导入与主仓库版本互通。
+Version 0.5.0 is the first release with the encrypted local vault. The C99
+pharmacokinetic core has been compared point-by-point with the upstream
+TypeScript model across 36 scenarios and 413,323 fields, with a maximum
+relative error of about 1.1e-15. The PostgreSQL storage layer, migration
+runner, managed cluster lifecycle, application-level vault, legacy plaintext
+migration, encrypted backups, first-run setup, LWW/tombstone merge, and the
+CLI are implemented.
 
-目前 C99 药代动力学核心已经完成，并与上游 TypeScript 模型做了逐点对比
-（36 个场景、413,323 个字段，最大相对误差约 1.1e-15）。PostgreSQL 存储层、
-迁移调度、托管本地 cluster 生命周期、应用层加密 vault、旧明文数据迁移、
-加密备份、首次设置向导、备份导入/导出与 LWW/删除合并、基础 CLI 也已经
-落地。首次启动会生成 7 个词的恢复短语，只显示一次，需要手抄保存；没有
-找回机制，丢失短语即无法恢复数据。备份默认加密，`--plaintext` 才导出
-上游兼容的明文 JSON。Qt 6/QML 桌面壳已经进入 M2：Vault 设置/解锁/锁定
-界面以及 Overview、Add dose、History、Settings 四个页面已接入加密 vault
-和 PK 模型，并支持按给药途径的 extras 与剂量就地编辑；Plan、Labs、
-Supplies、Forecast、桌面打包以及完整界面对齐仍未完成。
+The first launch generates a seven-word recovery phrase, shows it once, and
+asks you to write it down. There is no recovery service and no back door; if
+the phrase is lost, the data is lost. Backups are encrypted by default;
+`--plaintext` exports the upstream-compatible JSON only when explicitly
+requested.
+
+The Qt 6/QML shell implements the vault setup, unlock, and lock screens plus
+Overview, Add dose, History, and Settings. Plan, Labs, Supplies, Forecast,
+desktop packaging, and the remaining upstream UI parity work are still ahead.
 
 ## Repository layout
 
