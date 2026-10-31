@@ -55,17 +55,20 @@ add_library(oyama_storage STATIC
     storage/src/lab_result_repository.cpp
     storage/src/local_cluster.cpp
     storage/src/migration.cpp
+    storage/src/passphrase.cpp
+    storage/src/passphrase_wordlist.cpp
     storage/src/preferences_repository.cpp
     storage/src/settings_repository.cpp
     storage/src/tombstone_repository.cpp
     storage/src/types.cpp
-    storage/src/uuid.cpp)
+    storage/src/uuid.cpp
+    storage/src/vault_store.cpp)
 target_include_directories(oyama_storage
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
 target_link_libraries(oyama_storage
     PUBLIC PostgreSQL::PostgreSQL
-    PRIVATE nlohmann_json::nlohmann_json)
+    PRIVATE nlohmann_json::nlohmann_json oyama_vault)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_storage PRIVATE -Wall -Wextra -Wpedantic)
@@ -162,6 +165,18 @@ if(BUILD_TESTING)
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/vault/tests/run_vault_pg_test.sh
                 $<TARGET_FILE:vault_records_test>)
     set_tests_properties(vault_records_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(vault_store_test storage/tests/vault_store_test.cpp)
+    target_include_directories(vault_store_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(vault_store_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_store_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME vault_store_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_vault_store_test.sh
+                $<TARGET_FILE:vault_store_test>)
+    set_tests_properties(vault_store_integration PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
