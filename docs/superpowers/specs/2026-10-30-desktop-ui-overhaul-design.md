@@ -379,6 +379,16 @@ Page files: `Main.qml`, `OverviewPage.qml`, `AddDosePage.qml`, `HistoryPage.qml`
 6. **Fonts**: no tofu for Chinese and Persian on FreeBSD; if a font is missing, document the package name.
 7. **Regression**: model vectors, storage, backup, and CLI tests all pass.
 
+**2026-10-30 FreeBSD acceptance record**
+
+- Branch `desktop-ui-overhaul`, code commit `dcf0fde` (this build and test run is based on that commit; only documentation commits followed). The source was synced with a git bundle to `/home/oyama/oyama-src`; the old non-git source tree was kept as `~/oyama-src.pre-ui-overhaul`.
+- Environment: FreeBSD 15.1-RELEASE amd64, Qt 6.11.2, CMake 3.31.12, Ninja 1.13.2, PostgreSQL 18.6.
+- Build: `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOYAMA_BUILD_QT_SHELL=ON` succeeded; 118/118 targets completed.
+- Tests: CTest **19/19** passed in 27.62 s (including the six Qt shell smoke cases, `qml_components`, and `app_controller_test`).
+- Fonts: the FreeBSD ports package is named `noto-sc` (there is no `font-noto-cjk` package); after installation `fc-list :lang=zh` lists Noto Sans CJK SC. Persian continues to use the bundled Vazirmatn.
+- Screenshots: generated on FreeBSD with `--screenshot` plus `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software` as `zh-light.png`, `fa-light.png`, and `fa-dark.png` (1200×800), then copied to the host at `/tmp/opencode/freebsd-shots/` for inspection. CJK and Persian glyphs render correctly, the Persian sidebar is mirrored to the right, and the dark theme colors match.
+- Post-acceptance fixes (commit `7fcff39`): the combo-box delegate now declares `required property var model` / `required property int index`, fixing blank option text; the sidebar hover color animation was removed to avoid residual hover backgrounds under software rendering. A `qml_components` regression test was added, the FreeBSD rebuild passed **19/19**, and a manual Plasma X11 check confirmed that the route dropdown shows all six options and that no sidebar background remains after the pointer leaves.
+
 ---
 
 ## 11. Risks and Mitigations

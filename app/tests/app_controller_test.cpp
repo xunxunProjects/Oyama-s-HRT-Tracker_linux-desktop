@@ -193,6 +193,13 @@ int run_existing_database_scenario(QCoreApplication& application,
     REQUIRE(!controller.vaultBusy(), "setup must clear the busy flag");
     REQUIRE(controller.status().startsWith("Connected"),
             "unlocked status must report the connection");
+    REQUIRE(controller.statusKey() == "status.connected" &&
+                controller.statusArgs().size() == 2,
+            "connected status key/args are wrong");
+    REQUIRE(std::abs(controller.weight() - 70.0) < 1e-9,
+            "unset weight should fall back to 70 kg");
+    REQUIRE(controller.birthYear() == 0,
+            "unset birth year should be 0");
 
     QTimer* idle_timer =
         controller.findChild<QTimer*>("vaultIdleTimer");
@@ -223,10 +230,18 @@ int run_existing_database_scenario(QCoreApplication& application,
                 controller.calibrationHistory() == "retrospective" &&
                 controller.pkParamsJson().contains("e2_kClear"),
             "settings must round-trip through the vault");
+    REQUIRE(controller.statusKey() == "status.settings_saved",
+            "settings status key is wrong");
 
     const double now = controller.nowHours();
+    REQUIRE(!controller.addDose("oral", "E2", 0.0, now - 24.0, {}),
+            "zero dose must be rejected");
+    REQUIRE(controller.statusKey() == "status.invalid_dose_time",
+            "invalid dose did not set the expected status key");
     REQUIRE(controller.addDose("oral", "E2", 2.0, now - 24.0, {}),
             "add a dose while unlocked");
+    REQUIRE(controller.statusKey() == "status.dose_added",
+            "add status key is wrong");
     REQUIRE(controller.doses().size() == 1,
             "expected exactly one dose");
     const QVariantMap added = controller.doses().front().toMap();
@@ -239,9 +254,16 @@ int run_existing_database_scenario(QCoreApplication& application,
 
     QVariantMap extras;
     extras.insert("sublingualTier", 2);
+    REQUIRE(!controller.updateDose(id, "sublingual", "EV", 0.0, now - 24.0,
+                                   {}),
+            "zero update must be rejected");
+    REQUIRE(controller.statusKey() == "status.dose_positive",
+            "invalid update did not set the expected status key");
     REQUIRE(controller.updateDose(id, "sublingual", "EV", 4.0, now - 24.0,
                                   extras),
             "update a dose while unlocked");
+    REQUIRE(controller.statusKey() == "status.dose_updated",
+            "update status key is wrong");
     REQUIRE(controller.doses().size() == 1,
             "editing must not create a second dose");
     const QVariantMap updated = controller.doses().front().toMap();
@@ -305,6 +327,8 @@ int run_existing_database_scenario(QCoreApplication& application,
     REQUIRE(controller.unlockVault(phrase), "unlock after auto-lock");
     REQUIRE(controller.removeDose(id), "remove the dose while unlocked");
     REQUIRE(controller.doses().isEmpty(), "dose was not removed");
+    REQUIRE(controller.statusKey() == "status.dose_removed",
+            "remove status key is wrong");
 
     controller.reload();
     REQUIRE(controller.vaultState() == "locked",

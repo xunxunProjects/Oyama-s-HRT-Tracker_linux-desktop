@@ -13,12 +13,16 @@ pharmacokinetic model.  It currently provides:
   and the five most recent doses.
 - **Add dose** — route, ester/drug, dose in mg, and “days ago”.  Route-specific
   extras are available for sublingual (tier/theta), gel (site), and patches
-  (release rate/wear time).  The dose is written to PostgreSQL and the curve is
+  (release rate/wear time).  The dose is written to the vault and the curve is
   recomputed immediately.
-- **History** — all doses for the selected mode, with edit and delete.
-- **Settings** — body weight, birth year, calibration method/history, and PK
-  parameter overrides as JSON.  These values are shared by both modes.
-- **Mode switch** — `transfem` / `transmasc` in the header.
+- **History** — all doses for the selected mode, with an integrated dose form,
+  edit, and delete.
+- **Settings** — body weight, birth year, calibration method/history, PK
+  parameter overrides as JSON, appearance, language, and mode. These values are
+  stored in the encrypted vault and shared by both modes.
+- **Single-window shell** — sidebar navigation, a page header, light/dark/system
+  themes, and English, Chinese, Russian, and Persian UI text, with right-to-left
+  layout for Persian.
 - **Vault gate** — first run generates a seven-word recovery phrase, asks you to
   write it down and re-enter three positions, then unlocks the vault. Later
   launches show an unlock screen. A header button locks immediately; the app
@@ -79,15 +83,18 @@ exit code 77 when `initdb`/`pg_ctl` are unavailable.
 ```text
 app/src/main.cpp                    QGuiApplication + QQmlApplicationEngine
 app/src/app_controller.*            QObject exposed to QML as `app`
+app/src/ui_preferences.*            theme, language, and first-run preferences
 app/src/legacy_migration_worker.*   QThread worker for managed-cluster import
-app/qml/Main.qml                    window, shell, mode switch, status bar
+app/qml/Main.qml                    window, sidebar shell, page routing
+app/qml/Sidebar.qml                 navigation rail and lock action
 app/qml/VaultGate.qml               full-window setup/unlock/migrating gate
 app/qml/SetupVaultPage.qml          phrase display, challenge, acknowledgement
 app/qml/UnlockVaultPage.qml         phrase entry and unlock
 app/qml/OverviewPage.qml             stat cards, Canvas curve, recent doses
-app/qml/AddDosePage.qml              dose form, route extras, add/edit
-app/qml/HistoryPage.qml              dose list, edit and delete
-app/qml/SettingsPage.qml             shared body/model settings
+app/qml/DoseForm.qml                 dose form, route extras, add/edit
+app/qml/HistoryPage.qml              dose list, integrated dose form
+app/qml/SettingsPage.qml             body, dose, appearance, language settings
+app/qml/Theme.qml, T.qml, UiText.qml theme colors and translated UI text
 ```
 
 `AppController` loads `AppConfig`, starts a managed cluster when needed, checks

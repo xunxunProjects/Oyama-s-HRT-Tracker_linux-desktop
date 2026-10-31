@@ -2,266 +2,372 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// The overview: the current estimated level as a large light figure, a tick
+// scale with the target band and where today sits on it, then the timeline.
+// With nothing logged it is the capsule, one line and the way to log a dose.
 Item {
     id: page
+    signal logRequested()
 
-    component StatCard: Rectangle {
-        id: card
-        property string label
-        property string value
-        property string unit
-        property color accent: "#e8a0b4"
-        Layout.fillWidth: true
-        Layout.preferredHeight: 112
-        radius: 16
-        color: "#151c23"
-        border.width: 1
-        border.color: "#24313c"
+    readonly property bool transmasc: app.mode === "transmasc"
+    readonly property bool hasDoses: app.doses.length > 0
+    readonly property bool hasCPA: !transmasc && app.doses.some(function(d) { return d.ester === "CPA" })
+    property bool explainerOpen: false
+    property string range: "7d"
+
+    // The reading the page is about, with its band, and the one beside it.
+    readonly property var primary: transmasc
+        ? { label: T.t("label.total_t"), value: app.currentT, decimals: 0, unit: "ng/dL",
+            band: { low: 300, high: 1000 }, domain: [30, 3000] }
+        : { label: T.t("label.e2"), value: app.currentE2, decimals: 1, unit: "pg/mL",
+            band: { low: 100, high: 200 }, domain: [10, 1000] }
+    readonly property var companion: transmasc
+        ? (app.currentT > 0 ? { label: "", value: app.currentT / 28.842, decimals: 1, unit: "nmol/L" } : null)
+        : (hasCPA ? { label: T.t("label.cpa_chart"), value: app.currentCPA >= 0.1 ? app.currentCPA : 0,
+                      decimals: 1, unit: "ng/mL" } : null)
+
+    // Where the reading sits, said in words over its tick.
+    readonly property var status: {
+        if (transmasc) {
+            const c = app.currentT
+            if (c <= 0) return null
+            if (c > 1000) return { key: "status.level.t_high", tone: Theme.warning }
+            if (c >= 600) return { key: "status.level.t_upper", tone: Theme.statusPositive }
+            if (c >= 300) return { key: "status.level.t_male", tone: Theme.statusPositive }
+            if (c >= 100) return { key: "status.level.t_subtarget", tone: Theme.statusViolet }
+            return { key: "status.level.t_low", tone: Theme.statusNeutral }
+        }
+        const e = app.currentE2
+        if (e <= 0) return null
+        if (e > 300) return { key: "status.level.high", tone: Theme.warning }
+        if (e >= 100 && e <= 200) return { key: "status.level.mtf", tone: Theme.statusPositive }
+        if (e >= 70) return { key: "status.level.luteal", tone: Theme.statusInfo }
+        if (e >= 30) return { key: "status.level.follicular", tone: Theme.statusViolet }
+        if (e >= 8) return { key: "status.level.male", tone: Theme.statusNeutral }
+        return { key: "status.level.low", tone: Theme.warning }
+    }
+
+    onVisibleChanged: if (visible) chart.play()
+    Component.onCompleted: if (visible) chart.play()
+    Connections {
+        target: app
+        function onChanged() { if (page.visible) chart.play() }
+    }
+
+    Flickable {
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: body.implicitHeight + 128
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        visible: page.hasDoses
+        ScrollBar.vertical: AppScrollBar {}
 
         ColumnLayout {
-            anchors.fill: parent
-            anchors.margins: 18
-            spacing: 2
-            Label {
-                text: card.label
-                color: "#8492a0"
-                font.pixelSize: 11
-                font.letterSpacing: 1.0
-            }
-            Item { Layout.fillHeight: true }
-            RowLayout {
-                spacing: 6
-                Label {
-                    text: card.value
-                    color: "#f4f6f8"
-                    font.pixelSize: 30
-                    font.weight: Font.DemiBold
+            id: body
+            width: parent.width
+            spacing: 0
+
+            // The header: readings and their scale, a rule under it that runs
+            // the full width of the pane.
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: header.implicitHeight + 24 + 20
+
+                ColumnLayout {
+                    id: header
+                    x: Math.max(Theme.pageGutter, (parent.width - Theme.pageColumn) / 2)
+                    y: 24
+                    width: Math.min(Theme.pageColumn, parent.width - Theme.pageGutter * 2)
+                    spacing: 0
+
+                    // The whole title unfolds the explainer under it.
+                    AbstractButton {
+                        id: estimateTitle
+                        Layout.bottomMargin: 16
+                        implicitWidth: titleRow.implicitWidth
+                        implicitHeight: 22
+                        hoverEnabled: true
+                        focusPolicy: Qt.StrongFocus
+                        Accessible.name: T.t("status.estimate")
+                        onClicked: page.explainerOpen = !page.explainerOpen
+
+                        background: Rectangle {
+                            anchors.fill: parent
+                            anchors.margins: -4
+                            radius: 6
+                            color: "transparent"
+                            border.width: estimateTitle.visualFocus ? 2 : 0
+                            border.color: Theme.focusRing
+                        }
+
+                        contentItem: Row {
+                            id: titleRow
+                            spacing: 6
+                            UiText {
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: T.t("status.estimate")
+                                color: page.explainerOpen || estimateTitle.hovered ? Theme.text : Theme.textMuted
+                            }
+                            Icon {
+                                anchors.verticalCenter: parent.verticalCenter
+                                name: "info"
+                                size: 13
+                                color: page.explainerOpen || estimateTitle.hovered ? Theme.text : Theme.textMuted
+                                opacity: estimateTitle.hovered ? 1 : 0.7
+                            }
+                        }
+                    }
+
+                    // What the number is, unfolded in place under the title.
+                    Fold {
+                        open: page.explainerOpen
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.bottomMargin: 20
+                            spacing: 12
+
+                            UiText {
+                                Layout.fillWidth: true
+                                text: T.t("estimate.p1")
+                                color: Theme.textMuted
+                                wrapMode: Text.Wrap
+                                lineHeightMode: Text.ProportionalHeight
+                                lineHeight: 1.15
+                            }
+                            Rectangle {
+                                Layout.fillWidth: true
+                                implicitHeight: calloutText.implicitHeight + 24
+                                radius: Theme.radiusMd
+                                color: Theme.surfaceMuted
+                                UiText {
+                                    id: calloutText
+                                    x: 14
+                                    y: 12
+                                    width: parent.width - 28
+                                    text: T.t("estimate.p2")
+                                    font.weight: Font.Medium
+                                    size: Theme.caption
+                                    wrapMode: Text.Wrap
+                                    lineHeightMode: Text.ProportionalHeight
+                                    lineHeight: 1.0
+                                }
+                            }
+                            UiText {
+                                Layout.fillWidth: true
+                                text: T.t("estimate.p3")
+                                color: Theme.textMuted
+                                wrapMode: Text.Wrap
+                                lineHeightMode: Text.ProportionalHeight
+                                lineHeight: 1.15
+                            }
+                            UiText {
+                                Layout.fillWidth: true
+                                text: T.t("estimate.source")
+                                size: Theme.caption
+                                color: Theme.textMuted
+                                wrapMode: Text.Wrap
+                                lineHeightMode: Text.ProportionalHeight
+                                lineHeight: 1.0
+                            }
+                        }
+                    }
+
+                    // The readings: label over number, the second flush right
+                    // at the same size, both on one baseline.
+                    Item {
+                        Layout.fillWidth: true
+                        implicitHeight: 18 + 6 + primaryValue.height
+
+                        UiText {
+                            anchors.left: parent.left
+                            text: page.primary.label
+                            size: Theme.caption
+                            color: Theme.textMuted
+                            font.weight: Font.Medium
+                        }
+
+                        // Readings keep their digits left to right, so they are
+                            // placed by hand on the page's starting side.
+                        Reading {
+                            id: primaryValue
+                            x: T.rtl ? parent.width - width : 0
+                            y: 24
+                            value: page.primary.value
+                            decimals: page.primary.decimals
+                            unit: page.primary.unit
+                        }
+
+                        UiText {
+                            visible: page.companion !== null && page.companion.label !== ""
+                            anchors.right: parent.right
+                            text: page.companion ? page.companion.label : ""
+                            size: Theme.caption
+                            color: Theme.textMuted
+                            font.weight: Font.Medium
+                        }
+
+                        Reading {
+                            visible: page.companion !== null
+                            x: T.rtl ? 0 : parent.width - width
+                            y: 24
+                            value: page.companion ? page.companion.value : 0
+                            decimals: page.companion ? page.companion.decimals : 0
+                            unit: page.companion ? page.companion.unit : ""
+                        }
+                    }
+
+                    LevelRail {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 8
+                        visible: page.primary.value > 0
+                        value: page.primary.value
+                        band: page.primary.band
+                        domain: page.primary.domain
+                        label: page.status ? T.t(page.status.key) : ""
+                        tone: page.status ? page.status.tone : Theme.statusNeutral
+                    }
                 }
-                Label {
-                    text: card.unit
-                    color: card.accent
-                    font.pixelSize: 12
-                    Layout.alignment: Qt.AlignBottom
-                    Layout.bottomMargin: 6
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    width: parent.width
+                    height: Theme.hairline
+                    color: Theme.border
+                }
+            }
+
+            // The timeline.
+            Item {
+                Layout.fillWidth: true
+                implicitHeight: timeline.implicitHeight + 20
+
+                ColumnLayout {
+                    id: timeline
+                    x: Math.max(Theme.pageGutter, (parent.width - Theme.pageColumn) / 2)
+                    y: 20
+                    width: Math.min(Theme.pageColumn, parent.width - Theme.pageGutter * 2)
+                    spacing: 8
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        UiText {
+                            Layout.fillWidth: true
+                            text: T.t("chart.title")
+                            font.weight: Font.DemiBold
+                            font.letterSpacing: -0.15
+                        }
+
+                        UiText {
+                            visible: chart.loading && chart.curve.length >= 2
+                            text: T.t("chart.loading")
+                            color: Theme.textMuted
+                            size: Theme.caption
+                        }
+
+                        Segmented {
+                            options: [
+                                { value: "7d", label: T.t("chart.range_7d") },
+                                { value: "30d", label: T.t("chart.range_30d") },
+                                { value: "all", label: T.t("chart.range_all") }
+                            ]
+                            currentValue: page.range
+                            onPicked: function(value) { page.range = value }
+                        }
+                    }
+
+                    HormoneChart {
+                        id: chart
+                        Layout.fillWidth: true
+                        Layout.leftMargin: -24
+                        Layout.rightMargin: -24
+                        Layout.preferredHeight: secondary ? 448 : 384
+                        curve: app.curve
+                        doses: app.doses
+                        transmasc: page.transmasc
+                        secondary: page.hasCPA
+                        range: page.range
+                        nowH: app.nowHours()
+                        primaryLabel: (page.transmasc ? T.t("label.total_t") + " ng/dL" : T.t("label.e2") + " pg/mL")
+                        secondaryLabel: T.t("label.cpa_chart") + " ng/mL"
+                        nowLabel: T.t("time.now")
+                        targetLabel: T.t("chart.target")
+                        sweep: played ? 1 : 0
+
+                        Connections {
+                            target: app
+                            function onChanged() { chart.nowH = app.nowHours(); chart.requestPaint() }
+                        }
+                        Connections {
+                            target: Ui
+                            function onLanguageChanged() { chart.requestPaint() }
+                        }
+                    }
+
+                    DoseHeatmap {
+                        Layout.fillWidth: true
+                        Layout.topMargin: 24
+                        doses: app.doses
+                    }
                 }
             }
         }
     }
 
-    ScrollView {
-        anchors.fill: parent
-        clip: true
-        contentWidth: availableWidth
+    // Nothing logged yet: the capsule, a line, and the way to log a dose.
+    ColumnLayout {
+        visible: !page.hasDoses
+        anchors.horizontalCenter: parent.horizontalCenter
+        y: 96
+        width: Math.min(360, parent.width - Theme.pageGutter * 2)
+        spacing: 0
 
-        ColumnLayout {
-            width: page.width
-            spacing: 18
-            anchors.margins: 28
-            Layout.leftMargin: 28
-            Layout.rightMargin: 28
-            Layout.topMargin: 24
+        Doodle {
+            Layout.alignment: Qt.AlignHCenter
             Layout.bottomMargin: 24
+            name: "capsule"
+            size: 96
+        }
 
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.topMargin: 24
-                ColumnLayout {
-                    spacing: 2
-                    Label {
-                        text: "Overview"
-                        color: "#f4f6f8"
-                        font.pixelSize: 26
-                        font.weight: Font.DemiBold
-                    }
-                    Label {
-                        text: "Current exposure and the modeled curve for this mode."
-                        color: "#7f8c9a"
-                        font.pixelSize: 12
-                    }
-                }
-                Item { Layout.fillWidth: true }
-                Label {
-                    text: app.mode
-                    color: "#e8a0b4"
-                    font.pixelSize: 12
-                }
-            }
+        UiText {
+            Layout.fillWidth: true
+            text: T.t("home.empty_title")
+            font.weight: Font.DemiBold
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+        }
 
-            RowLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                spacing: 14
-                StatCard {
-                    label: "ESTRADIOL"
-                    value: app.currentE2.toFixed(1)
-                    unit: "pg/mL"
-                }
-                StatCard {
-                    label: "CYPROTERONE"
-                    value: app.currentCPA.toFixed(2)
-                    unit: "ng/mL"
-                    accent: "#9ec5a7"
-                }
-                StatCard {
-                    label: "TESTOSTERONE"
-                    value: app.currentT.toFixed(1)
-                    unit: "ng/dL"
-                    accent: "#c6b6e8"
-                }
-            }
+        UiText {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.maximumWidth: 260
+            Layout.topMargin: 4
+            text: T.t("home.empty_subtitle")
+            color: Theme.textMuted
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+        }
 
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.preferredHeight: 340
-                radius: 18
-                color: "#151c23"
-                border.width: 1
-                border.color: "#24313c"
+        AppButton {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: 20
+            text: T.t("home.empty_cta")
+            enabled: app.backend !== "none"
+            onClicked: page.logRequested()
+        }
 
-                ColumnLayout {
-                    anchors.fill: parent
-                    anchors.margins: 18
-                    spacing: 4
-                    Label {
-                        text: "Modeled concentration"
-                        color: "#f4f6f8"
-                        font.pixelSize: 15
-                        font.weight: Font.DemiBold
-                    }
-                    Label {
-                        text: "E2 curve from the local C99 model. Times are local."
-                        color: "#7f8c9a"
-                        font.pixelSize: 11
-                    }
-                    Canvas {
-                        id: chart
-                        Layout.fillWidth: true
-                        Layout.fillHeight: true
-                        Layout.topMargin: 8
-                        onPaint: {
-                            var ctx = getContext("2d");
-                            ctx.clearRect(0, 0, width, height);
-                            var points = app.curve;
-                            if (!points || points.length < 2) {
-                                ctx.fillStyle = "#677684";
-                                ctx.font = "13px sans-serif";
-                                ctx.fillText("No doses yet. Add one to see the curve.",
-                                             16, height / 2);
-                                return;
-                            }
-                            var left = 48, right = 12, top = 10, bottom = 30;
-                            var plotW = Math.max(10, width - left - right);
-                            var plotH = Math.max(10, height - top - bottom);
-                            var minT = points[0].t, maxT = points[points.length - 1].t;
-                            var maxY = 0;
-                            for (var i = 0; i < points.length; i++) {
-                                maxY = Math.max(maxY, points[i].e2);
-                            }
-                            if (maxT <= minT) maxT = minT + 1;
-                            maxY = Math.max(1, maxY * 1.15);
-
-                            ctx.strokeStyle = "#24313c";
-                            ctx.lineWidth = 1;
-                            ctx.fillStyle = "#677684";
-                            ctx.font = "10px sans-serif";
-                            for (var g = 0; g <= 4; g++) {
-                                var gy = top + plotH * g / 4;
-                                ctx.beginPath();
-                                ctx.moveTo(left, gy);
-                                ctx.lineTo(left + plotW, gy);
-                                ctx.stroke();
-                                var value = maxY * (1 - g / 4);
-                                ctx.fillText(value.toFixed(0), 4, gy + 3);
-                            }
-                            ctx.strokeStyle = "#5b6b7a";
-                            ctx.beginPath();
-                            ctx.moveTo(left, top);
-                            ctx.lineTo(left, top + plotH);
-                            ctx.lineTo(left + plotW, top + plotH);
-                            ctx.stroke();
-
-                            ctx.strokeStyle = "#e8a0b4";
-                            ctx.lineWidth = 2.5;
-                            ctx.lineJoin = "round";
-                            ctx.beginPath();
-                            for (var j = 0; j < points.length; j++) {
-                                var x = left + (points[j].t - minT) /
-                                        (maxT - minT) * plotW;
-                                var y = top + (1 - points[j].e2 / maxY) * plotH;
-                                if (j === 0) ctx.moveTo(x, y);
-                                else ctx.lineTo(x, y);
-                            }
-                            ctx.stroke();
-
-                            ctx.fillStyle = "#677684";
-                            ctx.font = "10px sans-serif";
-                            ctx.fillText(app.formatTime(minT), left, height - 8);
-                            ctx.fillText(app.formatTime(maxT), left + plotW - 92,
-                                         height - 8);
-                        }
-                        Connections {
-                            target: app
-                            function onChanged() { chart.requestPaint() }
-                        }
-                    }
-                }
-            }
-
-            ColumnLayout {
-                Layout.fillWidth: true
-                Layout.leftMargin: 28
-                Layout.rightMargin: 28
-                Layout.bottomMargin: 28
-                spacing: 8
-                Label {
-                    text: "Recent doses"
-                    color: "#f4f6f8"
-                    font.pixelSize: 15
-                    font.weight: Font.DemiBold
-                }
-                Label {
-                    visible: app.doses.length === 0
-                    text: "No doses recorded for this mode."
-                    color: "#7f8c9a"
-                    font.pixelSize: 12
-                }
-                Repeater {
-                    model: Math.min(app.doses.length, 5)
-                    delegate: Rectangle {
-                        Layout.fillWidth: true
-                        Layout.preferredHeight: 44
-                        radius: 10
-                        color: "#11171d"
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: 14
-                            anchors.rightMargin: 14
-                            Label {
-                                text: app.doses[index].route + " · " +
-                                      app.doses[index].ester
-                                color: "#d8e0e7"
-                                font.pixelSize: 12
-                            }
-                            Item { Layout.fillWidth: true }
-                            Label {
-                                text: app.doses[index].doseMG + " mg"
-                                color: "#e8a0b4"
-                                font.pixelSize: 12
-                            }
-                            Label {
-                                text: app.doses[index].timeLabel
-                                color: "#677684"
-                                font.pixelSize: 11
-                            }
-                        }
-                    }
-                }
-            }
+        UiText {
+            Layout.fillWidth: true
+            Layout.topMargin: 16
+            visible: app.backend === "none"
+            text: T.t("db.not_set_up")
+            size: Theme.caption
+            color: Theme.textMuted
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            lineHeightMode: Text.ProportionalHeight
+            lineHeight: 1.0
         }
     }
 }

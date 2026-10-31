@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
 
@@ -20,6 +21,8 @@ class QTimer;
 class AppController : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString status READ status NOTIFY changed)
+    Q_PROPERTY(QString statusKey READ statusKey NOTIFY changed)
+    Q_PROPERTY(QStringList statusArgs READ statusArgs NOTIFY changed)
     Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)
     Q_PROPERTY(QString backend READ backend NOTIFY changed)
     Q_PROPERTY(QString vaultState READ vaultState NOTIFY changed)
@@ -44,6 +47,8 @@ public:
     ~AppController() override;
 
     [[nodiscard]] QString status() const { return status_; }
+    [[nodiscard]] QString statusKey() const { return status_key_; }
+    [[nodiscard]] QStringList statusArgs() const { return status_args_; }
     [[nodiscard]] QString mode() const { return mode_; }
     [[nodiscard]] QString backend() const { return backend_; }
     [[nodiscard]] QString vaultState() const { return vault_state_; }
@@ -86,6 +91,8 @@ public:
     Q_INVOKABLE bool removeDose(const QString& id);
     [[nodiscard]] Q_INVOKABLE double nowHours() const;
     [[nodiscard]] Q_INVOKABLE QString formatTime(double time_h) const;
+    // The model's parameter defaults, by the keys pkParamsJson uses.
+    [[nodiscard]] Q_INVOKABLE QVariantMap pkDefaults() const;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -101,7 +108,10 @@ private slots:
                              const QString& plaintext_path);
 
 private:
-    void fail(const QString& message);
+    void setStatus(const QString& key, const QString& message,
+                   const QStringList& args = {});
+    void fail(const QString& key, const QString& message,
+              const QStringList& args = {});
     void load_data();
     void compute_curve(const std::vector<oyama::storage::DoseEvent>& events);
     void set_vault_state(const QString& state);
@@ -122,6 +132,8 @@ private:
     oyama::storage::Settings settings_;
 
     QString status_{"Starting..."};
+    QString status_key_;
+    QStringList status_args_;
     QString mode_{"transfem"};
     QString backend_{"none"};
     QString vault_state_{"unavailable"};

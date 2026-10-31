@@ -11,10 +11,12 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 Makefile
+!Makefile
 *.moc
 moc_*.cpp
 qrc_*.cpp
 ui_*.h
+!app/src/ui_preferences.h
 *.qmlc
 *.jsc
 

@@ -1,0 +1,157 @@
+import QtQuick
+import QtTest
+import OyamaHrt 1.0
+import "../../qml/Doses.js" as Doses
+
+TestCase {
+    id: testCase
+    name: "AppComponents"
+    when: windowShown
+    visible: true
+    width: 480
+    height: 600
+
+    ChoiceField {
+        id: choice
+        x: 20
+        y: 20
+        width: 300
+        label: "Route"
+        model: [
+            { value: "oral", label: "Oral" },
+            { value: "sublingual", label: "Sublingual" },
+            { value: "injection", label: "Injection" }
+        ]
+        currentValue: "oral"
+    }
+
+    SignalSpy {
+        id: activated
+        target: choice
+        signalName: "activated"
+    }
+
+    InlinePrompt {
+        id: prompt
+        x: 20
+        y: 400
+        width: 400
+        title: "Delete this record?"
+        cancelText: "Keep it"
+        confirmText: "Delete"
+    }
+
+    SettingsRow {
+        id: firstSetting
+        x: 20
+        y: 500
+        width: 300
+        title: "First"
+    }
+
+    SettingsRow {
+        id: secondSetting
+        x: 20
+        y: 556
+        width: 300
+        divider: true
+        title: "Second"
+    }
+
+    HormoneChart {
+        id: chart
+        x: 1000
+        y: 1000
+        width: 200
+        height: 300
+        windowStart: 0
+        windowEnd: 10
+        plotLeft: 20
+        plotRight: 120
+    }
+
+    SignalSpy {
+        id: confirmed
+        target: prompt
+        signalName: "confirmed"
+    }
+
+    SignalSpy {
+        id: cancelled
+        target: prompt
+        signalName: "cancelled"
+    }
+
+    function findAll(item, predicate, out) {
+        out = out || []
+        if (predicate(item))
+            out.push(item)
+        for (let i = 0; i < item.children.length; ++i)
+            findAll(item.children[i], predicate, out)
+        return out
+    }
+
+    // Choices unfold in place, under the field, as rows with a tick; there
+    // is no pop-up to open.
+    function test_choiceUnfoldsInPlace() {        const rows = findAll(choice, function(i) { return i.selected !== undefined && i.title !== undefined })
+        compare(rows.length, choice.model.length)
+        for (let i = 0; i < rows.length; ++i)
+            compare(rows[i].title, choice.model[i].label)
+
+        const closedHeight = choice.height
+        choice.open = true
+        tryVerify(function() { return choice.height > closedHeight + 100 })
+
+        verify(rows[0].selected)
+        wait(400)
+        mouseClick(rows[2])
+        compare(choice.currentValue, "injection")
+        compare(activated.count, 1)
+        verify(!choice.open)
+        tryVerify(function() { return Math.abs(choice.height - closedHeight) < 1 })
+    }
+
+    // The question's buttons answer it; Escape backs out.
+    function test_inlinePromptAnswers() {
+        const buttons = findAll(prompt, function(i) { return i.variant !== undefined })
+        compare(buttons.length, 2)
+        wait(100)
+        mouseClick(buttons[1])
+        compare(confirmed.count, 1)
+        mouseClick(buttons[0])
+        compare(cancelled.count, 1)
+        prompt.focusKeep()
+        keyClick(Qt.Key_Escape)
+        compare(cancelled.count, 2)
+    }
+
+    // Moving down a list must leave only the row under the pointer filled;
+    // animating the fill out leaves a trail of grey rows behind the pointer.
+    function test_settingsHoverClearsAtOnce() {
+        compare(firstSetting.background.children[0].color.a, 0)
+        mouseMove(firstSetting, firstSetting.width / 2, firstSetting.height / 2)
+        tryCompare(firstSetting.background.children[0].color, "a", 1)
+        mouseMove(secondSetting, secondSetting.width / 2, secondSetting.height / 2)
+        compare(firstSetting.background.children[0].color.a, 0)
+        compare(secondSetting.background.children[0].color.a, 1)
+    }
+
+    function test_chartTimeAtX() {
+        compare(chart.timeAtX(20), 0)
+        compare(chart.timeAtX(70), 5)
+        compare(chart.timeAtX(120), 10)
+        verify(isNaN(chart.timeAtX(10)))
+        verify(isNaN(chart.timeAtX(130)))
+    }
+
+    // What the dose form offers, as on the web.
+    function test_doseChoices() {
+        compare(Doses.routesFor(true), ["injection", "gel"])
+        compare(Doses.estersFor("injection", false), ["EB", "EV", "EC", "EN", "EU"])
+        compare(Doses.estersFor("oral", false), ["E2", "EV", "CPA"])
+        compare(Doses.estersFor("injection", true), ["TC", "TE", "TU"])
+        fuzzyCompare(Doses.factor("EV") * 4, 3.056, 0.001)
+        compare(Doses.factor("CPA"), 1)
+        compare(Doses.trim(12.5), "12.5")
+    }
+}

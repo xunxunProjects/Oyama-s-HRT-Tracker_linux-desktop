@@ -5,6 +5,10 @@ project(oyama_hrt_linux_desktop
     DESCRIPTION "Oyama's HRT Tracker - Linux/BSD desktop"
     LANGUAGES C CXX)
 
+if(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
+    message(STATUS "OpenBSD native build: Qt 6 and libpq come from packages")
+endif()
+
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
@@ -93,26 +97,105 @@ if(OYAMA_BUILD_QT_SHELL)
     find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
     if(Qt6_FOUND)
         qt_standard_project_setup()
-        qt_policy(SET QTP0001 NEW)
-        qt_policy(SET QTP0004 NEW)
+        # These policies were introduced after the minimum supported Qt.
+        # Setting an unknown policy is fatal, so keep Qt 6.4 (Debian 12 and
+        # Ubuntu 24.04) working as documented.
+        if(Qt6_VERSION VERSION_GREATER_EQUAL 6.5)
+            qt_policy(SET QTP0001 NEW)
+        endif()
+        if(Qt6_VERSION VERSION_GREATER_EQUAL 6.8)
+            qt_policy(SET QTP0004 NEW)
+        endif()
+
+        function(oyama_add_app_assets target)
+            qt_add_resources(${target} "app_i18n"
+                PREFIX "/i18n"
+                BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n"
+                FILES
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/en.json"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/zh.json"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/ru.json"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/i18n/fa.json")
+            qt_add_resources(${target} "app_fonts"
+                PREFIX "/fonts"
+                BASE "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts"
+                FILES
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts/InterVariable.ttf"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts/Vazirmatn-Regular.ttf"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts/Vazirmatn-Medium.ttf"
+                  "${CMAKE_CURRENT_SOURCE_DIR}/app/fonts/Vazirmatn-SemiBold.ttf")
+        endfunction()
+
         qt_add_executable(oyama-hrt-app
             app/src/main.cpp
             app/src/app_controller.cpp
             app/src/app_controller.h
             app/src/legacy_migration_worker.cpp
-            app/src/legacy_migration_worker.h)
+            app/src/legacy_migration_worker.h
+            app/src/ui_preferences.cpp
+            app/src/ui_preferences.h)
+        set(OYAMA_QML_FILES
+            app/qml/Main.qml
+            app/qml/VaultGate.qml
+            app/qml/SetupVaultPage.qml
+            app/qml/UnlockVaultPage.qml
+            app/qml/Sidebar.qml
+            app/qml/NavItem.qml
+            app/qml/FirstRun.qml
+            app/qml/OverviewPage.qml
+            app/qml/HistoryPage.qml
+            app/qml/SettingsPage.qml
+            app/qml/SubPage.qml
+            app/qml/ModeSettings.qml
+            app/qml/WeightSettings.qml
+            app/qml/AgeSettings.qml
+            app/qml/CalibrationSettings.qml
+            app/qml/ParamsSettings.qml
+            app/qml/LanguageSettings.qml
+            app/qml/AppearanceSettings.qml
+            app/qml/DisclaimerPage.qml
+            app/qml/DoseForm.qml
+            app/qml/DateTimePicker.qml
+            app/qml/HormoneChart.qml
+            app/qml/DoseHeatmap.qml
+            app/qml/LevelRail.qml
+            app/qml/Reading.qml
+            app/qml/T.qml
+            app/qml/Theme.qml
+            app/qml/UiText.qml
+            app/qml/Icon.qml
+            app/qml/Doodle.qml
+            app/qml/Tick.qml
+            app/qml/AppButton.qml
+            app/qml/AppTextField.qml
+            app/qml/AppScrollBar.qml
+            app/qml/LineField.qml
+            app/qml/FigureField.qml
+            app/qml/InkRule.qml
+            app/qml/ChoiceField.qml
+            app/qml/ChoiceRow.qml
+            app/qml/SettingsRow.qml
+            app/qml/GroupHeading.qml
+            app/qml/Hairline.qml
+            app/qml/Fold.qml
+            app/qml/InlinePrompt.qml
+            app/qml/PageHeader.qml
+            app/qml/PageColumn.qml
+            app/qml/Segmented.qml
+            app/qml/Tabs.qml
+            app/qml/Drawings.js
+            app/qml/Doses.js)
+        set_source_files_properties(app/qml/T.qml
+            PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+        set_source_files_properties(app/qml/Theme.qml
+            PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
         qt_add_qml_module(oyama-hrt-app
             URI OyamaHrt
             VERSION 1.0
-            QML_FILES
-                app/qml/Main.qml
-                app/qml/VaultGate.qml
-                app/qml/SetupVaultPage.qml
-                app/qml/UnlockVaultPage.qml
-                app/qml/OverviewPage.qml
-                app/qml/AddDosePage.qml
-                app/qml/HistoryPage.qml
-                app/qml/SettingsPage.qml)
+            RESOURCE_PREFIX "/qt/qml"
+            QML_FILES ${OYAMA_QML_FILES}
+            RESOURCES app/assets/app-icon.png)
+        oyama_add_app_assets(oyama-hrt-app)
         target_link_libraries(oyama-hrt-app PRIVATE
             oyama_storage
             oyama_pk
@@ -123,12 +206,41 @@ if(OYAMA_BUILD_QT_SHELL)
             Qt6::Quick
             Qt6::QuickControls2)
         target_compile_definitions(oyama-hrt-app PRIVATE
+            OYAMA_APP_VERSION="${PROJECT_VERSION}"
             OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
             OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
         if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
             target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
         endif()
         install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+        qt_add_executable(ui_preferences_test
+            app/tests/ui_preferences_test.cpp
+            app/src/ui_preferences.cpp
+            app/src/ui_preferences.h)
+        target_include_directories(ui_preferences_test PRIVATE app/src)
+        target_link_libraries(ui_preferences_test PRIVATE Qt6::Core Qt6::Gui)
+        oyama_add_app_assets(ui_preferences_test)
+        add_test(NAME ui_preferences_test COMMAND ui_preferences_test)
+        set_tests_properties(ui_preferences_test PROPERTIES
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+        if(TARGET Qt6::qmake)
+            get_target_property(_oyama_qmake Qt6::qmake IMPORTED_LOCATION)
+            if(_oyama_qmake)
+                get_filename_component(_oyama_qt_bin_dir "${_oyama_qmake}" DIRECTORY)
+            endif()
+        endif()
+        find_program(OYAMA_QMLTESTRUNNER NAMES qmltestrunner
+            HINTS "${_oyama_qt_bin_dir}")
+        if(OYAMA_QMLTESTRUNNER)
+            add_test(NAME qml_components
+                COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/app/tests/run_qml_tests.sh
+                        ${CMAKE_CURRENT_BINARY_DIR}
+                        ${OYAMA_QMLTESTRUNNER})
+            set_tests_properties(qml_components PROPERTIES
+                ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+        endif()
     else()
         message(STATUS "Qt 6.4+ not found; skipping the Qt/QML shell")
     endif()
@@ -325,6 +437,21 @@ if(BUILD_TESTING)
         add_test(NAME qt_shell_smoke COMMAND oyama-hrt-app --self-test)
         set_tests_properties(qt_shell_smoke PROPERTIES
             ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;OYAMA_CONFIG_FILE=${CMAKE_CURRENT_BINARY_DIR}/qt-shell-smoke-no-config")
+
+        foreach(locale en zh ru fa)
+            add_test(NAME qt_shell_smoke_${locale}
+                COMMAND oyama-hrt-app --self-test)
+            set_tests_properties(qt_shell_smoke_${locale} PROPERTIES
+                ENVIRONMENT
+                "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;OYAMA_UI_LANGUAGE=${locale};OYAMA_CONFIG_FILE=${CMAKE_CURRENT_BINARY_DIR}/qt-shell-smoke-no-config")
+        endforeach()
+
+        file(REMOVE_RECURSE "${CMAKE_CURRENT_BINARY_DIR}/qt-first-run")
+        add_test(NAME qt_shell_smoke_first_run
+            COMMAND oyama-hrt-app --self-test)
+        set_tests_properties(qt_shell_smoke_first_run PROPERTIES
+            ENVIRONMENT
+            "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;XDG_CONFIG_HOME=${CMAKE_CURRENT_BINARY_DIR}/qt-first-run;OYAMA_CONFIG_FILE=${CMAKE_CURRENT_BINARY_DIR}/qt-shell-smoke-no-config")
 
         add_executable(app_controller_test
             app/tests/app_controller_test.cpp

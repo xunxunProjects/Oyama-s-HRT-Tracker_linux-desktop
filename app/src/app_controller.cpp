@@ -219,6 +219,12 @@ oyama_pk_params pk_params_from_json(const QString& text) {
     return params;
 }
 
+// A patch removal records only when the patch came off, as upstream does: it
+// has no amount of its own. Every other route needs a dose above zero.
+bool dose_allowed(const QString& route, double dose_mg) {
+    return route == "patchRemove" ? dose_mg >= 0.0 : dose_mg > 0.0;
+}
+
 std::int64_t now_ms() {
     return QDateTime::currentMSecsSinceEpoch();
 }
@@ -373,15 +379,26 @@ void AppController::setMode(const QString& mode) {
         try {
             load_data();
         } catch (const std::exception& error) {
-            fail(QString("Database error: ") + QString::fromUtf8(error.what()));
+            fail("status.database_error",
+                 QString("Database error: ") +
+                     QString::fromUtf8(error.what()),
+                 {QString::fromUtf8(error.what())});
         }
     } else {
         reload();
     }
 }
 
-void AppController::fail(const QString& message) {
+void AppController::setStatus(const QString& key, const QString& message,
+                              const QStringList& args) {
+    status_key_ = key;
+    status_args_ = args;
     status_ = message;
+}
+
+void AppController::fail(const QString& key, const QString& message,
+                         const QStringList& args) {
+    setStatus(key, message, args);
     doses_.clear();
     curve_.clear();
     current_e2_ = 0.0;
@@ -456,7 +473,7 @@ void AppController::reload() {
         const auto config = oyama::storage::load_app_config();
         if (!config.has_value()) {
             backend_ = "none";
-            fail("No database configured. Run `oyama-hrt-cli db setup`.");
+            fail("status.no_database", "No database configured. Run `oyama-hrt-cli db setup`.");
             return;
         }
         app_config_ = *config;
@@ -471,7 +488,6 @@ void AppController::reload() {
 
         database_ = std::make_unique<Database>(
             app_config_.connection_config(), migrations_dir());
-
         // Detect legacy data before 0003.  A legacy database is never
         // migrated in place: managed clusters go through the dedicated
         // migration command, and external databases use the JSON path.
@@ -479,21 +495,21 @@ void AppController::reload() {
             oyama::storage::detect_legacy(database_->connection());
         if (detection.has_legacy) {
             if (detection.has_meta) {
-                fail("Vault and legacy plaintext data are both present. "
-                     "Export the legacy rows with the old binary or restore "
-                     "a pre-migration backup before continuing.");
+                fail("", "Vault and legacy plaintext data are both present. "
+                         "Export the legacy rows with the old binary or "
+                         "restore a pre-migration backup before continuing.");
                 return;
             }
             if (app_config_.backend == Backend::Managed) {
                 legacy_pending_ = true;
                 set_vault_state("uninitialized");
-                status_ = QString::fromUtf8(kLegacyMigrationSetupStatus);
+                setStatus("", QString::fromUtf8(kLegacyMigrationSetupStatus));
                 emit changed();
                 return;
             }
-            fail("Legacy plaintext data requires the JSON export/import "
-                 "path; export it with the old binary, then run "
-                 "`oyama-hrt-cli backup import --plaintext`.");
+            fail("", "Legacy plaintext data requires the JSON export/import "
+                     "path; export it with the old binary, then run "
+                     "`oyama-hrt-cli backup import --plaintext`.");
             return;
         }
 
@@ -503,13 +519,13 @@ void AppController::reload() {
         switch (vault_->state()) {
         case VaultState::Uninitialized:
             set_vault_state("uninitialized");
-            status_ = "Vault is not initialized. Create a paper recovery "
-                      "phrase to protect your data.";
+            setStatus("", "Vault is not initialized. Create a paper recovery "
+                          "phrase to protect your data.");
             emit changed();
             break;
         case VaultState::Locked:
             set_vault_state("locked");
-            status_ = "Vault is locked.";
+            setStatus("", "Vault is locked.");
             emit changed();
             break;
         case VaultState::Unlocked:
@@ -518,14 +534,14 @@ void AppController::reload() {
             break;
         }
     } catch (const std::exception& error) {
-        fail(QString("Database error: ") + QString::fromUtf8(error.what()));
+        fail("status.database_error", QString("Database error: ") + QString::fromUtf8(error.what()), {QString::fromUtf8(error.what())});
     }
 }
 
 bool AppController::beginVaultSetup() {
     if (vault_state_ != "uninitialized" ||
         (!legacy_pending_ && vault_ == nullptr)) {
-        fail(QStringLiteral("Vault setup is not available."));
+        fail("", QStringLiteral("Vault setup is not available."));
         return false;
     }
     try {
@@ -541,18 +557,18 @@ bool AppController::beginVaultSetup() {
         for (const auto position : positions) {
             setup_challenge_.push_back(position);
         }
-        status_ = legacy_pending_
-                      ? "Write down the recovery phrase.  The old plaintext "
-                        "data is migrated into a new encrypted vault when you "
-                        "confirm."
-                      : "Write down the recovery phrase, then answer the "
-                        "challenge.";
+        setStatus("", legacy_pending_
+                          ? "Write down the recovery phrase.  The old plaintext "
+                            "data is migrated into a new encrypted vault when "
+                            "you confirm."
+                          : "Write down the recovery phrase, then answer the "
+                            "challenge.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
         clear_setup();
-        fail(QString("Could not generate a recovery phrase: ") +
-             QString::fromUtf8(error.what()));
+        fail("", QString("Could not generate a recovery phrase: ") +
+                    QString::fromUtf8(error.what()));
         return false;
     }
 }
@@ -562,11 +578,12 @@ bool AppController::confirmVaultSetup(const QVariantList& answers,
     if (vault_state_ != "uninitialized" ||
         (!legacy_pending_ && vault_ == nullptr) ||
         setup_phrase_.isEmpty() || setup_challenge_.empty()) {
-        fail("Vault setup is not in progress.");
+        fail("", "Vault setup is not in progress.");
         return false;
     }
     if (!acknowledged) {
-        status_ = "Acknowledge that there is no recovery before continuing.";
+        setStatus("", "Acknowledge that there is no recovery before "
+                      "continuing.");
         emit changed();
         return false;
     }
@@ -581,7 +598,7 @@ bool AppController::confirmVaultSetup(const QVariantList& answers,
         secret, setup_challenge_, normalized_answers);
     if (!matches) {
         sodium_memzero(secret.data(), secret.size());
-        status_ = "The challenge words do not match. Try again.";
+        setStatus("", "The challenge words do not match. Try again.");
         emit changed();
         return false;
     }
@@ -595,7 +612,7 @@ bool AppController::confirmVaultSetup(const QVariantList& answers,
             clear_pending_migration_phrase();
             set_vault_busy(false);
             set_vault_state("uninitialized");
-            fail("Could not start the legacy migration.");
+            fail("", "Could not start the legacy migration.");
             return false;
         }
         return true;
@@ -623,8 +640,8 @@ bool AppController::confirmVaultSetup(const QVariantList& answers,
         clear_setup();
         set_vault_state(initialized ? "locked" : "uninitialized");
         set_vault_busy(false);
-        fail(QString("Could not create the vault: ") +
-             QString::fromUtf8(error.what()));
+        fail("", QString("Could not create the vault: ") +
+                    QString::fromUtf8(error.what()));
         return false;
     }
 }
@@ -634,21 +651,21 @@ void AppController::cancelVaultSetup() {
         return;
     }
     clear_setup();
-    status_ = "Vault setup cancelled.";
+    setStatus("", "Vault setup cancelled.");
     emit changed();
 }
 
 bool AppController::unlockVault(const QString& phrase) {
     if (vault_ == nullptr) {
-        fail("Database is not connected.");
+        fail("", "Database is not connected.");
         return false;
     }
     if (vault_state_ == "uninitialized") {
-        fail("Vault is not initialized.");
+        fail("", "Vault is not initialized.");
         return false;
     }
     if (vault_state_ != "locked") {
-        fail("Vault is not locked.");
+        fail("", "Vault is not locked.");
         return false;
     }
     std::string secret = phrase.toStdString();
@@ -657,7 +674,7 @@ bool AppController::unlockVault(const QString& phrase) {
     sodium_memzero(normalized.data(), normalized.size());
     if (empty) {
         sodium_memzero(secret.data(), secret.size());
-        fail("Enter the recovery phrase.");
+        fail("", "Enter the recovery phrase.");
         return false;
     }
 
@@ -674,8 +691,8 @@ bool AppController::unlockVault(const QString& phrase) {
         vault_->lock();
         set_vault_state("locked");
         set_vault_busy(false);
-        fail("Could not unlock the vault. Check the recovery phrase and try "
-             "again.");
+        fail("", "Could not unlock the vault. Check the recovery phrase and "
+                  "try again.");
         return false;
     }
 }
@@ -697,14 +714,14 @@ void AppController::lockVault() {
     clear_models();
     if (vault_state_ == "unlocked") {
         set_vault_state("locked");
-        status_ = "Vault is locked.";
+        setStatus("", "Vault is locked.");
     }
     emit changed();
 }
 
 bool AppController::require_unlocked() {
     if (!vault_ || vault_state_ != "unlocked" || !vault_->is_unlocked()) {
-        fail("Vault is locked");
+        fail("", "Vault is locked");
         return false;
     }
     return true;
@@ -749,7 +766,7 @@ bool AppController::start_migration_worker() {
 
     set_vault_busy(true);
     set_vault_state("migrating");
-    status_ = "Migrating legacy data...";
+    setStatus("", "Migrating legacy data...");
     emit changed();
 
     thread->start();
@@ -785,7 +802,7 @@ bool AppController::retryLegacyMigration() {
         return false;
     }
     if (!start_migration_worker()) {
-        fail("Could not restart the legacy migration.");
+        fail("", "Could not restart the legacy migration.");
         return false;
     }
     return true;
@@ -800,7 +817,7 @@ void AppController::cancelLegacyMigration() {
     clear_setup();
     legacy_pending_ = true;
     set_vault_state("uninitialized");
-    status_ = "Migration cancelled. Set up a recovery phrase to migrate.";
+    setStatus("", "Migration cancelled. Set up a recovery phrase to migrate.");
     emit changed();
 }
 
@@ -827,12 +844,12 @@ void AppController::on_migration_progress(const QString& kind, int done,
         return;
     }
     if (total > 0) {
-        status_ = QStringLiteral("Migrating %1 (%2/%3)...")
-                      .arg(kind)
-                      .arg(done)
-                      .arg(total);
+        setStatus("", QStringLiteral("Migrating %1 (%2/%3)...")
+                          .arg(kind)
+                          .arg(done)
+                          .arg(total));
     } else {
-        status_ = QStringLiteral("Migrating %1...").arg(kind);
+        setStatus("", QStringLiteral("Migrating %1...").arg(kind));
     }
     emit changed();
 }
@@ -859,26 +876,27 @@ void AppController::on_migration_finished() {
         qphrase.clear();
         if (unlocked) {
             const QString plaintext = migration_plaintext_path();
-            status_ = plaintext.isEmpty()
-                          ? QStringLiteral("Legacy data migrated to the new "
-                                           "encrypted vault.")
-                          : QStringLiteral(
-                                "Legacy data migrated. Old plaintext data is "
-                                "kept at %1. %2")
-                                .arg(plaintext,
-                                     QString::fromUtf8(kPlaintextWarning));
+            setStatus("", plaintext.isEmpty()
+                              ? QStringLiteral("Legacy data migrated to the new "
+                                               "encrypted vault.")
+                              : QStringLiteral(
+                                    "Legacy data migrated. Old plaintext data "
+                                    "is kept at %1. %2")
+                                    .arg(plaintext,
+                                         QString::fromUtf8(kPlaintextWarning)));
         } else {
-            status_ = QStringLiteral(
-                "The migration finished, but the new vault could not be "
-                "unlocked. Use the recovery phrase you wrote down.");
+            setStatus("", QStringLiteral(
+                              "The migration finished, but the new vault could "
+                              "not be unlocked. Use the recovery phrase you "
+                              "wrote down."));
         }
     } else {
         sodium_memzero(phrase.data(), phrase.size());
         phrase.clear();
-        status_ = QStringLiteral(
-                      "The migration finished, but the new vault is not "
-                      "available: ") +
-                  status_;
+        setStatus("", QStringLiteral(
+                          "The migration finished, but the new vault is not "
+                          "available: ") +
+                      status_);
     }
     emit changed();
 }
@@ -901,7 +919,7 @@ void AppController::on_migration_failed(const QString& message,
                     .arg(QString::fromStdString(app_config_.data_dir));
     }
     text += QStringLiteral(" Retry or cancel.");
-    status_ = text;
+    setStatus("", text);
     emit changed();
 }
 
@@ -912,7 +930,7 @@ void AppController::load_data() {
     settings_ = VaultSettingsRepository(*vault_).get();
     const auto parsed_mode = oyama::storage::parse_mode(mode_.toStdString());
     if (!parsed_mode.has_value()) {
-        fail("Invalid mode: " + mode_);
+        fail("status.invalid_mode", "Invalid mode: " + mode_, {mode_});
         return;
     }
     auto events = VaultDoseEventRepository(*vault_).list(*parsed_mode);
@@ -929,8 +947,10 @@ void AppController::load_data() {
         doses_.append(item);
     }
     compute_curve(events);
-    status_ = "Connected to " + QString::fromStdString(app_config_.dbname) +
-              " via " + backend_;
+    setStatus("status.connected",
+              "Connected to " + QString::fromStdString(app_config_.dbname) +
+                  " via " + backend_,
+              {QString::fromStdString(app_config_.dbname), backend_});
     start_idle_timer();
     emit changed();
 }
@@ -996,7 +1016,10 @@ void AppController::compute_curve(const std::vector<DoseEvent>& events) {
         if (oyama_pk_simulate(&request, &result) != OYAMA_PK_OK) {
             return;
         }
-        const std::size_t stride = std::max<std::size_t>(1, n / 700);
+        // The model steps about once an hour. Keep that resolution for the
+        // timeline (a 7-day window needs it for a daily pill's peaks), thinning
+        // only very long histories.
+        const std::size_t stride = std::max<std::size_t>(1, n / 10000);
         for (std::size_t i = 0; i < n; i += stride) {
             QVariantMap point;
             point["t"] = time[i];
@@ -1021,17 +1044,18 @@ bool AppController::addDose(const QString& route, const QString& ester,
     if (!require_unlocked()) {
         return false;
     }
-    if (!std::isfinite(dose_mg) || dose_mg <= 0.0 || !std::isfinite(time_h)) {
-        fail("Enter a valid dose and time.");
+    if (!std::isfinite(dose_mg) || !dose_allowed(route, dose_mg) ||
+        !std::isfinite(time_h)) {
+        fail("status.invalid_dose_time", "Enter a valid dose and time.");
         return false;
     }
     const auto parsed_mode = oyama::storage::parse_mode(mode_.toStdString());
     if (!parsed_mode.has_value()) {
-        fail("Invalid mode.");
+        fail("status.invalid_mode_plain", "Invalid mode.");
         return false;
     }
     if (!route_from(route).has_value() || !ester_from(ester).has_value()) {
-        fail("Unsupported route or ester.");
+        fail("status.unsupported_route", "Unsupported route or ester.");
         return false;
     }
     try {
@@ -1047,11 +1071,11 @@ bool AppController::addDose(const QString& route, const QString& ester,
         event.updated_at = event.created_at;
         VaultDoseEventRepository(*vault_).upsert(event);
         load_data();
-        status_ = "Dose added.";
+        setStatus("status.dose_added", "Dose added.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
-        fail(QString("Could not add dose: ") + QString::fromUtf8(error.what()));
+        fail("status.add_failed", QString("Could not add dose: ") + QString::fromUtf8(error.what()), {QString::fromUtf8(error.what())});
         return false;
     }
 }
@@ -1062,19 +1086,19 @@ bool AppController::updateDose(const QString& id, const QString& route,
     if (!require_unlocked()) {
         return false;
     }
-    if (!std::isfinite(dose_mg) || dose_mg <= 0.0) {
-        fail("Dose must be greater than zero.");
+    if (!std::isfinite(dose_mg) || !dose_allowed(route, dose_mg)) {
+        fail("status.dose_positive", "Dose must be greater than zero.");
         return false;
     }
     if (!std::isfinite(time_h) || time_h <= 0.0) {
-        fail("Dose time is invalid.");
+        fail("status.invalid_time", "Dose time is invalid.");
         return false;
     }
     const auto mode = oyama::storage::parse_mode(mode_.toStdString());
     const auto route_value = route_from(route);
     const auto ester_value = ester_from(ester);
     if (!mode || !route_value || !ester_value) {
-        fail("Invalid mode, route, or ester.");
+        fail("status.invalid_combination", "Invalid mode, route, or ester.");
         return false;
     }
 
@@ -1082,7 +1106,7 @@ bool AppController::updateDose(const QString& id, const QString& route,
         VaultDoseEventRepository repository(*vault_);
         auto existing = repository.get(id.toStdString());
         if (!existing.has_value()) {
-            fail("Dose not found.");
+            fail("status.dose_not_found", "Dose not found.");
             return false;
         }
         existing->mode = *mode;
@@ -1094,11 +1118,11 @@ bool AppController::updateDose(const QString& id, const QString& route,
         existing->updated_at = now_ms();
         repository.upsert(*existing);
         load_data();
-        status_ = "Dose updated.";
+        setStatus("status.dose_updated", "Dose updated.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
-        fail(QString("Could not update dose: %1").arg(error.what()));
+        fail("status.update_failed", QString("Could not update dose: %1").arg(error.what()), {QString::fromUtf8(error.what())});
         return false;
     }
 }
@@ -1111,22 +1135,22 @@ bool AppController::saveSettings(double weight, int birth_year,
         return false;
     }
     if (!std::isfinite(weight) || weight <= 0.0) {
-        fail("Body weight must be greater than zero.");
+        fail("status.weight_positive", "Body weight must be greater than zero.");
         return false;
     }
     if (birth_year != 0 && (birth_year < 1900 || birth_year > 2200)) {
-        fail("Birth year must be between 1900 and 2200, or 0 to unset.");
+        fail("status.birth_year_range", "Birth year must be between 1900 and 2200, or 0 to unset.");
         return false;
     }
     const std::string method = calibration_method.toStdString();
     if (method != "off" && method != "ekf" && method != "ou_kalman" &&
         method != "mipd") {
-        fail("Invalid calibration method.");
+        fail("status.invalid_calibration", "Invalid calibration method.");
         return false;
     }
     const std::string history = calibration_history.toStdString();
     if (history != "forward" && history != "retrospective") {
-        fail("Invalid calibration history mode.");
+        fail("status.invalid_history", "Invalid calibration history mode.");
         return false;
     }
 
@@ -1149,13 +1173,43 @@ bool AppController::saveSettings(double weight, int birth_year,
         settings.updated_at = now_ms();
         repository.save(settings);
         load_data();
-        status_ = "Settings saved.";
+        setStatus("status.settings_saved", "Settings saved.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
-        fail(QString("Could not save settings: %1").arg(error.what()));
+        fail("status.save_failed", QString("Could not save settings: %1").arg(error.what()), {QString::fromUtf8(error.what())});
         return false;
     }
+}
+
+QVariantMap AppController::pkDefaults() const {
+    oyama_pk_params params{};
+    oyama_pk_params_defaults(&params);
+    return {
+        {"e2_kClear", params.e2_kClear},
+        {"e2_kClearInj", params.e2_kClearInj},
+        {"e2_ff_EB", params.e2_ff_EB},
+        {"e2_ff_EV", params.e2_ff_EV},
+        {"e2_ff_EC", params.e2_ff_EC},
+        {"e2_ff_EN", params.e2_ff_EN},
+        {"e2_ff_EU", params.e2_ff_EU},
+        {"e2_oral_bio", params.e2_oral_bio},
+        {"e2_sl_quick", params.e2_sl_quick},
+        {"e2_sl_casual", params.e2_sl_casual},
+        {"e2_sl_standard", params.e2_sl_standard},
+        {"e2_sl_strict", params.e2_sl_strict},
+        {"e2_gel_arm", params.e2_gel_arm},
+        {"e2_gel_thigh", params.e2_gel_thigh},
+        {"e2_gel_scrotal", params.e2_gel_scrotal},
+        {"t_kClear", params.t_kClear},
+        {"t_kClearInj", params.t_kClearInj},
+        {"t_ff_TC", params.t_ff_TC},
+        {"t_ff_TE", params.t_ff_TE},
+        {"t_ff_TU", params.t_ff_TU},
+        {"t_gel_arm", params.t_gel_arm},
+        {"t_gel_thigh", params.t_gel_thigh},
+        {"t_gel_scrotal", params.t_gel_scrotal},
+    };
 }
 
 double AppController::weight() const {
@@ -1185,12 +1239,14 @@ bool AppController::removeDose(const QString& id) {
     try {
         (void)VaultDoseEventRepository(*vault_).remove(id.toStdString());
         load_data();
-        status_ = "Dose removed.";
+        setStatus("status.dose_removed", "Dose removed.");
         emit changed();
         return true;
     } catch (const std::exception& error) {
-        fail(QString("Could not remove dose: ") +
-             QString::fromUtf8(error.what()));
+        fail("status.remove_failed",
+             QString("Could not remove dose: ") +
+                 QString::fromUtf8(error.what()),
+             {QString::fromUtf8(error.what())});
         return false;
     }
 }

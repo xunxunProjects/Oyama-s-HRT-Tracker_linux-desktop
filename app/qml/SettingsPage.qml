@@ -2,144 +2,191 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// Settings: General and About, each a few runs of hairline rows under short
+// headings. A row that changes something opens its own page, with the way
+// back in its title; the new page is put down a little to the side and
+// settles, and is never faded through the old one.
 Item {
     id: page
+    property string sub: ""
+    property string tab: "general"
+    signal introRequested()
 
-    function loadSettings() {
-        weightField.text = app.weight > 0 ? String(app.weight) : ""
-        birthField.text = app.birthYear > 0 ? String(app.birthYear) : ""
-        methodCombo.currentIndex = Math.max(0, methodCombo.model.indexOf(app.calibrationMethod))
-        historyCombo.currentIndex = Math.max(0, historyCombo.model.indexOf(app.calibrationHistory))
-        pkArea.text = app.pkParamsJson && app.pkParamsJson.length > 0 ? app.pkParamsJson : "{}"
+    readonly property var pages: ({
+        "mode": "ModeSettings.qml",
+        "weight": "WeightSettings.qml",
+        "age": "AgeSettings.qml",
+        "calibration": "CalibrationSettings.qml",
+        "params": "ParamsSettings.qml",
+        "language": "LanguageSettings.qml",
+        "appearance": "AppearanceSettings.qml",
+        "disclaimer": "DisclaimerPage.qml"
+    })
+
+    property real shift: 0
+    NumberAnimation {
+        id: settle
+        target: page
+        property: "shift"
+        to: 0
+        duration: Theme.durationPage
+        easing.type: Easing.BezierSpline
+        easing.bezierCurve: Theme.easePage
     }
 
-    Component.onCompleted: loadSettings()
-
-    Connections {
-        target: app
-        function onChanged() { page.loadSettings() }
+    function open(name) {
+        if (name === "about") {
+            tab = "about"
+            name = ""
+        }
+        if (name !== "" && !pages[name])
+            name = ""
+        if (name === sub)
+            return
+        sub = name
+        shift = T.rtl ? -24 : 24
+        settle.restart()
     }
 
-    ColumnLayout {
+    // Writes one or more settings, keeping the rest as they are. Returns ""
+    // or what went wrong, in words.
+    function saveWith(changes) {
+        if (app.backend === "none")
+            return T.t("db.cta_disabled")
+        const value = function(key, current) {
+            return changes[key] !== undefined ? changes[key] : current
+        }
+        const ok = app.saveSettings(value("weight", app.weight),
+                                    value("birthYear", app.birthYear),
+                                    value("method", app.calibrationMethod),
+                                    value("history", app.calibrationHistory),
+                                    value("params", app.pkParamsJson || "{}"))
+        if (ok)
+            return ""
+        return app.statusKey ? T.t(app.statusKey, app.statusArgs) : app.status
+    }
+
+    function languageName(code) {
+        const list = Ui.availableLanguages
+        for (let i = 0; i < list.length; ++i)
+            if (list[i].code === code)
+                return list[i].nativeName
+        return code
+    }
+
+    PageColumn {
         anchors.fill: parent
-        anchors.margins: 28
-        spacing: 14
+        visible: page.sub === ""
+        transform: Translate { x: page.sub === "" ? page.shift : 0 }
 
-        Label {
-            text: qsTr("Settings")
-            font.pixelSize: 30
-            font.bold: true
-            color: "#f4f6f8"
-        }
-        Label {
-            text: qsTr("Shared body and model settings. Changes apply to both modes.")
-            color: "#8a98a8"
-            font.pixelSize: 13
+        PageHeader {
+            title: T.t("nav.settings")
         }
 
-        Rectangle {
+        Tabs {
+            options: [
+                { value: "general", label: T.t("settings.group.general") },
+                { value: "about", label: T.t("settings.group.about") }
+            ]
+            currentValue: page.tab
+            onPicked: function(value) { page.tab = value }
+        }
+
+        // General.
+        ColumnLayout {
             Layout.fillWidth: true
-            radius: 14
-            color: "#182028"
-            border.color: "#26313c"
-            implicitHeight: form.implicitHeight + 40
+            visible: page.tab === "general"
+            spacing: 0
 
-            GridLayout {
-                id: form
-                anchors.left: parent.left
-                anchors.right: parent.right
-                anchors.top: parent.top
-                anchors.margins: 20
-                columns: 2
-                columnSpacing: 18
-                rowSpacing: 14
+            GroupHeading { text: T.t("settings.section.model") }
+            SettingsRow {
+                title: T.t("settings.hrt_mode")
+                value: T.t("mode." + app.mode)
+                onClicked: page.open("mode")
+            }
+            SettingsRow {
+                divider: true
+                title: T.t("settings.weight")
+                value: T.fill(T.t("unit.kg_value"), [Number(app.weight).toFixed(app.weight % 1 === 0 ? 0 : 1)])
+                onClicked: page.open("weight")
+            }
+            SettingsRow {
+                divider: true
+                title: T.t("settings.age")
+                description: T.t("settings.age_beta_desc")
+                value: app.birthYear > 0 ? String(app.birthYear) : T.t("settings.age_unset")
+                onClicked: page.open("age")
+            }
+            SettingsRow {
+                divider: true
+                title: T.t("settings.calibration")
+                value: T.t("cal." + app.calibrationMethod)
+                onClicked: page.open("calibration")
+            }
+            SettingsRow {
+                divider: true
+                title: T.t("settings.pk_params")
+                value: app.pkParamsJson && app.pkParamsJson !== "{}" ? T.t("pk.customized") : ""
+                onClicked: page.open("params")
+            }
 
-                Label { text: qsTr("Body weight (kg)"); color: "#c9d2dc" }
-                TextField {
-                    id: weightField
-                    Layout.fillWidth: true
-                    placeholderText: qsTr("e.g. 70")
-                    validator: DoubleValidator { bottom: 1; top: 500 }
-                }
-
-                Label { text: qsTr("Birth year"); color: "#c9d2dc" }
-                TextField {
-                    id: birthField
-                    Layout.fillWidth: true
-                    placeholderText: qsTr("e.g. 1990; empty to unset")
-                    validator: IntValidator { bottom: 1900; top: 2200 }
-                }
-
-                Label { text: qsTr("Calibration method"); color: "#c9d2dc" }
-                ComboBox {
-                    id: methodCombo
-                    Layout.fillWidth: true
-                    model: ["mipd", "off", "ekf", "ou_kalman"]
-                }
-
-                Label { text: qsTr("Calibration history"); color: "#c9d2dc" }
-                ComboBox {
-                    id: historyCombo
-                    Layout.fillWidth: true
-                    model: ["retrospective", "forward"]
-                }
-
-                Label {
-                    text: qsTr("PK parameter overrides (JSON)")
-                    color: "#c9d2dc"
-                    Layout.alignment: Qt.AlignTop
-                }
-                ScrollView {
-                    Layout.fillWidth: true
-                    Layout.preferredHeight: 150
-                    TextArea {
-                        id: pkArea
-                        font.family: "monospace"
-                        wrapMode: TextArea.Wrap
-                        placeholderText: "{}"
-                    }
-                }
+            GroupHeading { text: T.t("settings.section.display"); Layout.topMargin: 32 }
+            SettingsRow {
+                title: T.t("settings.language")
+                value: page.languageName(Ui.language)
+                onClicked: page.open("language")
+            }
+            SettingsRow {
+                divider: true
+                title: T.t("settings.theme")
+                value: T.t("theme." + Ui.theme)
+                onClicked: page.open("appearance")
             }
         }
 
-        RowLayout {
-            spacing: 12
-            Button {
-                text: qsTr("Save settings")
-                highlighted: true
-                onClicked: {
-                    const weight = Number(weightField.text)
-                    const birth = birthField.text.trim().length === 0 ? 0 : Number(birthField.text)
-                    if (!isFinite(weight) || weight <= 0) {
-                        message.text = qsTr("Body weight must be greater than zero.")
-                        return
-                    }
-                    let params = pkArea.text.trim()
-                    if (params.length === 0) params = "{}"
-                    try {
-                        const parsed = JSON.parse(params)
-                        if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
-                            throw new Error("not an object")
-                        }
-                    } catch (e) {
-                        message.text = qsTr("PK parameters must be a JSON object.")
-                        return
-                    }
-                    if (app.saveSettings(weight, birth, methodCombo.currentText,
-                                         historyCombo.currentText, params)) {
-                        message.text = app.status
-                    } else {
-                        message.text = app.status
-                    }
-                }
+        // About.
+        ColumnLayout {
+            Layout.fillWidth: true
+            visible: page.tab === "about"
+            spacing: 0
+
+            GroupHeading { text: T.t("settings.section.about") }
+            SettingsRow {
+                clickable: false
+                title: T.t("settings.version")
+                value: Qt.application.version
             }
-            Label {
-                id: message
-                color: "#8a98a8"
-                font.pixelSize: 12
+            SettingsRow {
+                divider: true
+                clickable: false
+                title: T.t("settings.database")
+                description: app.backend === "none" ? T.t("db.not_set_up") : T.t("settings.database_local")
+                value: app.backend === "none" ? T.t("settings.database_none") : T.t("settings.database_ok")
+            }
+            SettingsRow {
+                divider: true
+                title: T.t("drawer.github")
+                onClicked: Qt.openUrlExternally("https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop")
+            }
+            SettingsRow {
+                divider: true
+                title: T.t("disclaimer.title")
+                onClicked: page.open("disclaimer")
+            }
+            SettingsRow {
+                divider: true
+                title: T.t("settings.show_intro")
+                onClicked: page.introRequested()
             }
         }
+    }
 
-        Item { Layout.fillHeight: true }
+    Loader {
+        id: subPage
+        anchors.fill: parent
+        active: page.sub !== ""
+        source: page.sub !== "" ? page.pages[page.sub] : ""
+        transform: Translate { x: page.shift }
+        onLoaded: item.settings = page
     }
 }

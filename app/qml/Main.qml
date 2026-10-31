@@ -6,162 +6,133 @@ ApplicationWindow {
     id: window
     width: 1200
     height: 800
+    minimumWidth: 760
+    minimumHeight: 560
     visible: true
-    title: "Oyama's HRT Tracker"
-    color: "#0e1318"
+    title: T.t("app.name")
+    color: Theme.bg
+    LayoutMirroring.enabled: T.rtl
+    LayoutMirroring.childrenInherit: true
 
+    // 0 Overview, 1 History, 2 Settings. A tab chosen in the sidebar is
+    // simply there; only a page reached from another one moves in.
     property int pageIndex: 0
-    property var editingDose: null
+    // The intro runs once, before the app, until it is finished: choosing a
+    // language on its first step must not end it.
+    property bool firstRun: false
 
-    readonly property var navItems: [
-        { label: "Overview", icon: "◉" },
-        { label: "Add dose", icon: "＋" },
-        { label: "History", icon: "≡" },
-        { label: "Settings", icon: "⚙" }
-    ]
+    Component.onCompleted: {
+        firstRun = Ui.needsLanguage
+        if (Ui.mode !== "")
+            app.mode = Ui.mode
+    }
 
+    Connections {
+        target: app
+        function onModeChanged() { Ui.mode = app.mode }
+    }
+
+    // Where the app opens, for screenshots and tests: overview, history,
+    // add, history/edit, history/delete, settings, settings/<page> or
+    // first-run.
+    function openRoute(name) {
+        const parts = String(name).split("/")
+        if (parts[0] === "first-run") {
+            firstRun = true
+            return
+        }
+        firstRun = false
+        if (parts[0] === "history" || parts[0] === "add") {
+            pageIndex = 1
+            if (parts[0] === "add")
+                historyPage.openAdd()
+            else if (parts.length > 1)
+                historyPage.openFirst(parts[1] === "delete")
+        } else if (parts[0] === "settings") {
+            pageIndex = 2
+            settingsPage.open(parts.length > 1 ? parts[1] : "")
+        } else {
+            pageIndex = 0
+        }
+    }
+
+    // The application shell is inert until the vault is unlocked; the gate
+    // below covers it completely, so nothing behind it can be reached.
     Item {
         id: shell
         objectName: "appShell"
         anchors.fill: parent
         enabled: app.vaultState === "unlocked"
 
-        ColumnLayout {
+        RowLayout {
             anchors.fill: parent
             spacing: 0
+            visible: !window.firstRun
 
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 64
-                color: "#141b22"
+            // The sidebar and the lock action share the rail so the lock can
+            // sit at its foot and stay above the panel when it opens.
+            Item {
+                Layout.preferredWidth: Theme.railWidth
+                Layout.fillHeight: true
+                z: 40
 
-                RowLayout {
+                Sidebar {
                     anchors.fill: parent
-                    anchors.leftMargin: 24
-                    anchors.rightMargin: 24
-                    spacing: 16
-
-                    Text {
-                        text: "Oyama's HRT Tracker"
-                        color: "#f4f6f8"
-                        font.pixelSize: 20
-                        font.weight: Font.DemiBold
+                    currentIndex: window.pageIndex
+                    onNavigate: function(index) {
+                        if (index === window.pageIndex && index === 2)
+                            settingsPage.open("")
+                        window.pageIndex = index
                     }
+                }
 
-                    Item { Layout.fillWidth: true }
-
-                    ComboBox {
-                        id: modeBox
-                        model: ["transfem", "transmasc"]
-                        currentIndex: app.mode === "transmasc" ? 1 : 0
-                        onActivated: app.mode = currentText
-                    }
-
-                    Text {
-                        text: app.backend
-                        color: "#8a98a8"
-                        font.pixelSize: 12
-                    }
-
-                    Button {
-                        objectName: "lockButton"
-                        text: qsTr("Lock")
-                        onClicked: app.lockVault()
-                    }
+                AppButton {
+                    objectName: "lockButton"
+                    z: 50
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 20
+                    variant: "ghost"
+                    iconName: "lock"
+                    text: qsTr("Lock")
+                    visible: app.vaultState === "unlocked" && !window.firstRun
+                    onClicked: app.lockVault()
                 }
             }
 
-            RowLayout {
+            StackLayout {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
-                spacing: 0
+                currentIndex: window.pageIndex
 
-                Rectangle {
-                    Layout.preferredWidth: 220
-                    Layout.fillHeight: true
-                    color: "#101821"
-
-                    ColumnLayout {
-                        anchors.fill: parent
-                        anchors.margins: 14
-                        spacing: 6
-
-                        Repeater {
-                            model: window.navItems
-
-                            delegate: Button {
-                                required property int index
-                                required property var modelData
-                                Layout.fillWidth: true
-                                text: modelData.icon + "  " + modelData.label
-                                flat: true
-                                highlighted: window.pageIndex === index
-                                onClicked: {
-                                    if (index === 1) {
-                                        window.editingDose = null;
-                                        addPage.resetForm();
-                                    }
-                                    window.pageIndex = index;
-                                }
-                            }
-                        }
-
-                        Item { Layout.fillHeight: true }
-
-                        Text {
-                            text: "Local · socket only"
-                            color: "#5f6d7c"
-                            font.pixelSize: 11
-                        }
+                OverviewPage {
+                    id: overviewPage
+                    onLogRequested: {
+                        window.pageIndex = 1
+                        historyPage.openAdd()
                     }
                 }
 
-                StackLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    currentIndex: window.pageIndex
-
-                    OverviewPage {}
-
-                    AddDosePage {
-                        id: addPage
-                        onSaved: {
-                            window.editingDose = null;
-                            window.pageIndex = 0;
-                        }
-                    }
-
-                    HistoryPage {
-                        onEditRequested: function(dose) {
-                            window.editingDose = dose;
-                            addPage.loadDose(dose);
-                            window.pageIndex = 1;
-                        }
-                    }
-
-                    SettingsPage {}
+                HistoryPage {
+                    id: historyPage
                 }
-            }
 
-            Rectangle {
-                Layout.fillWidth: true
-                Layout.preferredHeight: 34
-                color: "#0b1015"
-
-                Text {
-                    anchors.fill: parent
-                    anchors.leftMargin: 24
-                    anchors.rightMargin: 24
-                    verticalAlignment: Text.AlignVCenter
-                    text: app.status
-                    color: "#8a98a8"
-                    elide: Text.ElideRight
-                    font.pixelSize: 12
+                SettingsPage {
+                    id: settingsPage
+                    onIntroRequested: window.firstRun = true
                 }
             }
         }
+
+        FirstRun {
+            anchors.fill: parent
+            visible: window.firstRun
+            onFinished: window.firstRun = false
+        }
     }
 
+    // A full-window layer, above the shell's header, navigation and pages,
+    // until the vault is unlocked.
     VaultGate {
         objectName: "vaultGate"
         anchors.fill: parent
