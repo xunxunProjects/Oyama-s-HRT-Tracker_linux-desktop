@@ -1,6 +1,13 @@
 #include <oyama/storage/backup.h>
 
 #include <oyama/storage/storage.h>
+#include <oyama/storage/vault_dose_event_repository.h>
+#include <oyama/storage/vault_json_record_repository.h>
+#include <oyama/storage/vault_lab_result_repository.h>
+#include <oyama/storage/vault_preferences_repository.h>
+#include <oyama/storage/vault_settings_repository.h>
+#include <oyama/storage/vault_store.h>
+#include <oyama/storage/vault_tombstone_repository.h>
 
 #include <nlohmann/json.hpp>
 
@@ -768,27 +775,51 @@ ParsedBundle parse_bundle(const json& root, std::int64_t now_ms) {
     return parsed;
 }
 
-LocalState load_local(Connection& connection) {
+struct SqlRepositories {
+    using Store = Connection;
+    using Settings = SettingsRepository;
+    using Preferences = PreferencesRepository;
+    using Tombstones = TombstoneRepository;
+    using Events = DoseEventRepository;
+    using Labs = LabResultRepository;
+    using JsonRecords = JsonRecordRepository;
+};
+
+struct VaultRepositories {
+    using Store = VaultStore;
+    using Settings = VaultSettingsRepository;
+    using Preferences = VaultPreferencesRepository;
+    using Tombstones = VaultTombstoneRepository;
+    using Events = VaultDoseEventRepository;
+    using Labs = VaultLabResultRepository;
+    using JsonRecords = VaultJsonRecordRepository;
+};
+
+template <typename Repositories>
+LocalState load_local(typename Repositories::Store& store) {
+    using SettingsRepo = typename Repositories::Settings;
+    using PreferencesRepo = typename Repositories::Preferences;
+    using TombstoneRepo = typename Repositories::Tombstones;
+    using EventRepo = typename Repositories::Events;
+    using LabRepo = typename Repositories::Labs;
+    using JsonRepo = typename Repositories::JsonRecords;
+
     LocalState state;
-    state.settings = SettingsRepository(connection).get();
-    state.preferences = PreferencesRepository(connection).list();
-    state.tombstones = TombstoneRepository(connection).list();
+    state.settings = SettingsRepo(store).get();
+    state.preferences = PreferencesRepo(store).list();
+    state.tombstones = TombstoneRepo(store).list();
     for (const auto mode : {Mode::Transfem, Mode::Transmasc}) {
         const auto key = mode_key(mode);
-        state.events[key] = DoseEventRepository(connection).list(mode);
-        state.labs[key] = LabResultRepository(connection).list(mode);
+        state.events[key] = EventRepo(store).list(mode);
+        state.labs[key] = LabRepo(store).list(mode);
         state.templates[key] =
-            JsonRecordRepository(connection, JsonRecordKind::DoseTemplate)
-                .list(mode);
+            JsonRepo(store, JsonRecordKind::DoseTemplate).list(mode);
         state.quick[key] =
-            JsonRecordRepository(connection, JsonRecordKind::QuickDose)
-                .list(mode);
+            JsonRepo(store, JsonRecordKind::QuickDose).list(mode);
         state.supplies[key] =
-            JsonRecordRepository(connection, JsonRecordKind::Supply)
-                .list(mode);
+            JsonRepo(store, JsonRecordKind::Supply).list(mode);
         state.plan[key] =
-            JsonRecordRepository(connection, JsonRecordKind::PlanItem)
-                .list(mode);
+            JsonRepo(store, JsonRecordKind::PlanItem).list(mode);
     }
     return state;
 }
@@ -959,32 +990,36 @@ void merge_unstamped(std::vector<JsonRecord>& local,
     }
 }
 
-MergedState merge_bundle(Connection& connection, const ParsedBundle& parsed,
-                         std::int64_t now_ms) {
+template <typename Repositories>
+MergedState merge_bundle(typename Repositories::Store& store,
+                         const ParsedBundle& parsed, std::int64_t now_ms) {
+    using SettingsRepo = typename Repositories::Settings;
+    using PreferencesRepo = typename Repositories::Preferences;
+    using TombstoneRepo = typename Repositories::Tombstones;
+    using EventRepo = typename Repositories::Events;
+    using LabRepo = typename Repositories::Labs;
+    using JsonRepo = typename Repositories::JsonRecords;
+
     MergedState state;
-    state.settings = SettingsRepository(connection).get();
-    for (const auto& preference : PreferencesRepository(connection).list()) {
+    state.settings = SettingsRepo(store).get();
+    for (const auto& preference : PreferencesRepo(store).list()) {
         state.preferences[preference.key] = preference.value_json;
     }
     for (const auto mode : {Mode::Transfem, Mode::Transmasc}) {
         const auto key = mode_key(mode);
-        state.events[key] = DoseEventRepository(connection).list(mode);
-        state.labs[key] = LabResultRepository(connection).list(mode);
+        state.events[key] = EventRepo(store).list(mode);
+        state.labs[key] = LabRepo(store).list(mode);
         state.templates[key] =
-            JsonRecordRepository(connection, JsonRecordKind::DoseTemplate)
-                .list(mode);
+            JsonRepo(store, JsonRecordKind::DoseTemplate).list(mode);
         state.quick[key] =
-            JsonRecordRepository(connection, JsonRecordKind::QuickDose)
-                .list(mode);
+            JsonRepo(store, JsonRecordKind::QuickDose).list(mode);
         state.supplies[key] =
-            JsonRecordRepository(connection, JsonRecordKind::Supply)
-                .list(mode);
+            JsonRepo(store, JsonRecordKind::Supply).list(mode);
         state.plan[key] =
-            JsonRecordRepository(connection, JsonRecordKind::PlanItem)
-                .list(mode);
+            JsonRepo(store, JsonRecordKind::PlanItem).list(mode);
     }
     state.tombstones.clear();
-    for (const auto& tombstone : TombstoneRepository(connection).list()) {
+    for (const auto& tombstone : TombstoneRepo(store).list()) {
         if (now_ms - tombstone.deleted_at < kTombstoneTtlMs) {
             state.tombstones[tombstone.kind][tombstone.record_id] =
                 std::max(state.tombstones[tombstone.kind][tombstone.record_id],
@@ -1230,100 +1265,35 @@ json record_json(const JsonRecord& record) {
     return value;
 }
 
-}  // namespace
+template <typename Repositories>
+void write_merged_state(typename Repositories::Store& store,
+                        const MergedState& merged) {
+    using SettingsRepo = typename Repositories::Settings;
+    using PreferencesRepo = typename Repositories::Preferences;
+    using TombstoneRepo = typename Repositories::Tombstones;
+    using EventRepo = typename Repositories::Events;
+    using LabRepo = typename Repositories::Labs;
+    using JsonRepo = typename Repositories::JsonRecords;
 
-BackupPreview preview_backup(Connection& connection,
-                             const std::filesystem::path& path,
-                             std::int64_t now_ms) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw Error("could not open backup: " + path.string());
-    }
-    json root;
-    try {
-        input >> root;
-    } catch (const std::exception& error) {
-        throw Error("could not parse backup: " + std::string(error.what()));
-    }
-    const auto parsed = parse_bundle(root, now_ms);
-    if (!parsed.valid) {
-        BackupPreview preview;
-        preview.ok = false;
-        preview.errors = parsed.errors;
-        preview.issues = parsed.issues;
-        preview.missing = parsed.missing;
-        return preview;
-    }
-    auto merged = merge_bundle(connection, parsed, now_ms);
-    for (const auto& [key, mode] : parsed.modes) {
-        auto& counts = merged.preview.counts[key];
-        counts.events = mode.events.size();
-        counts.lab_results = mode.labs.size();
-        counts.dose_templates = mode.templates.size();
-        counts.quick_doses = mode.quick.size();
-        counts.supplies = mode.supplies.size();
-        counts.plan = mode.plan.size();
-        counts.deletions =
-            mode.deletion_events.size() + mode.deletion_labs.size() +
-            mode.deletion_templates.size();
-    }
-    return merged.preview;
-}
-
-BackupImportResult import_backup(Connection& connection,
-                                 const std::filesystem::path& path,
-                                 std::int64_t now_ms) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw Error("could not open backup: " + path.string());
-    }
-    json root;
-    try {
-        input >> root;
-    } catch (const std::exception& error) {
-        throw Error("could not parse backup: " + std::string(error.what()));
-    }
-    const auto parsed = parse_bundle(root, now_ms);
-    if (!parsed.valid) {
-        throw Error("backup envelope is invalid: " + parsed.errors.front());
-    }
-    Transaction transaction(connection);
-    auto merged = merge_bundle(connection, parsed, now_ms);
-    for (const auto& [key, mode] : parsed.modes) {
-        auto& counts = merged.preview.counts[key];
-        counts.events = mode.events.size();
-        counts.lab_results = mode.labs.size();
-        counts.dose_templates = mode.templates.size();
-        counts.quick_doses = mode.quick.size();
-        counts.supplies = mode.supplies.size();
-        counts.plan = mode.plan.size();
-        counts.deletions =
-            mode.deletion_events.size() + mode.deletion_labs.size() +
-            mode.deletion_templates.size();
-    }
-    // Reuse apply_state's transaction? It starts its own; commit this one first
-    // is not atomic.  Apply inside a nested-free transaction by doing the work
-    // here instead of calling apply_state.
-    (void)connection.exec(
-        "DELETE FROM dose_events; DELETE FROM lab_results; "
-        "DELETE FROM dose_templates; DELETE FROM quick_doses; "
-        "DELETE FROM supplies; DELETE FROM plan_items; DELETE FROM tombstones;");
-    SettingsRepository(connection).save(merged.settings);
+    SettingsRepo(store).save(merged.settings);
+    EventRepo events(store);
     for (const auto& [key, records] : merged.events) {
         (void)key;
         for (const auto& record : records) {
-            DoseEventRepository(connection).upsert(record);
+            events.upsert(record);
         }
     }
+    LabRepo labs(store);
     for (const auto& [key, records] : merged.labs) {
         (void)key;
         for (const auto& record : records) {
-            LabResultRepository(connection).upsert(record);
+            labs.upsert(record);
         }
     }
-    const auto apply_json = [&](const std::map<std::string, std::vector<JsonRecord>>& table,
+    const auto apply_json = [&](const std::map<std::string,
+                                               std::vector<JsonRecord>>& table,
                                 JsonRecordKind kind) {
-        JsonRecordRepository repository(connection, kind);
+        JsonRepo repository(store, kind);
         for (const auto& [key, records] : table) {
             (void)key;
             for (const auto& record : records) {
@@ -1335,24 +1305,25 @@ BackupImportResult import_backup(Connection& connection,
     apply_json(merged.quick, JsonRecordKind::QuickDose);
     apply_json(merged.supplies, JsonRecordKind::Supply);
     apply_json(merged.plan, JsonRecordKind::PlanItem);
+    TombstoneRepo tombstones(store);
     for (const auto& [kind, records] : merged.tombstones) {
         for (const auto& [id, stamp] : records) {
-            TombstoneRepository(connection).record(Tombstone{kind, id, stamp});
+            tombstones.record(Tombstone{kind, id, stamp});
         }
     }
-    PreferencesRepository preferences(connection);
+    PreferencesRepo preferences(store);
     for (const auto& [key, value] : merged.preferences) {
         if (contains(kPreferences, key)) {
             preferences.set(Preference{key, value, 0});
         }
     }
-    transaction.commit();
-    return BackupImportResult{merged.preview, true};
 }
 
-void export_backup(Connection& connection,
-                   const std::filesystem::path& path, std::int64_t now_ms) {
-    const auto state = load_local(connection);
+}  // namespace
+
+namespace {
+
+json build_export(const LocalState& state, std::int64_t now_ms) {
     json root{{"format", kFormat},
               {"formatVersion", kFormatVersion},
               {"createdAt", iso_utc(now_ms)},
@@ -1439,17 +1410,167 @@ void export_backup(Connection& connection,
         }
         root["modes"][key] = std::move(block);
     }
+    return root;
+}
 
+std::string read_backup_file(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        throw Error("could not open backup: " + path.string());
+    }
+    std::string bytes((std::istreambuf_iterator<char>(input)),
+                      std::istreambuf_iterator<char>());
+    if (input.bad()) {
+        throw Error("could not read backup: " + path.string());
+    }
+    return bytes;
+}
+
+json parse_backup_file(const std::filesystem::path& path,
+                       std::string_view backup_phrase) {
+    // The phrase is reserved for the encrypted envelope (Task 12).
+    (void)backup_phrase;
+    const auto bytes = read_backup_file(path);
+    if (bytes.rfind("OYAMAEBK", 0) == 0) {
+        throw Error("encrypted backup support not built");
+    }
+    try {
+        return json::parse(bytes);
+    } catch (const std::exception& error) {
+        throw Error("could not parse backup: " + std::string(error.what()));
+    }
+}
+
+void fill_counts(BackupPreview& preview, const ParsedBundle& parsed) {
+    for (const auto& [key, mode] : parsed.modes) {
+        auto& counts = preview.counts[key];
+        counts.events = mode.events.size();
+        counts.lab_results = mode.labs.size();
+        counts.dose_templates = mode.templates.size();
+        counts.quick_doses = mode.quick.size();
+        counts.supplies = mode.supplies.size();
+        counts.plan = mode.plan.size();
+        counts.deletions =
+            mode.deletion_events.size() + mode.deletion_labs.size() +
+            mode.deletion_templates.size();
+    }
+}
+
+void write_backup_file(const std::filesystem::path& path,
+                       std::string_view contents) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) {
         throw Error("could not write backup: " + path.string());
     }
-    output << root.dump(2) << '\n';
+    output.write(contents.data(),
+                 static_cast<std::streamsize>(contents.size()));
     output.close();
     if (!output) {
         throw Error("could not write backup: " + path.string());
     }
     (void)::chmod(path.c_str(), 0600);
+}
+
+}  // namespace
+
+BackupPreview preview_backup(Connection& connection,
+                             const std::filesystem::path& path,
+                             std::int64_t now_ms) {
+    const auto root = parse_backup_file(path, {});
+    const auto parsed = parse_bundle(root, now_ms);
+    if (!parsed.valid) {
+        BackupPreview preview;
+        preview.ok = false;
+        preview.errors = parsed.errors;
+        preview.issues = parsed.issues;
+        preview.missing = parsed.missing;
+        return preview;
+    }
+    auto merged = merge_bundle<SqlRepositories>(connection, parsed, now_ms);
+    fill_counts(merged.preview, parsed);
+    return merged.preview;
+}
+
+BackupPreview preview_backup(VaultStore& vault,
+                             const std::filesystem::path& path,
+                             std::int64_t now_ms,
+                             std::string_view backup_phrase) {
+    const auto root = parse_backup_file(path, backup_phrase);
+    const auto parsed = parse_bundle(root, now_ms);
+    if (!parsed.valid) {
+        BackupPreview preview;
+        preview.ok = false;
+        preview.errors = parsed.errors;
+        preview.issues = parsed.issues;
+        preview.missing = parsed.missing;
+        return preview;
+    }
+    auto merged = merge_bundle<VaultRepositories>(vault, parsed, now_ms);
+    fill_counts(merged.preview, parsed);
+    return merged.preview;
+}
+
+BackupImportResult import_backup(Connection& connection,
+                                 const std::filesystem::path& path,
+                                 std::int64_t now_ms) {
+    const auto root = parse_backup_file(path, {});
+    const auto parsed = parse_bundle(root, now_ms);
+    if (!parsed.valid) {
+        throw Error("backup envelope is invalid: " + parsed.errors.front());
+    }
+    Transaction transaction(connection);
+    auto merged = merge_bundle<SqlRepositories>(connection, parsed, now_ms);
+    fill_counts(merged.preview, parsed);
+    (void)connection.exec(
+        "DELETE FROM dose_events; DELETE FROM lab_results; "
+        "DELETE FROM dose_templates; DELETE FROM quick_doses; "
+        "DELETE FROM supplies; DELETE FROM plan_items; DELETE FROM tombstones;");
+    write_merged_state<SqlRepositories>(connection, merged);
+    transaction.commit();
+    return BackupImportResult{merged.preview, true};
+}
+
+BackupImportResult import_backup(VaultStore& vault,
+                                 const std::filesystem::path& path,
+                                 std::int64_t now_ms,
+                                 std::string_view backup_phrase) {
+    const auto root = parse_backup_file(path, backup_phrase);
+    const auto parsed = parse_bundle(root, now_ms);
+    if (!parsed.valid) {
+        throw Error("backup envelope is invalid: " + parsed.errors.front());
+    }
+    vault.begin();
+    try {
+        auto merged = merge_bundle<VaultRepositories>(vault, parsed, now_ms);
+        fill_counts(merged.preview, parsed);
+        vault.clear();
+        write_merged_state<VaultRepositories>(vault, merged);
+        vault.commit();
+        return BackupImportResult{merged.preview, true};
+    } catch (...) {
+        try {
+            vault.rollback();
+        } catch (...) {
+            // Preserve the original failure.
+        }
+        throw;
+    }
+}
+
+std::string export_backup_json(VaultStore& vault, std::int64_t now_ms) {
+    return build_export(load_local<VaultRepositories>(vault), now_ms).dump();
+}
+
+void export_backup(Connection& connection,
+                   const std::filesystem::path& path, std::int64_t now_ms) {
+    const auto root = build_export(load_local<SqlRepositories>(connection),
+                                   now_ms);
+    write_backup_file(path, root.dump(2) + "\n");
+}
+
+void export_backup(VaultStore& vault, const std::filesystem::path& path,
+                   std::int64_t now_ms) {
+    write_backup_file(path, export_backup_json(vault, now_ms));
 }
 
 }  // namespace oyama::storage
