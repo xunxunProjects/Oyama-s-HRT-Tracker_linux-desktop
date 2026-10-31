@@ -353,7 +353,7 @@ DoseEvent d;
 d.id = "00000000-0000-0000-0000-000000000010";
 d.mode = Mode::Transmasc;
 d.route = "injection";
-d.ester = "enanthate";
+d.ester = "EN";
 d.time_h = 12.5;
 d.dose_mg = 4.0;
 d.extras_json = R"({"site":"thigh"})";
@@ -610,7 +610,7 @@ git commit -m "feat(storage): add vault dose and lab repositories"
 ```cpp
 VaultJsonRecordRepository templates(vault, JsonRecordKind::DoseTemplate);
 JsonRecord rec{"00000000-0000-0000-0000-000000000030", Mode::Transmasc,
-               R"({"id":"00000000-0000-0000-0000-000000000030","name":"weekly","route":"injection","ester":"enanthate","doseMG":5,"extras":{},"createdAt":1})",
+               R"({"id":"00000000-0000-0000-0000-000000000030","name":"weekly","route":"injection","ester":"EN","doseMG":5,"extras":{},"createdAt":1})",
                std::nullopt};
 templates.upsert(rec);
 check(templates.list(Mode::Transmasc).size() == 1, "template list");

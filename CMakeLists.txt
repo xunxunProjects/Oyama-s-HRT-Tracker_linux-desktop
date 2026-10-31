@@ -62,6 +62,7 @@ add_library(oyama_storage STATIC
     storage/src/tombstone_repository.cpp
     storage/src/types.cpp
     storage/src/uuid.cpp
+    storage/src/vault_codec.cpp
     storage/src/vault_store.cpp)
 target_include_directories(oyama_storage
     PUBLIC
@@ -177,6 +178,15 @@ if(BUILD_TESTING)
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_vault_store_test.sh
                 $<TARGET_FILE:vault_store_test>)
     set_tests_properties(vault_store_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(vault_codec_test storage/tests/vault_codec_test.cpp)
+    target_link_libraries(vault_codec_test PRIVATE
+        oyama_storage
+        nlohmann_json::nlohmann_json)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_codec_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME vault_codec_test COMMAND vault_codec_test)
 
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
