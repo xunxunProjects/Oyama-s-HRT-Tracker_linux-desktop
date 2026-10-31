@@ -293,6 +293,13 @@ if(BUILD_TESTING)
     set_tests_properties(cli_integration PROPERTIES SKIP_RETURN_CODE 77)
 
     add_test(
+        NAME cli_vault_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cli/tests/run_cli_vault_integration.sh
+                $<TARGET_FILE:oyama-hrt-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
+    set_tests_properties(cli_vault_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_test(
         NAME cli_managed_integration
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cli/tests/run_cli_managed_integration.sh
                 $<TARGET_FILE:oyama-hrt-cli>

@@ -1,10 +1,17 @@
 #include <oyama/storage/storage.h>
+#include <oyama/storage/backup_crypto.h>
 #include <oyama/storage/legacy_migration.h>
 #include <oyama/storage/legacy_promotion.h>
+#include <oyama/storage/passphrase.h>
+#include <oyama/storage/vault_dose_event_repository.h>
+#include <oyama/storage/vault_settings_repository.h>
+#include <oyama/storage/vault_store.h>
 
 #include <sodium.h>
 
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -29,7 +36,6 @@ using oyama::storage::Connection;
 using oyama::storage::ConnectionConfig;
 using oyama::storage::Database;
 using oyama::storage::DoseEvent;
-using oyama::storage::DoseEventRepository;
 using oyama::storage::Error;
 using oyama::storage::LegacyCounts;
 using oyama::storage::LegacyDetection;
@@ -40,8 +46,12 @@ using oyama::storage::LocalCluster;
 using oyama::storage::LocalClusterConfig;
 using oyama::storage::Mode;
 using oyama::storage::PromotionState;
+using oyama::storage::is_encrypted_backup;
+using oyama::storage::Passphrase;
 using oyama::storage::Settings;
-using oyama::storage::SettingsRepository;
+using oyama::storage::VaultDoseEventRepository;
+using oyama::storage::VaultKdfParams;
+using oyama::storage::VaultSettingsRepository;
 using oyama::storage::VaultState;
 using oyama::storage::VaultStore;
 
@@ -59,6 +69,8 @@ struct GlobalOptions {
     bool port_set{false};
     bool data_dir_set{false};
     bool pg_bin_dir_set{false};
+    bool phrase_stdin{false};
+    bool backup_phrase_stdin{false};
 };
 
 std::filesystem::path default_migrations_dir() {
@@ -95,9 +107,16 @@ void print_usage(std::ostream& output) {
         << "  --port PORT        PostgreSQL port (default: 5432)\n"
         << "  --migrations DIR   migration directory\n"
         << "  --data-dir DIR     managed cluster data directory\n"
-        << "  --pg-bin-dir DIR   directory containing initdb/pg_ctl/postgres\n\n"
+        << "  --pg-bin-dir DIR   directory containing initdb/pg_ctl/postgres\n"
+        << "  --phrase-stdin     read the vault phrase from one stdin line\n"
+        << "  --backup-phrase-stdin\n"
+        << "                     read a separate backup phrase from one stdin line\n\n"
         << "Commands:\n"
         << "  version\n"
+        << "  vault status      show uninitialized, locked, or unlocked\n"
+        << "  vault setup [--phrase-stdin] [--kdf-ops N --kdf-mem BYTES]\n"
+        << "  vault unlock-check --phrase-stdin\n"
+        << "  vault change-phrase --phrase-stdin --new-phrase-stdin\n"
         << "  db setup [--existing|--managed] [--yes] [--force]\n"
         << "            first-run selection of an existing or managed cluster\n"
         << "  db start           start the application-managed cluster\n"
@@ -119,9 +138,10 @@ void print_usage(std::ostream& output) {
         << "            --dose-mg N --time-h H [--extras JSON]\n"
         << "            [--updated-at MS] [--created-at MS] [--id UUID]\n"
         << "  doses remove --id UUID\n"
-        << "  backup export FILE\n"
-        << "  backup preview FILE\n"
-        << "  backup import FILE [--dry-run]\n";
+        << "  backup export FILE [--plaintext]\n"
+        << "  backup preview FILE [--backup-phrase-stdin]\n"
+        << "  backup import FILE [--dry-run] [--plaintext]\n"
+        << "                [--backup-phrase-stdin]\n";
 }
 
 std::string require_value(const std::vector<std::string>& args, std::size_t& index,
@@ -163,6 +183,19 @@ std::int64_t parse_i64(const std::string& value, std::string_view option) {
     try {
         std::size_t consumed = 0;
         const auto result = std::stoll(value, &consumed);
+        if (consumed != value.size()) {
+            throw std::invalid_argument("trailing characters");
+        }
+        return result;
+    } catch (const std::exception&) {
+        throw Error("invalid integer for " + std::string(option) + ": " + value);
+    }
+}
+
+std::uint64_t parse_u64(const std::string& value, std::string_view option) {
+    try {
+        std::size_t consumed = 0;
+        const auto result = std::stoull(value, &consumed);
         if (consumed != value.size()) {
             throw std::invalid_argument("trailing characters");
         }
@@ -224,6 +257,10 @@ GlobalOptions parse_global_options(const std::vector<std::string>& args,
             options.pg_bin_dir =
                 require_value(args, index, "--pg-bin-dir");
             options.pg_bin_dir_set = true;
+        } else if (option == "--phrase-stdin") {
+            options.phrase_stdin = true;
+        } else if (option == "--backup-phrase-stdin") {
+            options.backup_phrase_stdin = true;
         } else {
             throw Error("unknown global option: " + option);
         }
@@ -286,6 +323,20 @@ public:
     SecretString(const SecretString&) = delete;
     SecretString& operator=(const SecretString&) = delete;
 
+    SecretString(SecretString&& other) noexcept
+        : value_(std::move(other.value_)) {
+        other.clear();
+    }
+
+    SecretString& operator=(SecretString&& other) noexcept {
+        if (this != &other) {
+            clear();
+            value_ = std::move(other.value_);
+            other.clear();
+        }
+        return *this;
+    }
+
     void assign(std::string value) {
         clear();
         value_ = std::move(value);
@@ -304,15 +355,69 @@ private:
     std::string value_;
 };
 
-std::string read_secret_line() {
-    std::string line;
-    if (!std::getline(std::cin, line)) {
+std::string read_secret_from_stdin() {
+    std::array<char, 4098> buffer{};
+    if (!std::cin.getline(buffer.data(), buffer.size())) {
+        const bool too_long = std::cin.fail() && !std::cin.eof();
+        sodium_memzero(buffer.data(), buffer.size());
+        if (too_long) {
+            throw Error("phrase on stdin is longer than 4096 bytes");
+        }
         throw Error("could not read the vault phrase from stdin");
     }
-    if (!line.empty() && line.back() == '\r') {
-        line.pop_back();
+    const auto count = static_cast<std::size_t>(std::cin.gcount());
+    std::string raw(buffer.data(), count);
+    sodium_memzero(buffer.data(), buffer.size());
+    if (!raw.empty() && raw.back() == '\r') {
+        raw.pop_back();
     }
-    return line;
+    std::string normalized = Passphrase::normalize(raw);
+    sodium_memzero(raw.data(), raw.size());
+    if (normalized.empty()) {
+        throw Error("empty phrase on stdin");
+    }
+    return normalized;
+}
+
+struct UnlockedVault {
+    explicit UnlockedVault(const ConnectionConfig& config) : vault(config) {}
+
+    VaultStore vault;
+    SecretString phrase;
+};
+
+UnlockedVault open_unlocked_vault(const GlobalOptions& global,
+                                  bool phrase_stdin) {
+    UnlockedVault unlocked(global.config);
+    unlocked.vault.open();
+    const VaultState state = unlocked.vault.state();
+    if (state == VaultState::Uninitialized) {
+        throw Error("vault is not initialized; run `oyama-hrt-cli vault setup`");
+    }
+    if (state == VaultState::Unlocked) {
+        return unlocked;
+    }
+    if (!phrase_stdin) {
+        throw Error(
+            "vault is locked; pass --phrase-stdin to supply the vault phrase");
+    }
+    unlocked.phrase.assign(read_secret_from_stdin());
+    unlocked.vault.unlock(unlocked.phrase.value());
+    return unlocked;
+}
+
+bool backup_file_is_encrypted(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        throw Error("could not open backup: " + path.string());
+    }
+    char magic[8];
+    input.read(magic, sizeof(magic));
+    if (input.bad()) {
+        throw Error("could not read backup: " + path.string());
+    }
+    const auto count = static_cast<std::size_t>(input.gcount());
+    return is_encrypted_backup(std::string_view(magic, count));
 }
 
 void print_plaintext_warning() {
@@ -861,7 +966,7 @@ int command_db_migrate_vault(const GlobalOptions& global,
                              const std::vector<std::string>& args,
                              std::size_t index) {
     bool yes = false;
-    bool phrase_stdin = false;
+    bool phrase_stdin = global.phrase_stdin;
     std::optional<std::filesystem::path> purge_old;
     while (index < args.size()) {
         const std::string option = args[index];
@@ -954,7 +1059,7 @@ int command_db_migrate_vault(const GlobalOptions& global,
         throw Error("db migrate-vault requires --phrase-stdin");
     }
     SecretString phrase;
-    phrase.assign(read_secret_line());
+    phrase.assign(read_secret_from_stdin());
 
     if (state == PromotionState::TargetPending) {
         std::cout << "resuming\t" << paths.target_data_dir.string() << '\n';
@@ -1048,6 +1153,151 @@ int command_db_migrate_vault(const GlobalOptions& global,
         purge_plaintext(paths, *purge_old, yes);
     }
     return 0;
+}
+
+int command_vault(const GlobalOptions& global,
+                  const std::vector<std::string>& args, std::size_t index) {
+    if (index >= args.size()) {
+        throw Error("vault needs status, setup, unlock-check or change-phrase");
+    }
+    const std::string command = args[index++];
+    ensure_managed_running(global);
+
+    if (command == "status") {
+        if (index != args.size()) {
+            throw Error("unexpected argument for vault status: " + args[index]);
+        }
+        VaultStore vault(global.config);
+        vault.open();
+        switch (vault.state()) {
+        case VaultState::Uninitialized:
+            std::cout << "uninitialized\n";
+            break;
+        case VaultState::Locked:
+            std::cout << "locked\n";
+            break;
+        case VaultState::Unlocked:
+            std::cout << "unlocked\n";
+            break;
+        }
+        return 0;
+    }
+
+    if (command == "setup") {
+        bool phrase_stdin = global.phrase_stdin;
+        bool saw_ops = false;
+        bool saw_mem = false;
+        VaultKdfParams params;
+        while (index < args.size()) {
+            const std::string option = args[index];
+            if (option == "--phrase-stdin") {
+                phrase_stdin = true;
+            } else if (option == "--kdf-ops") {
+                params.opslimit =
+                    parse_u64(require_value(args, index, option), option);
+                saw_ops = true;
+            } else if (option == "--kdf-mem") {
+                params.memlimit =
+                    parse_u64(require_value(args, index, option), option);
+                saw_mem = true;
+            } else if (option == "--help" || option == "-h") {
+                print_usage(std::cout);
+                return 0;
+            } else {
+                throw Error("unknown vault setup option: " + option);
+            }
+            ++index;
+        }
+        if (saw_ops != saw_mem) {
+            throw Error("--kdf-ops and --kdf-mem must be used together");
+        }
+
+        VaultStore vault(global.config);
+        vault.open();
+        if (vault.state() != VaultState::Uninitialized) {
+            throw Error("vault is already initialized");
+        }
+
+        if (phrase_stdin) {
+            SecretString phrase;
+            phrase.assign(read_secret_from_stdin());
+            vault.setup(phrase.value(), params);
+        } else {
+            const auto words = Passphrase::generate();
+            SecretString phrase;
+            phrase.assign(Passphrase::join(words));
+            std::cout << "phrase\t" << phrase.value() << '\n' << std::flush;
+
+            const auto positions = Passphrase::challenge(words.size());
+            std::vector<std::string> answers;
+            answers.reserve(positions.size());
+            for (const std::size_t position : positions) {
+                std::cout << "word " << (position + 1) << ": " << std::flush;
+                std::string answer;
+                if (!std::getline(std::cin, answer)) {
+                    throw Error("vault setup cancelled");
+                }
+                answers.push_back(answer);
+            }
+            if (!Passphrase::verify_challenge(phrase.value(), positions,
+                                              answers)) {
+                throw Error("vault setup challenge did not match; no vault was "
+                            "created");
+            }
+            vault.setup(phrase.value(), params);
+        }
+        std::cout << "initialized\n";
+        return 0;
+    }
+
+    if (command == "unlock-check") {
+        bool phrase_stdin = global.phrase_stdin;
+        while (index < args.size()) {
+            const std::string option = args[index];
+            if (option == "--phrase-stdin") {
+                phrase_stdin = true;
+            } else if (option == "--help" || option == "-h") {
+                print_usage(std::cout);
+                return 0;
+            } else {
+                throw Error("unknown vault unlock-check option: " + option);
+            }
+            ++index;
+        }
+        (void)open_unlocked_vault(global, phrase_stdin);
+        std::cout << "unlocked\n";
+        return 0;
+    }
+
+    if (command == "change-phrase") {
+        bool phrase_stdin = global.phrase_stdin;
+        bool new_phrase_stdin = false;
+        while (index < args.size()) {
+            const std::string option = args[index];
+            if (option == "--phrase-stdin") {
+                phrase_stdin = true;
+            } else if (option == "--new-phrase-stdin") {
+                new_phrase_stdin = true;
+            } else if (option == "--help" || option == "-h") {
+                print_usage(std::cout);
+                return 0;
+            } else {
+                throw Error("unknown vault change-phrase option: " + option);
+            }
+            ++index;
+        }
+        if (!new_phrase_stdin) {
+            throw Error("vault change-phrase requires --new-phrase-stdin");
+        }
+        UnlockedVault unlocked = open_unlocked_vault(global, phrase_stdin);
+        SecretString new_phrase;
+        new_phrase.assign(read_secret_from_stdin());
+        unlocked.vault.change_phrase(new_phrase.value());
+        std::cout << "changed\n";
+        return 0;
+    }
+
+    throw Error("unknown vault command: " + command);
 }
 
 int command_db(const GlobalOptions& global,
@@ -1178,8 +1428,10 @@ int command_settings(const GlobalOptions& global,
         throw Error("settings needs show or set");
     }
     const std::string command = args[index++];
-    Database database(global.config, global.migrations);
-    SettingsRepository repository(database.connection());
+    ensure_managed_running(global);
+    UnlockedVault unlocked =
+        open_unlocked_vault(global, global.phrase_stdin);
+    VaultSettingsRepository repository(unlocked.vault);
 
     if (command == "show") {
         if (index != args.size()) {
@@ -1276,53 +1528,95 @@ int command_backup(const GlobalOptions& global,
         throw Error("backup needs export, preview or import");
     }
     const std::string command = args[index++];
+    if (command != "export" && command != "preview" && command != "import") {
+        throw Error("unknown backup command: " + command);
+    }
+
     bool dry_run = false;
+    bool plaintext = false;
+    bool backup_phrase_stdin = global.backup_phrase_stdin;
     std::filesystem::path file;
-    if (command == "import") {
-        for (; index < args.size(); ++index) {
-            if (args[index] == "--dry-run") {
-                dry_run = true;
-            } else if (file.empty()) {
-                file = args[index];
-            } else {
-                throw Error("unexpected argument for backup import: " +
-                            args[index]);
+    while (index < args.size()) {
+        const std::string option = args[index];
+        if (option == "--dry-run") {
+            if (command != "import") {
+                throw Error("--dry-run is only valid for backup import");
             }
-        }
-        if (file.empty()) {
-            throw Error("backup import needs a file");
-        }
-    } else {
-        if (index >= args.size()) {
-            throw Error("backup " + command + " needs a file");
-        }
-        file = args[index++];
-        if (index != args.size()) {
+            dry_run = true;
+        } else if (option == "--plaintext") {
+            plaintext = true;
+        } else if (option == "--backup-phrase-stdin") {
+            backup_phrase_stdin = true;
+        } else if (option == "--help" || option == "-h") {
+            print_usage(std::cout);
+            return 0;
+        } else if (option.rfind("--", 0) == 0) {
+            throw Error("unknown backup " + command + " option: " + option);
+        } else if (file.empty()) {
+            file = option;
+        } else {
             throw Error("unexpected argument for backup " + command + ": " +
-                        args[index]);
+                        option);
+        }
+        ++index;
+    }
+    if (file.empty()) {
+        throw Error("backup " + command + " needs a file");
+    }
+
+    bool encrypted = false;
+    if (command != "export") {
+        encrypted = backup_file_is_encrypted(file);
+        if (command == "import" && !encrypted && !plaintext) {
+            throw Error("backup is not encrypted; pass --plaintext to import "
+                        "an upstream JSON backup");
         }
     }
 
     ensure_managed_running(global);
-    Connection connection(global.config);
+    UnlockedVault unlocked =
+        open_unlocked_vault(global, global.phrase_stdin);
+
     if (command == "export") {
-        export_backup(connection, file, now_ms());
+        if (plaintext) {
+            export_backup(unlocked.vault, file, now_ms());
+            std::cout << "exported " << file.string() << '\n';
+            std::cout << "warning\tbackup contains plaintext health data\n";
+            return 0;
+        }
+        SecretString backup_phrase;
+        std::string_view phrase = unlocked.phrase.value();
+        if (backup_phrase_stdin) {
+            backup_phrase.assign(read_secret_from_stdin());
+            phrase = backup_phrase.value();
+        }
+        export_encrypted_backup(unlocked.vault, file, now_ms(), phrase);
         std::cout << "exported " << file.string() << '\n';
-        std::cout << "warning\tbackup contains plaintext health data\n";
         return 0;
     }
+
+    SecretString backup_phrase;
+    std::string_view file_phrase;
+    if (encrypted) {
+        if (backup_phrase_stdin) {
+            backup_phrase.assign(read_secret_from_stdin());
+            file_phrase = backup_phrase.value();
+        } else {
+            file_phrase = unlocked.phrase.value();
+        }
+    }
+
     if (command == "preview" || (command == "import" && dry_run)) {
-        const auto preview = preview_backup(connection, file, now_ms());
+        const auto preview = preview_backup(unlocked.vault, file, now_ms(),
+                                            file_phrase);
         print_backup_preview(preview);
         return preview.ok ? 0 : 1;
     }
-    if (command == "import") {
-        const auto result = import_backup(connection, file, now_ms());
-        print_backup_preview(result.preview);
-        std::cout << "applied\t" << (result.applied ? "yes" : "no") << '\n';
-        return result.applied ? 0 : 1;
-    }
-    throw Error("unknown backup command: " + command);
+    const auto result =
+        import_backup(unlocked.vault, file, now_ms(), file_phrase);
+    print_backup_preview(result.preview);
+    std::cout << "applied\t" << (result.applied ? "yes" : "no") << '\n';
+    return result.applied ? 0 : 1;
 }
 
 int command_doses(const GlobalOptions& global,
@@ -1331,8 +1625,10 @@ int command_doses(const GlobalOptions& global,
         throw Error("doses needs list, add or remove");
     }
     const std::string command = args[index++];
-    Database database(global.config, global.migrations);
-    DoseEventRepository repository(database.connection());
+    ensure_managed_running(global);
+    UnlockedVault unlocked =
+        open_unlocked_vault(global, global.phrase_stdin);
+    VaultDoseEventRepository repository(unlocked.vault);
 
     if (command == "list") {
         Mode mode = Mode::Transfem;
@@ -1473,6 +1769,9 @@ int main(int argc, char** argv) {
         }
         if (command == "db") {
             return command_db(global, args, index);
+        }
+        if (command == "vault") {
+            return command_vault(global, args, index);
         }
         if (command == "settings") {
             return command_settings(global, args, index);

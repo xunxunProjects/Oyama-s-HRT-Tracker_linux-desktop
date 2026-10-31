@@ -110,6 +110,16 @@ test "$meta_count" = "1"
 record_count="$(psql_query "SELECT count(*) FROM vault_records")"
 test "$record_count" = "10"
 
+status_output="$(run_cli vault status)"
+grep -qx 'locked' <<<"$status_output"
+unlock_output="$(printf '%s\n' "$phrase" | \
+    run_cli --phrase-stdin vault unlock-check)"
+grep -qx 'unlocked' <<<"$unlock_output"
+printf '%s\n' "$phrase" | run_cli --phrase-stdin settings show \
+    | grep -q $'body_weight_kg\t60'
+printf '%s\n' "$phrase" | run_cli --phrase-stdin doses list --mode transfem \
+    | grep -q $'oral\tE2\t10'
+
 if run_cli db migrate-vault --yes --purge-old "$workdir/wrong-plaintext" \
     >"$workdir/purge-wrong.out" 2>"$workdir/purge-wrong.err"; then
     echo "wrong --purge-old path was accepted" >&2

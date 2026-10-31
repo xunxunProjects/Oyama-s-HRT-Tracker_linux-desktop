@@ -66,7 +66,13 @@ grep -q $'backend\tmanaged' <<<"$status_output"
 grep -q $'initialized\tyes' <<<"$status_output"
 grep -q $'running\tyes' <<<"$status_output"
 
-settings_output="$(run_cli settings set --weight 70 --birth-year 1990)"
+phrase="correct horse battery staple"
+printf '%s\n' "$phrase" | run_cli vault setup --phrase-stdin \
+    --kdf-ops 1 --kdf-mem 8388608 >/dev/null
+grep -qx 'locked' <<<"$(run_cli vault status)"
+
+settings_output="$(printf '%s\n' "$phrase" | \
+    run_cli --phrase-stdin settings set --weight 70 --birth-year 1990)"
 grep -q $'body_weight_kg\t70' <<<"$settings_output"
 grep -q $'birth_year\t1990' <<<"$settings_output"
 
