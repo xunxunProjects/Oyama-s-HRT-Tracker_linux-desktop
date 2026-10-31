@@ -185,6 +185,22 @@ int main(void) {
               OYAMA_VAULT_OK,
           "restored metadata unlocks");
 
+    check(oyama_vault_put(reopened,
+                          "00000000-0000-0000-0000-000000000009",
+                          "dose_event", 1, "{}", 2, &err) ==
+              OYAMA_VAULT_OK,
+          "orphan record fixture");
+    oyama_vault_lock(reopened);
+    check(run_sql(admin, "DELETE FROM vault_meta"), "delete metadata");
+    oyama_vault_state orphan_state = OYAMA_VAULT_UNINITIALIZED;
+    check(oyama_vault_get_state(reopened, &orphan_state, &err) !=
+              OYAMA_VAULT_OK &&
+              err.code == OYAMA_VAULT_ERR_CORRUPT,
+          "records without metadata are corrupt");
+    check(oyama_vault_setup(reopened, "new phrase", 10, &err) !=
+              OYAMA_VAULT_OK,
+          "setup refuses records without metadata");
+
     oyama_vault_lock(NULL);
     oyama_vault_close(NULL);
     oyama_vault_close(reopened);

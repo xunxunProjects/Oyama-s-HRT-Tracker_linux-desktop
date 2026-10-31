@@ -5,6 +5,8 @@
 #include "oyama/storage/vault_store.h"
 
 #include <algorithm>
+#include <map>
+#include <utility>
 
 namespace oyama::storage {
 namespace {
@@ -20,9 +22,24 @@ VaultTombstoneRepository::VaultTombstoneRepository(VaultStore& vault)
     : vault_(vault) {}
 
 void VaultTombstoneRepository::record(const Tombstone& tombstone) {
-    vault_.put(VaultRecord{generate_uuid_v4(), "tombstone",
-                           static_cast<std::uint64_t>(tombstone.deleted_at),
-                           encode_tombstone(tombstone)});
+    std::string record_id;
+    std::int64_t deleted_at = tombstone.deleted_at;
+    for (const auto& record : vault_.scan("tombstone")) {
+        const auto existing = decode_tombstone(record.payload);
+        if (!matches(existing, tombstone.kind, tombstone.record_id)) {
+            continue;
+        }
+        record_id = record.id;
+        deleted_at = std::max(deleted_at, existing.deleted_at);
+        break;
+    }
+    if (record_id.empty()) {
+        record_id = generate_uuid_v4();
+    }
+    const Tombstone merged{tombstone.kind, tombstone.record_id, deleted_at};
+    vault_.put(VaultRecord{record_id, "tombstone",
+                           static_cast<std::uint64_t>(merged.deleted_at),
+                           encode_tombstone(merged)});
 }
 
 bool VaultTombstoneRepository::remove(std::string_view kind,
@@ -41,17 +58,22 @@ bool VaultTombstoneRepository::remove(std::string_view kind,
 }
 
 std::vector<Tombstone> VaultTombstoneRepository::list() {
-    std::vector<Tombstone> tombstones;
+    std::map<std::pair<std::string, std::string>, Tombstone> unique;
     for (const auto& record : vault_.scan("tombstone")) {
-        tombstones.push_back(decode_tombstone(record.payload));
+        const auto tombstone = decode_tombstone(record.payload);
+        const auto key = std::make_pair(tombstone.kind, tombstone.record_id);
+        const auto found = unique.find(key);
+        if (found == unique.end() ||
+            tombstone.deleted_at > found->second.deleted_at) {
+            unique[key] = tombstone;
+        }
     }
-    std::sort(tombstones.begin(), tombstones.end(),
-              [](const Tombstone& left, const Tombstone& right) {
-                  if (left.kind != right.kind) {
-                      return left.kind < right.kind;
-                  }
-                  return left.record_id < right.record_id;
-              });
+    std::vector<Tombstone> tombstones;
+    tombstones.reserve(unique.size());
+    for (const auto& [key, tombstone] : unique) {
+        (void)key;
+        tombstones.push_back(tombstone);
+    }
     return tombstones;
 }
 

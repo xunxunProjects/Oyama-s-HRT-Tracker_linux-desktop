@@ -3,6 +3,7 @@
 
 #include <QCoreApplication>
 #include <QDateTime>
+#include <QEvent>
 #include <QMetaObject>
 #include <QThread>
 #include <QTimeZone>
@@ -16,6 +17,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -31,9 +33,14 @@ namespace {
 using oyama::storage::AppConfig;
 using oyama::storage::Backend;
 using oyama::storage::Database;
+using oyama::storage::Connection;
+using oyama::storage::ConnectionConfig;
 using oyama::storage::DoseEvent;
+using oyama::storage::LegacyPaths;
 using oyama::storage::LocalCluster;
+using oyama::storage::LocalClusterConfig;
 using oyama::storage::Mode;
+using oyama::storage::PromotionState;
 using oyama::storage::Passphrase;
 using oyama::storage::VaultDoseEventRepository;
 using oyama::storage::VaultSettingsRepository;
@@ -46,7 +53,8 @@ constexpr const char* kLegacyMigrationSetupStatus =
 constexpr const char* kPlaintextWarning =
     "Deleting the old database directory removes the files this application "
     "knows about. It does not guarantee erasure on SSDs, copy-on-write "
-    "filesystems, snapshots, RAID, or backups.";
+    "filesystems, snapshots, RAID, or backups. Full-disk encryption and "
+    "destruction of the old medium are the only reliable remedies.";
 
 std::filesystem::path migrations_dir() {
     if (const char* value = std::getenv("OYAMA_MIGRATIONS_DIR");
@@ -215,6 +223,98 @@ std::int64_t now_ms() {
     return QDateTime::currentMSecsSinceEpoch();
 }
 
+LocalClusterConfig cluster_config_for(const AppConfig& config,
+                                      const std::filesystem::path& data_dir,
+                                      const std::filesystem::path& socket_dir) {
+    LocalClusterConfig cluster = config.cluster_config();
+    cluster.data_dir = data_dir;
+    cluster.socket_dir = socket_dir;
+    cluster.log_file =
+        data_dir.parent_path() / (data_dir.filename().string() + ".log");
+    return cluster;
+}
+
+void verify_target_vault_meta(const LocalCluster& target,
+                              const AppConfig& config) {
+    ConnectionConfig connection = target.connection_config();
+    connection.dbname = config.dbname;
+    connection.user = config.user;
+    Connection database(connection);
+    const auto meta = database.exec(
+        "SELECT to_regclass('vault_meta') IS NOT NULL AND "
+        "EXISTS (SELECT 1 FROM vault_meta)");
+    if (!meta.boolean(0, 0)) {
+        throw std::runtime_error(
+            "Migration target has no vault metadata; refusing promotion.");
+    }
+}
+
+void finish_interrupted_promotion(const AppConfig& config,
+                                  const LegacyPaths& paths) {
+    LocalCluster old_cluster(
+        cluster_config_for(config, paths.data_dir, paths.socket_dir));
+    LocalCluster target_cluster(cluster_config_for(
+        config, paths.target_data_dir, paths.target_socket_dir));
+    if (!target_cluster.is_initialized()) {
+        throw std::runtime_error(
+            "Migration target is not an initialized PostgreSQL cluster.");
+    }
+    target_cluster.start();
+    try {
+        verify_target_vault_meta(target_cluster, config);
+    } catch (...) {
+        try {
+            target_cluster.stop();
+        } catch (const std::exception&) {
+        }
+        throw;
+    }
+    oyama::storage::promote_after_verification(old_cluster, target_cluster,
+                                               paths);
+}
+
+void discard_failed_target(const AppConfig& config,
+                           const LegacyPaths& paths) {
+    LocalCluster target_cluster(cluster_config_for(
+        config, paths.target_data_dir, paths.target_socket_dir));
+    if (target_cluster.is_initialized() && target_cluster.is_running()) {
+        target_cluster.stop();
+    }
+    std::error_code error;
+    std::filesystem::remove_all(paths.target_data_dir, error);
+    if (error) {
+        throw std::runtime_error(
+            "Could not remove the failed migration target: " +
+            error.message());
+    }
+    error.clear();
+    std::filesystem::remove_all(paths.target_socket_dir, error);
+    if (error) {
+        throw std::runtime_error(
+            "Could not remove the failed migration socket directory: " +
+            error.message());
+    }
+}
+
+void prepare_managed_directories(const AppConfig& config) {
+    const LegacyPaths paths = oyama::storage::make_legacy_paths(
+        config.data_dir, config.socket_dir);
+    const PromotionState state = oyama::storage::inspect_promotion(paths);
+    if (state == PromotionState::ManualReview) {
+        throw std::runtime_error(
+            "The migration directory state requires manual inspection at " +
+            paths.data_dir.parent_path().string());
+    }
+    if (state != PromotionState::TargetPending) {
+        return;
+    }
+    if (!std::filesystem::exists(paths.data_dir)) {
+        finish_interrupted_promotion(config, paths);
+        return;
+    }
+    discard_failed_target(config, paths);
+}
+
 }  // namespace
 
 AppController::AppController(QObject* parent) : QObject(parent) {
@@ -225,6 +325,7 @@ AppController::AppController(QObject* parent) : QObject(parent) {
     connect(idle_timer_, &QTimer::timeout, this, &AppController::lockVault);
     if (auto* application = QCoreApplication::instance();
         application != nullptr) {
+        application->installEventFilter(this);
         connect(application, &QCoreApplication::aboutToQuit, this,
                 &AppController::lockVault, Qt::DirectConnection);
     }
@@ -232,10 +333,31 @@ AppController::AppController(QObject* parent) : QObject(parent) {
 }
 
 AppController::~AppController() {
+    if (auto* application = QCoreApplication::instance();
+        application != nullptr) {
+        application->removeEventFilter(this);
+    }
     // A migration owns the old and target clusters.  Wait for it to finish so
     // the process never exits with a half-written import, then zero the phrase.
     join_migration_thread();
     clear_pending_migration_phrase();
+}
+
+bool AppController::eventFilter(QObject* watched, QEvent* event) {
+    if (vault_state_ == "unlocked" && idle_timer_ != nullptr) {
+        switch (event->type()) {
+            case QEvent::KeyPress:
+            case QEvent::MouseButtonPress:
+            case QEvent::MouseMove:
+            case QEvent::Wheel:
+            case QEvent::TouchBegin:
+                idle_timer_->start(kIdleLockMilliseconds);
+                break;
+            default:
+                break;
+        }
+    }
+    return QObject::eventFilter(watched, event);
 }
 
 void AppController::setMode(const QString& mode) {
@@ -341,6 +463,7 @@ void AppController::reload() {
         backend_ = app_config_.backend == Backend::Managed ? "managed"
                                                            : "existing";
         if (app_config_.backend == Backend::Managed) {
+            prepare_managed_directories(app_config_);
             cluster_ = std::make_unique<LocalCluster>(
                 app_config_.cluster_config());
             cluster_->ensure_running();

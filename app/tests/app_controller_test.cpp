@@ -2,6 +2,7 @@
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QEvent>
 #include <QEventLoop>
 #include <QMetaObject>
 #include <QString>
@@ -15,11 +16,13 @@
 #include <oyama/storage/connection.h>
 #include <oyama/storage/legacy_promotion.h>
 
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -200,6 +203,16 @@ int run_existing_database_scenario(QCoreApplication& application,
             "idle timer must fire only once");
     REQUIRE(idle_timer->isActive(),
             "idle timer must run while the vault is unlocked");
+
+    idle_timer->setInterval(1000);
+    idle_timer->start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    QEvent activity(QEvent::KeyPress);
+    QCoreApplication::sendEvent(&controller, &activity);
+    REQUIRE(idle_timer->remainingTime() > 950,
+            "user activity must reset the idle timer");
+    idle_timer->setInterval(15 * 60 * 1000);
+    idle_timer->start();
 
     REQUIRE(controller.saveSettings(68.5, 1991, "mipd", "retrospective",
                                     R"({"e2_kClear":0.4})"),
@@ -512,6 +525,22 @@ int run_managed_legacy_retry_scenario(QCoreApplication& application,
     return 0;
 }
 
+int run_managed_crash_recovery_scenario(AppController& controller) {
+    REQUIRE(controller.backend() == "managed",
+            "expected the managed crash fixture");
+    REQUIRE(controller.vaultState() == "locked",
+            "interrupted promotion must finish into a locked vault");
+    REQUIRE(!target_directory_exists(),
+            "crash recovery must consume the migration target");
+    REQUIRE(plaintext_sibling_count() == 1,
+            "crash recovery must keep exactly one plaintext sibling");
+    REQUIRE(vault_meta_row_exists(),
+            "crash recovery must expose the promoted vault metadata");
+    REQUIRE(controller.doses().isEmpty(),
+            "crash recovery must not load data before unlock");
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -542,6 +571,15 @@ int main(int argc, char** argv) {
         std::string(scenario) == "managed-legacy-retry") {
         const int status =
             run_managed_legacy_retry_scenario(application, controller);
+        if (status != 0) {
+            return status;
+        }
+        std::cout << "app_controller_test: ok\n";
+        return 0;
+    }
+    if (scenario != nullptr &&
+        std::string(scenario) == "managed-crash-recovery") {
+        const int status = run_managed_crash_recovery_scenario(controller);
         if (status != 0) {
             return status;
         }

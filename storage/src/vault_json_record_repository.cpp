@@ -3,6 +3,8 @@
 #include "oyama/storage/vault_codec.h"
 #include "oyama/storage/vault_store.h"
 
+#include <oyama/vault.h>
+
 #include <algorithm>
 #include <cstdint>
 #include <string>
@@ -53,6 +55,10 @@ std::optional<JsonRecord> VaultJsonRecordRepository::get(std::string_view id) {
     if (!stored.has_value()) {
         return std::nullopt;
     }
+    if (stored->kind != vault_kind_) {
+        throw VaultError(OYAMA_VAULT_ERR_CORRUPT,
+                         "json record kind does not match its row");
+    }
     auto decoded = decode_json_record(stored->payload, kind_);
     if (decoded.id != id) {
         throw VaultCodecError("json_record", std::string(id), "id",
@@ -71,6 +77,10 @@ void VaultJsonRecordRepository::upsert(const JsonRecord& record) {
 }
 
 bool VaultJsonRecordRepository::remove(std::string_view id) {
+    const auto stored = vault_.get(id);
+    if (!stored.has_value() || stored->kind != vault_kind_) {
+        return false;
+    }
     return vault_.remove(id);
 }
 

@@ -13,6 +13,7 @@
 #include <oyama/storage/storage.h>
 #include <oyama/storage/vault_store.h>
 
+class QEvent;
 class QThread;
 class QTimer;
 
@@ -85,6 +86,9 @@ public:
     Q_INVOKABLE bool removeDose(const QString& id);
     [[nodiscard]] Q_INVOKABLE double nowHours() const;
     [[nodiscard]] Q_INVOKABLE QString formatTime(double time_h) const;
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 signals:
     void changed();

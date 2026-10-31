@@ -148,6 +148,40 @@ void LegacyMigrationWorker::run(const QString& data_dir,
             (paths.target_data_dir.filename().string() + ".log");
         LocalCluster target_cluster(target_config);
 
+        if (state == PromotionState::TargetPending &&
+            !std::filesystem::exists(paths.data_dir)) {
+            if (!target_cluster.is_initialized()) {
+                throw std::runtime_error(
+                    "Migration target is not an initialized PostgreSQL "
+                    "cluster.");
+            }
+            target_cluster.start();
+            try {
+                Connection target_connection(
+                    cluster_connection(target_cluster, *config));
+                const auto meta = target_connection.exec(
+                    "SELECT to_regclass('vault_meta') IS NOT NULL AND "
+                    "EXISTS (SELECT 1 FROM vault_meta)");
+                if (!meta.boolean(0, 0)) {
+                    throw std::runtime_error(
+                        "Migration target has no vault metadata; refusing "
+                        "promotion.");
+                }
+            } catch (...) {
+                try {
+                    target_cluster.stop();
+                } catch (const std::exception&) {
+                }
+                throw;
+            }
+            oyama::storage::promote_after_verification(
+                old_cluster, target_cluster, paths);
+            emit progress(QStringLiteral("promote"), 1, 1);
+            sodium_memzero(secret.data(), secret.size());
+            emit finished();
+            return;
+        }
+
         const bool old_was_running =
             old_cluster.is_initialized() && old_cluster.is_running();
 

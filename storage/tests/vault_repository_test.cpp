@@ -166,6 +166,22 @@ int main() {
     check(tombs.prune_before(100) == 1, "prune removes one tombstone");
     check(tombs.list().size() == 2, "prune leaves newer tombstones");
 
+    tombs.record(Tombstone{"dose_event",
+                           "cccccccc-cccc-4ccc-8ccc-cccccccccccc", 120});
+    const auto deduped = tombs.list();
+    std::size_t duplicate_count = 0;
+    std::int64_t duplicate_stamp = 0;
+    for (const auto& tombstone : deduped) {
+        if (tombstone.kind == "dose_event" &&
+            tombstone.record_id ==
+                "cccccccc-cccc-4ccc-8ccc-cccccccccccc") {
+            ++duplicate_count;
+            duplicate_stamp = tombstone.deleted_at;
+        }
+    }
+    check(duplicate_count == 1 && duplicate_stamp == 120,
+          "tombstone record upserts by kind and record id");
+
     VaultDoseEventRepository doses(vault);
     DoseEvent dose_b{"00000000-0000-0000-0000-000000000020", Mode::Transfem,
                      "oral", "E2", 20.0, 2.0, "{}", 3, 1};
@@ -270,6 +286,26 @@ int main() {
         invalid_route_threw = true;
     }
     check(invalid_route_threw, "invalid JSON record route rejected");
+
+    DoseEvent foreign_dose{"00000000-0000-0000-0000-000000000025",
+                           Mode::Transfem, "oral", "E2", 25.0, 1.0, "{}",
+                           1, 1};
+    doses.upsert(foreign_dose);
+    bool foreign_get_rejected = false;
+    try {
+        (void)quick.get(foreign_dose.id);
+    } catch (const VaultError& error) {
+        foreign_get_rejected =
+            error.code() == OYAMA_VAULT_ERR_CORRUPT;
+    } catch (const VaultCodecError&) {
+        foreign_get_rejected = false;
+    }
+    check(foreign_get_rejected, "JSON get rejects a foreign record kind");
+    check(!quick.remove(foreign_dose.id),
+          "JSON remove refuses a foreign record kind");
+    check(doses.get(foreign_dose.id).has_value(),
+          "foreign dose survives JSON remove");
+    (void)doses.remove(foreign_dose.id);
 
     PGresult* blobs = PQexec(admin, "SELECT blob FROM vault_records");
     check(blobs != nullptr && PQresultStatus(blobs) == PGRES_TUPLES_OK,

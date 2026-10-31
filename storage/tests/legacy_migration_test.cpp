@@ -232,6 +232,25 @@ int main() {
         check(repeated.counts.preferences == 2, "repeat preference count");
         check(repeated.counts.tombstones == 1, "repeat tombstone count");
 
+        if (env_available("OYAMA_TEST_LEGACY_V1_PG") &&
+            env_available("OYAMA_TEST_VAULT_V1_PG")) {
+            Connection v1_source(
+                config_from_env("OYAMA_TEST_LEGACY_V1_PG"));
+            const auto v1_detection = detect_legacy(v1_source);
+            check(v1_detection.has_legacy,
+                  "schema-v1 legacy data is detected");
+            VaultStore v1_vault(config_from_env("OYAMA_TEST_VAULT_V1_PG"));
+            v1_vault.open();
+            v1_vault.setup(phrase, VaultKdfParams{1, 8 * 1024 * 1024});
+            v1_vault.unlock(phrase);
+            LegacyMigrator v1_migrator(v1_source, v1_vault);
+            const auto v1_result = v1_migrator.import_all();
+            check(v1_result.counts.dose_events == 2,
+                  "schema-v1 dose rows import");
+            check(v1_result.source_sha256 == v1_result.target_sha256,
+                  "schema-v1 canonical hashes match");
+        }
+
         vault.clear();
         check(vault.scan().empty(), "target empty before invalid import");
         (void)source.exec(

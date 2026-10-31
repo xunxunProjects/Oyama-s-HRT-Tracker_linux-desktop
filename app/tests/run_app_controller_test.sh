@@ -113,6 +113,9 @@ make_managed_cluster managed_pending "$((port + 1))" 0
 make_managed_cluster managed_migrate "$((port + 2))" 0
 make_managed_cluster managed_retry "$((port + 3))" 1
 
+# Simulate a failed prior attempt that left a target directory behind.
+mkdir "$root/managed_pending-data-migrate"
+
 export PG_BINDIR="$pg_bindir"
 export OYAMA_CONFIG_FILE="$config"
 export OYAMA_MIGRATIONS_DIR="$migrations"
@@ -124,6 +127,32 @@ OYAMA_APP_CONTROLLER_SCENARIO=managed-legacy \
 
 OYAMA_APP_CONTROLLER_SCENARIO=managed-legacy-migrate \
     OYAMA_CONFIG_FILE="$root/managed_migrate.conf" "$binary"
+
+# Simulate a crash after the old directory became a plaintext sibling but
+# before the verified target was renamed into place.
+if [[ -f "$root/managed_migrate-data/postmaster.pid" ]]; then
+    "$pg_bindir/pg_ctl" -D "$root/managed_migrate-data" -m fast -w stop \
+        >/dev/null
+fi
+mv "$root/managed_migrate-data" "$root/managed_crash-data-migrate"
+mkdir "$root/managed_crash-data-plaintext-20260101T000000Z"
+mkdir -p "$root/managed_crash-socket" "$root/managed_crash-socket-migrate"
+chmod 700 "$root/managed_crash-socket" "$root/managed_crash-socket-migrate"
+
+cat >"$root/managed_crash.conf" <<EOF
+version=1
+backend=managed
+socket_dir=$root/managed_crash-socket
+data_dir=$root/managed_crash-data
+server_bin_dir=$pg_bindir
+port=$((port + 4))
+dbname=managed_migrate
+user=$user
+EOF
+chmod 600 "$root/managed_crash.conf"
+
+OYAMA_APP_CONTROLLER_SCENARIO=managed-crash-recovery \
+    OYAMA_CONFIG_FILE="$root/managed_crash.conf" "$binary"
 
 OYAMA_APP_CONTROLLER_SCENARIO=managed-legacy-retry \
     OYAMA_CONFIG_FILE="$root/managed_retry.conf" "$binary"

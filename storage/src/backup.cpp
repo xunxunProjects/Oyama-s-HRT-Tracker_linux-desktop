@@ -163,6 +163,16 @@ bool required_number(const json& object, const char* key, double& out,
     return true;
 }
 
+bool required_integer(const json& object, const char* key,
+                      std::int64_t& out, std::string& error) {
+    if (!object.contains(key) || !object.at(key).is_number_integer()) {
+        error = std::string("missing or invalid ") + key;
+        return false;
+    }
+    out = object.at(key).get<std::int64_t>();
+    return true;
+}
+
 json extras_object(const json& object, std::vector<std::string>& issues,
                    const std::string& where) {
     if (!object.contains("extras")) {
@@ -239,7 +249,7 @@ struct MergedState {
     std::map<std::string, std::vector<JsonRecord>> supplies;
     std::map<std::string, std::vector<JsonRecord>> plan;
     std::map<std::string, std::map<std::string, std::int64_t>> tombstones;
-    std::map<std::string, std::string> preferences;
+    std::map<std::string, Preference> preferences;
     BackupPreview preview;
 };
 
@@ -347,12 +357,12 @@ bool parse_template(const json& value, Mode mode, std::int64_t now_ms,
     std::string route;
     std::string ester;
     double dose = 0;
-    double created = 0;
+    std::int64_t created = 0;
     if (!required_string(value, "name", name, error) ||
         !required_string(value, "route", route, error) || !known_route(route) ||
         !required_string(value, "ester", ester, error) || !known_ester(ester) ||
         !required_number(value, "doseMG", dose, error) || dose < 0 ||
-        !required_number(value, "createdAt", created, error)) {
+        !required_integer(value, "createdAt", created, error)) {
         error = where + ": invalid template";
         return false;
     }
@@ -384,12 +394,12 @@ bool parse_quick(const json& value, Mode mode, std::int64_t now_ms,
     std::string route;
     std::string ester;
     double amount = 0;
-    double created = 0;
+    std::int64_t created = 0;
     if (!id_ok(value.value("id", json()), record.id) ||
         !required_string(value, "route", route, error) || !known_route(route) ||
         !required_string(value, "ester", ester, error) || !known_ester(ester) ||
         !required_number(value, "value", amount, error) || amount < 0 ||
-        !required_number(value, "createdAt", created, error)) {
+        !required_integer(value, "createdAt", created, error)) {
         error = where + ": invalid quick dose";
         return false;
     }
@@ -414,12 +424,12 @@ bool parse_supply(const json& value, Mode mode, std::int64_t now_ms,
     std::string route;
     std::string ester;
     double count = 0;
-    double started = 0;
+    std::int64_t started = 0;
     if (!id_ok(value.value("id", json()), record.id) ||
         !required_string(value, "route", route, error) || !known_route(route) ||
         !required_string(value, "ester", ester, error) || !known_ester(ester) ||
         !required_number(value, "count", count, error) || count < 0 ||
-        !required_number(value, "startedAt", started, error) || started <= 0) {
+        !required_integer(value, "startedAt", started, error) || started <= 0) {
         error = where + ": invalid supply";
         return false;
     }
@@ -473,19 +483,19 @@ bool parse_plan(const json& value, Mode mode, std::int64_t now_ms,
     std::string route;
     std::string ester;
     double dose = 0;
-    double every_days = 0;
-    double times_per_day = 0;
+    std::int64_t every_days = 0;
+    std::int64_t times_per_day = 0;
     if (!id_ok(value.value("id", json()), record.id) ||
         !required_string(value, "route", route, error) || !known_route(route) ||
         !required_string(value, "ester", ester, error) || !known_ester(ester) ||
         !required_number(value, "doseMG", dose, error) || dose < 0 ||
-        !required_number(value, "everyDays", every_days, error) ||
+        !required_integer(value, "everyDays", every_days, error) ||
         every_days < 1 || every_days > 3650 ||
-        !required_number(value, "timesPerDay", times_per_day, error)) {
+        !required_integer(value, "timesPerDay", times_per_day, error)) {
         error = where + ": invalid plan item";
         return false;
     }
-    int times = static_cast<int>(std::llround(times_per_day));
+    int times = static_cast<int>(times_per_day);
     if (times < 1) {
         times = 1;
     } else if (times > 24) {
@@ -833,7 +843,9 @@ std::string content_fingerprint(const LabResult& lab) {
 }
 
 std::string content_fingerprint(const JsonRecord& record) {
-    return canonical(json::parse(record.payload_json));
+    json value = json::parse(record.payload_json);
+    value.erase("mode");
+    return canonical(value);
 }
 
 // NOLINTNEXTLINE(bugprone-easily-swappable-parameters)
@@ -994,7 +1006,7 @@ MergedState merge_bundle(typename Repositories::Store& store,
     MergedState state;
     state.settings = SettingsRepo(store).get();
     for (const auto& preference : PreferencesRepo(store).list()) {
-        state.preferences[preference.key] = preference.value_json;
+        state.preferences[preference.key] = preference;
     }
     for (const auto mode : {Mode::Transfem, Mode::Transmasc}) {
         const auto key = mode_key(mode);
@@ -1220,7 +1232,11 @@ MergedState merge_bundle(typename Repositories::Store& store,
     }
     state.settings.updated_at = now_ms;
     for (const auto& [key, value] : parsed.preferences) {
-        state.preferences[key] = value;
+        const auto existing = state.preferences.find(key);
+        if (existing == state.preferences.end() ||
+            existing->second.value_json != value) {
+            state.preferences[key] = Preference{key, value, now_ms};
+        }
     }
     return state;
 }
@@ -1250,6 +1266,7 @@ json lab_json(const LabResult& lab) {
 
 json record_json(const JsonRecord& record) {
     json value = json::parse(record.payload_json);
+    value.erase("mode");
     if (record.updated_at.has_value()) {
         value["updatedAt"] = *record.updated_at;
     }
@@ -1303,10 +1320,9 @@ void write_merged_state(typename Repositories::Store& store,
         }
     }
     PreferencesRepo preferences(store);
-    for (const auto& [key, value] : merged.preferences) {
-        if (contains(kPreferences, key)) {
-            preferences.set(Preference{key, value, 0});
-        }
+    for (const auto& [key, preference] : merged.preferences) {
+        (void)key;
+        preferences.set(preference);
     }
 }
 

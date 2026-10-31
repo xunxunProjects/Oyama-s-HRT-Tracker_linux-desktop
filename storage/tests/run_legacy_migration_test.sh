@@ -72,7 +72,8 @@ psql_db() {
         -v ON_ERROR_STOP=1 "$@" >/dev/null
 }
 
-for db in oyama_legacy oyama_vault oyama_fresh; do
+for db in oyama_legacy oyama_vault oyama_fresh oyama_legacy_v1 \
+          oyama_vault_v1; do
     "$bindir/createdb" -h "$socket_dir" -p "$port" -U "$(id -un)" "$db"
 done
 
@@ -81,6 +82,13 @@ psql_db oyama_legacy -f "$migrations/0002_settings_timestamps.sql"
 psql_db oyama_legacy -f "$seed"
 
 psql_db oyama_vault -f "$migrations/0003_vault_schema.sql"
+
+psql_db oyama_legacy_v1 -f "$migrations/0001_initial_schema.sql"
+psql_db oyama_legacy_v1 -f "$migrations/0002_settings_timestamps.sql"
+psql_db oyama_legacy_v1 -f "$seed"
+psql_db oyama_legacy_v1 -c \
+    "ALTER TABLE settings DROP COLUMN weight_updated_at, DROP COLUMN birth_year_updated_at"
+psql_db oyama_vault_v1 -f "$migrations/0003_vault_schema.sql"
 
 psql_db oyama_fresh -f "$migrations/0001_initial_schema.sql"
 psql_db oyama_fresh -f "$migrations/0002_settings_timestamps.sql"
@@ -100,5 +108,15 @@ export OYAMA_TEST_FRESH_PG_SOCKET="$socket_dir"
 export OYAMA_TEST_FRESH_PG_DB="oyama_fresh"
 export OYAMA_TEST_FRESH_PG_USER="$(id -un)"
 export OYAMA_TEST_FRESH_PG_PORT="$port"
+
+export OYAMA_TEST_LEGACY_V1_PG_SOCKET="$socket_dir"
+export OYAMA_TEST_LEGACY_V1_PG_DB="oyama_legacy_v1"
+export OYAMA_TEST_LEGACY_V1_PG_USER="$(id -un)"
+export OYAMA_TEST_LEGACY_V1_PG_PORT="$port"
+
+export OYAMA_TEST_VAULT_V1_PG_SOCKET="$socket_dir"
+export OYAMA_TEST_VAULT_V1_PG_DB="oyama_vault_v1"
+export OYAMA_TEST_VAULT_V1_PG_USER="$(id -un)"
+export OYAMA_TEST_VAULT_V1_PG_PORT="$port"
 
 "$test_binary"

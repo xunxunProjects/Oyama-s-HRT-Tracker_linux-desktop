@@ -98,6 +98,15 @@ bool relation_exists(Connection& source, const std::string& relation) {
     return result.boolean(0, 0);
 }
 
+bool column_exists(Connection& source, const std::string& table,
+                   const std::string& column) {
+    const auto result = source.exec(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema = current_schema() AND table_name = '" +
+        table + "' AND column_name = '" + column + "')");
+    return result.boolean(0, 0);
+}
+
 bool table_has_rows(Connection& source, const std::string& table) {
     if (!relation_exists(source, table)) {
         return false;
@@ -117,11 +126,19 @@ Mode read_mode(const Result& result, int row, const std::string& kind,
 }
 
 std::optional<Settings> read_settings(Connection& source) {
+    const bool has_weight_stamp =
+        column_exists(source, "settings", "weight_updated_at");
+    const bool has_birth_stamp =
+        column_exists(source, "settings", "birth_year_updated_at");
     const auto result = source.exec(
-        "SELECT body_weight_kg, weight_updated_at, birth_year, "
-        "birth_year_updated_at, pk_params::text, pk_params_updated_at, "
-        "calibration_method, calibration_history_mode, updated_at "
-        "FROM settings WHERE id = true");
+        "SELECT body_weight_kg, " +
+        std::string(has_weight_stamp ? "weight_updated_at"
+                                     : "NULL::bigint") +
+        ", birth_year, " +
+        std::string(has_birth_stamp ? "birth_year_updated_at"
+                                    : "NULL::bigint") +
+        ", pk_params::text, pk_params_updated_at, calibration_method, "
+        "calibration_history_mode, updated_at FROM settings WHERE id = true");
     if (result.rows() == 0) {
         return std::nullopt;
     }
@@ -602,8 +619,7 @@ LegacyDetection detect_legacy(Connection& source) {
     if (relation_exists(source, "settings")) {
         const auto settings = source.exec(
             "SELECT EXISTS (SELECT 1 FROM settings WHERE "
-            "body_weight_kg IS NOT NULL OR weight_updated_at IS NOT NULL OR "
-            "birth_year IS NOT NULL OR birth_year_updated_at IS NOT NULL OR "
+            "body_weight_kg IS NOT NULL OR birth_year IS NOT NULL OR "
             "pk_params IS NOT NULL OR pk_params_updated_at IS NOT NULL OR "
             "calibration_method <> 'mipd' OR "
             "calibration_history_mode <> 'retrospective' OR "

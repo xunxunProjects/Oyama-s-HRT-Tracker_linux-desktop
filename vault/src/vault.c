@@ -203,10 +203,25 @@ void oyama_vault_close(oyama_vault *vault) {
     free(vault);
 }
 
+static int records_exist(const oyama_vault *vault, int *out,
+                         oyama_error *err) {
+    PGresult *result = PQexec(vault->conn,
+                              "SELECT 1 FROM vault_records LIMIT 1");
+    if (result == NULL || PQresultStatus(result) != PGRES_TUPLES_OK) {
+        return result_error((oyama_vault *)vault, result, err,
+                            "cannot read vault records");
+    }
+    *out = PQntuples(result) != 0;
+    PQclear(result);
+    return OYAMA_VAULT_OK;
+}
+
 int oyama_vault_get_state(const oyama_vault *vault, oyama_vault_state *out,
                           oyama_error *err) {
     PGresult *result;
     int rows;
+    int orphaned = 0;
+    int rc;
 
     if (vault == NULL || out == NULL) {
         return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
@@ -221,6 +236,14 @@ int oyama_vault_get_state(const oyama_vault *vault, oyama_vault_state *out,
     rows = PQntuples(result);
     PQclear(result);
     if (rows == 0) {
+        rc = records_exist(vault, &orphaned, err);
+        if (rc != OYAMA_VAULT_OK) {
+            return rc;
+        }
+        if (orphaned) {
+            return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                        "vault records exist without metadata");
+        }
         *out = OYAMA_VAULT_UNINITIALIZED;
     } else if (vault->unlocked && vault->dek != NULL) {
         *out = OYAMA_VAULT_UNLOCKED;
@@ -234,6 +257,8 @@ static int check_uninitialized(oyama_vault *vault, oyama_error *err) {
     PGresult *result = PQexec(vault->conn,
                               "SELECT 1 FROM vault_meta LIMIT 1");
     int rows;
+    int orphaned = 0;
+    int rc;
 
     if (result == NULL || PQresultStatus(result) != PGRES_TUPLES_OK) {
         return result_error(vault, result, err,
@@ -244,6 +269,14 @@ static int check_uninitialized(oyama_vault *vault, oyama_error *err) {
     if (rows != 0) {
         return fail(err, OYAMA_VAULT_ERR_ALREADY_INITIALIZED,
                     "vault metadata already exists");
+    }
+    rc = records_exist(vault, &orphaned, err);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    if (orphaned) {
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                    "vault records exist without metadata");
     }
     return OYAMA_VAULT_OK;
 }

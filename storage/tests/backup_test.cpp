@@ -2,7 +2,9 @@
 #include <oyama/storage/backup.h>
 #include <oyama/storage/backup_crypto.h>
 #include <oyama/storage/vault_dose_event_repository.h>
+#include <oyama/storage/vault_json_record_repository.h>
 #include <oyama/storage/vault_lab_result_repository.h>
+#include <oyama/storage/vault_preferences_repository.h>
 #include <oyama/storage/vault_settings_repository.h>
 #include <oyama/storage/vault_store.h>
 
@@ -111,6 +113,20 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
     current.updated_at = 3000;
     settings.save(current);
 
+    VaultJsonRecordRepository templates(vault, JsonRecordKind::DoseTemplate);
+    JsonRecord template_record;
+    template_record.id = "44444444-4444-4444-8444-444444444444";
+    template_record.mode = Mode::Transfem;
+    template_record.payload_json =
+        R"({"id":"44444444-4444-4444-8444-444444444444","name":"weekly","route":"injection","ester":"EV","doseMG":2.0,"extras":{},"createdAt":1})";
+    template_record.updated_at = 4000;
+    templates.upsert(template_record);
+
+    VaultPreferencesRepository preferences(vault);
+    preferences.set({"app-theme", R"("dark")", 7000});
+    preferences.set({"custom-key", R"({"x":1})", 8000});
+    preferences.set({"app-show-prediction", "true", 9000});
+
     const auto json_text = export_backup_json(vault, now);
     check(json_text.find("\"format\":\"oyama-hrt-complete-backup\"") !=
               std::string::npos,
@@ -130,12 +146,47 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
     check(exported_text == json_text,
           "vault export file matches export_backup_json");
 
+    const auto exported_root = json::parse(json_text);
+    const auto& exported_template =
+        exported_root["modes"]["transfem"]["doseTemplates"][0];
+    check(!exported_template.contains("mode"),
+          "vault template export omits the internal mode");
+    const auto self_preview = preview_backup(vault, exported, now);
+    check(self_preview.ok, "same-vault preview succeeds");
+    check(self_preview.blocked.empty(),
+          "same-vault preview is not blocked by equal stamps");
+    const auto self_import = import_backup(vault, exported, now, phrase);
+    check(self_import.applied, "same-vault import applies");
+    check(templates.get(template_record.id).has_value(),
+          "same-vault import keeps the template");
+
     const auto preview = preview_backup(vault, exported, now);
     check(preview.ok, "vault bundle previews");
     check_equal(preview.counts.at("transfem").events, std::size_t{1},
                 "vault preview counts dose");
     check_equal(preview.counts.at("transfem").lab_results, std::size_t{1},
                 "vault preview counts lab");
+
+    auto preference_bundle = read_json(exported);
+    preference_bundle["preferences"] = {{"app-theme", "light"}};
+    const auto preference_path = dir / "vault-preference.json";
+    write_file(preference_path, preference_bundle.dump());
+    const auto preference_import =
+        import_backup(vault, preference_path, now, phrase);
+    check(preference_import.applied, "preference-only vault import applies");
+    const auto theme = preferences.get("app-theme");
+    check(theme.has_value() && theme->value_json == R"("light")",
+          "imported preference value wins");
+    check(theme.has_value() && theme->updated_at > 0,
+          "imported preference keeps a real timestamp");
+    const auto custom = preferences.get("custom-key");
+    check(custom.has_value() && custom->value_json == R"({"x":1})" &&
+              custom->updated_at == 8000,
+          "non-backup preference key and stamp survive import");
+    const auto prediction = preferences.get("app-show-prediction");
+    check(prediction.has_value() && prediction->value_json == "true" &&
+              prediction->updated_at == 9000,
+          "unchanged preference key and stamp survive import");
 
     vault.clear();
     check(vault.scan().empty(), "vault is empty before import");
