@@ -63,7 +63,10 @@ add_library(oyama_storage STATIC
     storage/src/types.cpp
     storage/src/uuid.cpp
     storage/src/vault_codec.cpp
-    storage/src/vault_store.cpp)
+    storage/src/vault_store.cpp
+    storage/src/vault_preferences_repository.cpp
+    storage/src/vault_settings_repository.cpp
+    storage/src/vault_tombstone_repository.cpp)
 target_include_directories(oyama_storage
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
@@ -187,6 +190,19 @@ if(BUILD_TESTING)
         target_compile_options(vault_codec_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME vault_codec_test COMMAND vault_codec_test)
+
+    add_executable(vault_repository_test storage/tests/vault_repository_test.cpp)
+    target_include_directories(vault_repository_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(vault_repository_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_repository_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME vault_repository_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_vault_repository_test.sh
+                $<TARGET_FILE:vault_repository_test>)
+    set_tests_properties(vault_repository_integration PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
