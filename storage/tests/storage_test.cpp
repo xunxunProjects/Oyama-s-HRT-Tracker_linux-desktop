@@ -233,16 +233,17 @@ void run_integration_checks(Connection& connection) {
 
     oyama::storage::MigrationRunner runner(migrations_dir());
     const auto first = runner.apply(connection);
-    check_equal(first.size(), std::size_t{2}, "initial migrations apply");
-    check_equal(runner.current_version(connection), 2,
-                "schema version is 2");
+    check_equal(first.size(), std::size_t{3}, "initial migrations apply");
+    check_equal(runner.current_version(connection), 3,
+                "schema version is 3");
     check(runner.apply(connection).empty(), "second migrate is a no-op");
 
     const auto status = runner.status(connection);
-    check_equal(status.size(), std::size_t{2}, "two migrations are reported");
-    check(status[0].applied && status[1].applied,
-          "both migrations are applied");
-    check(status[0].checksum_matches && status[1].checksum_matches,
+    check_equal(status.size(), std::size_t{3}, "three migrations are reported");
+    check(status[0].applied && status[1].applied && status[2].applied,
+          "all migrations are applied");
+    check(status[0].checksum_matches && status[1].checksum_matches &&
+              status[2].checksum_matches,
           "applied checksums match");
 
     SettingsRepository settings(connection);

@@ -56,8 +56,8 @@ run_cli() {
 
 init_output="$(run_cli db init)"
 grep -q 'created database oyama_hrt_cli_test' <<<"$init_output"
-grep -q 'schema version 2' <<<"$init_output"
-grep -q 'applied 2 migration(s)' <<<"$init_output"
+grep -q 'schema version 3' <<<"$init_output"
+grep -q 'applied 3 migration(s)' <<<"$init_output"
 
 ping_output="$(run_cli db ping)"
 grep -q $'database\toyama_hrt_cli_test' <<<"$ping_output"

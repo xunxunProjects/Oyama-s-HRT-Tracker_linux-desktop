@@ -19,6 +19,7 @@ pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 include(GNUInstallDirs)
 
 add_library(oyama_vault STATIC
+    vault/src/vault.c
     vault/src/vault_crypto.c)
 target_include_directories(oyama_vault
     PUBLIC
@@ -137,6 +138,18 @@ if(BUILD_TESTING)
         target_compile_options(vault_crypto_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME vault_crypto_test COMMAND vault_crypto_test)
+
+    add_executable(vault_meta_test vault/tests/vault_meta_test.c)
+    target_include_directories(vault_meta_test PRIVATE vault/src)
+    target_link_libraries(vault_meta_test PRIVATE oyama_vault PostgreSQL::PostgreSQL)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_meta_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME vault_meta_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/vault/tests/run_vault_pg_test.sh
+                $<TARGET_FILE:vault_meta_test>)
+    set_tests_properties(vault_meta_integration PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
