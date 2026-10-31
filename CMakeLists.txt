@@ -7,6 +7,9 @@ project(oyama_hrt_linux_desktop
 
 if(CMAKE_SYSTEM_NAME STREQUAL "OpenBSD")
     message(STATUS "OpenBSD native build: Qt 6 and libpq come from packages")
+    # OpenBSD's base clang does not search /usr/local/include by default.
+    # pkg_add installs Qt, libsodium, and nlohmann/json headers there.
+    include_directories(SYSTEM /usr/local/include)
 endif()
 
 set(CMAKE_C_STANDARD 99)

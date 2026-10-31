@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The caller may have exported a config from manual testing; the test must use
+# its own throwaway cluster.
+unset OYAMA_CONFIG_FILE
+
 # End-to-end backup CLI test with a managed, socket-only PostgreSQL cluster.
 
 cli="${1:?usage: run_cli_backup_integration.sh CLI MIGRATIONS_DIR}"
@@ -58,7 +62,7 @@ if grep -q "plaintext health data" <<<"$export_output"; then
     exit 1
 fi
 test -f "$bundle"
-test "$(head -c 8 "$bundle")" = "OYAMAEBK"
+test "$(dd if="$bundle" bs=1 count=8 2>/dev/null)" = "OYAMAEBK"
 mode="$(stat -c %a "$bundle" 2>/dev/null || stat -f %Lp "$bundle")"
 test "$mode" = "600"
 

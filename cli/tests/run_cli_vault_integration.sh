@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The caller may have exported a config from manual testing; the test must use
+# its own throwaway cluster.
+unset OYAMA_CONFIG_FILE
+
 # End-to-end CLI test for vault setup/unlock, encrypted data commands, and
 # encrypted/plaintext backup handling against a throwaway PostgreSQL cluster.
 
@@ -125,7 +129,7 @@ grep -q "exported $sealed" <<<"$export_output"
 if grep -q 'plaintext health data' <<<"$export_output"; then
     fail "default encrypted export printed the plaintext warning"
 fi
-test "$(head -c 8 "$sealed")" = "OYAMAEBK"
+test "$(dd if="$sealed" bs=1 count=8 2>/dev/null)" = "OYAMAEBK"
 sealed_mode="$(stat -c %a "$sealed" 2>/dev/null || stat -f %Lp "$sealed")"
 test "$sealed_mode" = "600"
 
