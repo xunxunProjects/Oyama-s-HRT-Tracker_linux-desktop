@@ -33,9 +33,6 @@ AbstractButton {
             height: parent.height
             radius: Theme.radiusMd
             color: root.clickable && (root.hovered || root.down) ? Theme.surfaceHover : "transparent"
-            Behavior on color {
-                ColorAnimation { duration: Theme.durationQuick }
-            }
             border.width: root.visualFocus ? 2 : 0
             border.color: Theme.focusRing
         }

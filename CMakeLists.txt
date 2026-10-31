@@ -75,8 +75,15 @@ if(OYAMA_BUILD_QT_SHELL)
     find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
     if(Qt6_FOUND)
         qt_standard_project_setup()
-        qt_policy(SET QTP0001 NEW)
-        qt_policy(SET QTP0004 NEW)
+        # These policies were introduced after the minimum supported Qt.
+        # Setting an unknown policy is fatal, so keep Qt 6.4 (Debian 12 and
+        # Ubuntu 24.04) working as documented.
+        if(Qt6_VERSION VERSION_GREATER_EQUAL 6.5)
+            qt_policy(SET QTP0001 NEW)
+        endif()
+        if(Qt6_VERSION VERSION_GREATER_EQUAL 6.8)
+            qt_policy(SET QTP0004 NEW)
+        endif()
 
         function(oyama_add_app_assets target)
             qt_add_resources(${target} "app_i18n"
@@ -158,6 +165,7 @@ if(OYAMA_BUILD_QT_SHELL)
         qt_add_qml_module(oyama-hrt-app
             URI OyamaHrt
             VERSION 1.0
+            RESOURCE_PREFIX "/qt/qml"
             QML_FILES ${OYAMA_QML_FILES}
             RESOURCES app/assets/app-icon.png)
         oyama_add_app_assets(oyama-hrt-app)
