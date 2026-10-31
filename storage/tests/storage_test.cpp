@@ -16,20 +16,7 @@ namespace {
 
 using oyama::storage::Connection;
 using oyama::storage::ConnectionConfig;
-using oyama::storage::DoseEvent;
-using oyama::storage::JsonRecord;
-using oyama::storage::JsonRecordKind;
-using oyama::storage::LabResult;
-using oyama::storage::DoseEventRepository;
-using oyama::storage::JsonRecordRepository;
-using oyama::storage::LabResultRepository;
 using oyama::storage::Mode;
-using oyama::storage::Preference;
-using oyama::storage::PreferencesRepository;
-using oyama::storage::Settings;
-using oyama::storage::SettingsRepository;
-using oyama::storage::Tombstone;
-using oyama::storage::TombstoneRepository;
 
 int failures = 0;
 
@@ -233,126 +220,18 @@ void run_integration_checks(Connection& connection) {
 
     oyama::storage::MigrationRunner runner(migrations_dir());
     const auto first = runner.apply(connection);
-    check_equal(first.size(), std::size_t{2}, "initial migrations apply");
-    check_equal(runner.current_version(connection), 2,
-                "schema version is 2");
+    check_equal(first.size(), std::size_t{3}, "initial migrations apply");
+    check_equal(runner.current_version(connection), 3,
+                "schema version is 3");
     check(runner.apply(connection).empty(), "second migrate is a no-op");
 
     const auto status = runner.status(connection);
-    check_equal(status.size(), std::size_t{2}, "two migrations are reported");
-    check(status[0].applied && status[1].applied,
-          "both migrations are applied");
-    check(status[0].checksum_matches && status[1].checksum_matches,
+    check_equal(status.size(), std::size_t{3}, "three migrations are reported");
+    check(status[0].applied && status[1].applied && status[2].applied,
+          "all migrations are applied");
+    check(status[0].checksum_matches && status[1].checksum_matches &&
+              status[2].checksum_matches,
           "applied checksums match");
-
-    SettingsRepository settings(connection);
-    Settings current = settings.get();
-    check_equal(current.calibration_method, std::string("mipd"),
-                "default calibration is mipd");
-    check_equal(current.calibration_history_mode, std::string("retrospective"),
-                "default history mode is retrospective");
-    check_equal(current.updated_at, std::int64_t{0}, "default row updated_at");
-    check(!current.body_weight_kg.has_value(), "default weight is unset");
-
-    current.body_weight_kg = 70.5;
-    current.birth_year = 1990;
-    current.pk_params_json = R"({"e2_kClear":0.4})";
-    current.pk_params_updated_at = 123;
-    current.updated_at = 456;
-    settings.save(current);
-    const Settings stored = settings.get();
-    check(stored.body_weight_kg.has_value() &&
-              std::abs(*stored.body_weight_kg - 70.5) < 1e-12,
-          "weight round-trips");
-    check_equal(*stored.birth_year, 1990, "birth year round-trips");
-    check_equal(*stored.pk_params_json, std::string(R"({"e2_kClear": 0.4})"),
-                "PK params round-trip through jsonb");
-    check_equal(*stored.pk_params_updated_at, std::int64_t{123},
-                "PK params timestamp round-trips");
-    check_equal(stored.updated_at, std::int64_t{456},
-                "settings timestamp round-trips");
-
-    DoseEventRepository doses(connection);
-    DoseEvent dose;
-    dose.id = oyama::storage::generate_uuid_v4();
-    dose.mode = Mode::Transfem;
-    dose.route = "oral";
-    dose.ester = "E2";
-    dose.time_h = 1000.25;
-    dose.dose_mg = 2.0;
-    dose.extras_json = R"({"note":"test"})";
-    dose.updated_at = 10;
-    dose.created_at = 5;
-    doses.upsert(dose);
-    const auto found = doses.get(dose.id);
-    check(found.has_value(), "dose can be fetched by id");
-    check_equal(found->route, std::string("oral"), "dose route round-trips");
-    check(std::abs(found->time_h - 1000.25) < 1e-12, "dose time round-trips");
-
-    dose.dose_mg = 4.0;
-    dose.updated_at = 11;
-    doses.upsert(dose);
-    check(std::abs(doses.get(dose.id)->dose_mg - 4.0) < 1e-12,
-          "dose upsert updates the row");
-
-    DoseEvent other;
-    other.id = oyama::storage::generate_uuid_v4();
-    other.mode = Mode::Transmasc;
-    other.route = "gel";
-    other.ester = "T";
-    other.time_h = 2000.0;
-    other.dose_mg = 50.0;
-    other.updated_at = 12;
-    other.created_at = 6;
-    doses.upsert(other);
-
-    check_equal(doses.list(Mode::Transfem).size(), std::size_t{1},
-                "transfem list is filtered");
-    check_equal(doses.list(Mode::Transmasc).size(), std::size_t{1},
-                "transmasc list is filtered");
-    check_equal(doses.count(Mode::Transfem), std::size_t{1}, "dose count");
-    check(doses.remove(dose.id), "existing dose can be removed");
-    check(!doses.remove(dose.id), "removing a missing dose returns false");
-    check(doses.list(Mode::Transfem).empty(), "removed dose is gone");
-
-    LabResultRepository labs(connection);
-    LabResult lab;
-    lab.id = oyama::storage::generate_uuid_v4();
-    lab.mode = Mode::Transfem;
-    lab.time_h = 3000.0;
-    lab.value = 180.0;
-    lab.unit = "pg/mL";
-    lab.assay = "lcms";
-    lab.updated_at = 20;
-    lab.created_at = 19;
-    labs.upsert(lab);
-    check_equal(labs.list(Mode::Transfem).size(), std::size_t{1},
-                "lab list");
-    check(labs.remove(lab.id), "lab can be removed");
-
-    JsonRecordRepository templates(connection, JsonRecordKind::DoseTemplate);
-    JsonRecord record;
-    record.id = oyama::storage::generate_uuid_v4();
-    record.mode = Mode::Transfem;
-    record.payload_json = R"({"route":"oral","doseMG":2})";
-    record.updated_at = 30;
-    templates.upsert(record);
-    check_equal(templates.list(Mode::Transfem).size(), std::size_t{1},
-                "json record list");
-    check(templates.get(record.id).has_value(), "json record get");
-    check(templates.remove(record.id), "json record remove");
-
-    PreferencesRepository preferences(connection);
-    preferences.set(Preference{"theme", R"("dark")", 40});
-    const auto theme = preferences.get("theme");
-    check(theme.has_value() && theme->value_json == R"("dark")",
-          "preference round-trips");
-    check_equal(preferences.list().size(), std::size_t{1}, "preference list");
-    check(preferences.remove("theme"), "preference remove");
-
-    TombstoneRepository tombstones(connection);
-    tombstones.record(Tombstone{"dose", oyama::storage::generate_uuid_v4(), 50});
-    check_equal(tombstones.list().size(), std::size_t{1}, "tombstone list");
 
     test_migration_guard(connection);
 }

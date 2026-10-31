@@ -56,8 +56,8 @@ run_cli() {
 
 init_output="$(run_cli db init)"
 grep -q 'created database oyama_hrt_cli_test' <<<"$init_output"
-grep -q 'schema version 2' <<<"$init_output"
-grep -q 'applied 2 migration(s)' <<<"$init_output"
+grep -q 'schema version 3' <<<"$init_output"
+grep -q 'applied 3 migration(s)' <<<"$init_output"
 
 ping_output="$(run_cli db ping)"
 grep -q $'database\toyama_hrt_cli_test' <<<"$ping_output"
@@ -66,23 +66,34 @@ status_output="$(run_cli db status)"
 grep -q $'1\tapplied\tok\tinitial_schema' <<<"$status_output"
 grep -q $'2\tapplied\tok\tsettings_timestamps' <<<"$status_output"
 
-settings_output="$(run_cli settings set --weight 70 --birth-year 1990 \
-    --calibration mipd --history-mode retrospective)"
+phrase="correct horse battery staple"
+grep -qx 'uninitialized' <<<"$(run_cli vault status)"
+printf '%s\n' "$phrase" | run_cli vault setup --phrase-stdin \
+    --kdf-ops 1 --kdf-mem 8388608 >/dev/null
+grep -qx 'locked' <<<"$(run_cli vault status)"
+
+settings_output="$(printf '%s\n' "$phrase" | \
+    run_cli --phrase-stdin settings set --weight 70 --birth-year 1990 \
+        --calibration mipd --history-mode retrospective)"
 grep -q $'body_weight_kg\t70' <<<"$settings_output"
 grep -q $'birth_year\t1990' <<<"$settings_output"
 grep -q $'calibration_method\tmipd' <<<"$settings_output"
 
-dose_output="$(run_cli doses add --mode transfem --route oral --ester E2 \
-    --dose-mg 2 --time-h 480000)"
+dose_output="$(printf '%s\n' "$phrase" | \
+    run_cli --phrase-stdin doses add --mode transfem --route oral --ester E2 \
+        --dose-mg 2 --time-h 480000)"
 grep -q '^added ' <<<"$dose_output"
 dose_id="${dose_output#added }"
 
-list_output="$(run_cli doses list --mode transfem)"
+list_output="$(printf '%s\n' "$phrase" | \
+    run_cli --phrase-stdin doses list --mode transfem)"
 grep -q "$dose_id" <<<"$list_output"
 grep -q $'oral\tE2\t480000' <<<"$list_output"
 
-run_cli doses remove --id "$dose_id" >/dev/null
-list_output="$(run_cli doses list --mode transfem)"
+printf '%s\n' "$phrase" | \
+    run_cli --phrase-stdin doses remove --id "$dose_id" >/dev/null
+list_output="$(printf '%s\n' "$phrase" | \
+    run_cli --phrase-stdin doses list --mode transfem)"
 if grep -q "$dose_id" <<<"$list_output"; then
     echo "dose was not removed" >&2
     exit 1

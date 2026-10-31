@@ -120,6 +120,57 @@ std::optional<std::string> ConnectionConfig::find_socket_dir(int port) {
     return std::nullopt;
 }
 
+std::string ConnectionConfig::to_conninfo() const {
+    if (dbname.empty()) {
+        throw Error("database name is empty");
+    }
+    if (port < 1 || port > 65535) {
+        throw Error("database port is out of range");
+    }
+
+    std::string socket = socket_dir;
+    if (socket.empty()) {
+        const auto found = find_socket_dir(port);
+        if (!found.has_value()) {
+            throw Error("no PostgreSQL Unix socket found for port " +
+                        std::to_string(port));
+        }
+        socket = *found;
+    }
+    if (!std::filesystem::path(socket).is_absolute()) {
+        throw Error("PostgreSQL socket directory must be an absolute path");
+    }
+
+    const auto quote = [](const std::string& value) {
+        std::string out;
+        out.reserve(value.size() + 2);
+        out.push_back('\'');
+        for (char c : value) {
+            if (c == '\\' || c == '\'') {
+                out.push_back('\\');
+            }
+            out.push_back(c);
+        }
+        out.push_back('\'');
+        return out;
+    };
+
+    std::ostringstream out;
+    out << "host=" << quote(socket)
+        << " port=" << quote(std::to_string(port))
+        << " dbname=" << quote(dbname)
+        << " application_name=" << quote(application_name)
+        << " connect_timeout=" << quote(std::to_string(connect_timeout_seconds))
+        << " client_encoding=UTF8"
+        << " options=" << quote("-c TimeZone=UTC")
+        << " gssencmode=disable"
+        << " sslmode=disable";
+    if (!user.empty()) {
+        out << " user=" << quote(user);
+    }
+    return out.str();
+}
+
 void Result::Deleter::operator()(PGresult* result) const noexcept {
     if (result != nullptr) {
         PQclear(result);

@@ -1,7 +1,7 @@
 #pragma once
 
-#include "connection.h"
 #include "types.h"
+#include "vault_store.h"
 
 #include <optional>
 #include <string_view>
@@ -9,9 +9,9 @@
 
 namespace oyama::storage {
 
-class PreferencesRepository {
+class VaultPreferencesRepository {
 public:
-    explicit PreferencesRepository(Connection& connection);
+    explicit VaultPreferencesRepository(VaultStore& vault);
 
     [[nodiscard]] std::optional<Preference> get(std::string_view key);
     [[nodiscard]] std::vector<Preference> list();
@@ -19,7 +19,7 @@ public:
     [[nodiscard]] bool remove(std::string_view key);
 
 private:
-    Connection& connection_;
+    VaultStore& vault_;
 };
 
 }  // namespace oyama::storage

@@ -1,25 +1,28 @@
 #pragma once
 
-#include "connection.h"
 #include "types.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 #include <vector>
 
 namespace oyama::storage {
 
-class TombstoneRepository {
+class VaultStore;
+
+class VaultTombstoneRepository {
 public:
-    explicit TombstoneRepository(Connection& connection);
+    explicit VaultTombstoneRepository(VaultStore& vault);
 
     void record(const Tombstone& tombstone);
-    [[nodiscard]] bool remove(std::string_view kind, std::string_view record_id);
+    [[nodiscard]] bool remove(std::string_view kind,
+                              std::string_view record_id);
     [[nodiscard]] std::vector<Tombstone> list();
     [[nodiscard]] std::size_t prune_before(std::int64_t cutoff);
 
 private:
-    Connection& connection_;
+    VaultStore& vault_;
 };
 
 }  // namespace oyama::storage

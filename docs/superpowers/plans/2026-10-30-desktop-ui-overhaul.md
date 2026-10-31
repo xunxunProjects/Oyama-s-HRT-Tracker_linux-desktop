@@ -112,7 +112,7 @@ int main(int argc, char** argv) {
         ui.fontFamily() != "Noto Sans CJK SC") {
         return fail("zh locale properties are wrong");
     }
-    if (ui.translate("nav.overview") != QString::fromUtf8("概览")) {
+    if (ui.translate("nav.overview") != QString::fromUtf8("\xE6\xA6\x82\xE8\xA7\x88")) {
         return fail("zh nav.overview translation is wrong");
     }
     if (ui.translate("status.connected", {"oyama_hrt", "managed"})
@@ -351,26 +351,10 @@ Native speakers: corrections are very welcome. Please open a pull request
 that changes only the affected JSON file and keeps the key set identical.
 ```
 
-Write Chinese values from this glossary (use natural UI Chinese, not literal translations):
+Use the existing `zh.json` localisation values in the repository as the source
+of truth. Preserve the key set and do not duplicate Chinese strings in this
+plan; the translation file is the test fixture and the UI contract.
 
-| Key/term | Chinese |
-|---|---|
-| Overview | 概览 |
-| Add dose | 记录剂量 |
-| History | 历史 |
-| Settings | 设置 |
-| Estradiol / Cyproterone / Testosterone | 雌二醇 / 环丙孕酮 / 睾酮 |
-| Dose | 剂量 |
-| Route / Ester | 途径 / 酯型 |
-| Oral / Sublingual / Injection / Gel | 口服 / 舌下 / 注射 / 凝胶 |
-| Patch (apply/remove) | 贴片（贴上/取下） |
-| Days ago | 几天前 |
-| Calibration | 校准 |
-| Transfem / Transmasc | 女性化 / 男性化 |
-| Local · socket only | 本地 · 仅 socket |
-| Not connected | 未连接 |
-| Theme / Language | 主题 / 语言 |
-| Light / Dark / System | 亮色 / 暗色 / 跟随系统 |
 
 For Russian and Persian, translate the English values; keep hormone names in their standard medical forms (Эстрадиол / تستوسترون, etc.), keep `E2`, `CPA`, `T`, and units unchanged. Do not translate the values of `_meta`.
 
@@ -954,7 +938,7 @@ for (const QString& path : {QStringLiteral(":/fonts/InterVariable.ttf"),
 }
 ```
 
-Also set `QGuiApplication::setApplicationVersion("0.1.0");` (or a compile definition `OYAMA_APP_VERSION` from `PROJECT_VERSION`).
+Also set `QGuiApplication::setApplicationVersion("0.5.0");` (or a compile definition `OYAMA_APP_VERSION` from `PROJECT_VERSION`).
 
 - [ ] **Step 6: Add third-party notices**
 
@@ -1116,7 +1100,7 @@ An `Item` anchored by the caller. A `Rectangle` with `color: Theme.surfaceAlt`, 
 
 - [ ] **Step 9: Create `ConfirmDialog.qml`**
 
-An `Item` filling the window, `visible: false`, `z: 100`. Scrim `#66000000`; card 360px wide, `surface`, radius 18, padding 24; title 20/600, body 15/`textMuted`, buttons `取消` and `删除` (danger). `open()` sets visible and focuses the cancel button; `close()` hides. Emit `confirmed()` then close; `cancelled()` then close. Close on scrim click and Escape.
+An `Item` filling the window, `visible: false`, `z: 100`. Scrim `#66000000`; card 360px wide, `surface`, radius 18, padding 24; title 20/600, body 15/`textMuted`, buttons `Cancel` and `Delete` (danger). `open()` sets visible and focuses the cancel button; `close()` hides. Emit `confirmed()` then close; `cancelled()` then close. Close on scrim click and Escape.
 
 - [ ] **Step 10: Lint and smoke-test**
 
@@ -1683,7 +1667,7 @@ QT_QPA_PLATFORM=offscreen QT_QUICK_BACKEND=software \
   timeout 8 "$HOME/oyama-hrt-dist/bin/oyama-hrt-app"
 "$HOME/oyama-hrt-dist/bin/oyama-hrt-cli" version
 ```
-Expected: app runs until the 8s timeout (exit 124), no crash; CLI prints `oyama-hrt-cli 0.1.0`.
+Expected: app runs until the 8s timeout (exit 124), no crash; CLI prints `oyama-hrt-cli 0.5.0`.
 
 - [ ] **Step 7: Commit**
 

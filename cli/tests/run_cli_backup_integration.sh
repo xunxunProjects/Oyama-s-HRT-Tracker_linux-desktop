@@ -42,34 +42,59 @@ cleanup() {
 trap cleanup EXIT
 
 run_cli db setup --managed --yes >/dev/null
+phrase="correct horse battery staple"
+printf '%s\n' "$phrase" | run_cli vault setup --phrase-stdin \
+    --kdf-ops 1 --kdf-mem 8388608 >/dev/null
 
-bundle="$workdir/backup.json"
-export_output="$(run_cli backup export "$bundle")"
+run_unlocked() {
+    printf '%s\n' "$phrase" | run_cli --phrase-stdin "$@"
+}
+
+bundle="$workdir/backup.oyamaebk"
+export_output="$(run_unlocked backup export "$bundle")"
 grep -q "exported $bundle" <<<"$export_output"
-grep -q "plaintext health data" <<<"$export_output"
+if grep -q "plaintext health data" <<<"$export_output"; then
+    echo "encrypted export printed the plaintext warning" >&2
+    exit 1
+fi
 test -f "$bundle"
-grep -q '"format": "oyama-hrt-complete-backup"' "$bundle"
+test "$(head -c 8 "$bundle")" = "OYAMAEBK"
 mode="$(stat -c %a "$bundle" 2>/dev/null || stat -f %Lp "$bundle")"
 test "$mode" = "600"
 
-preview_output="$(run_cli backup preview "$bundle")"
+preview_output="$(run_unlocked backup preview "$bundle")"
 grep -q $'ok\tyes' <<<"$preview_output"
 grep -q $'count\ttransfem\tevents\t0' <<<"$preview_output"
 
-run_cli backup import "$bundle" --dry-run | grep -q $'ok\tyes'
-run_cli backup import --dry-run "$bundle" | grep -q $'ok\tyes'
+run_unlocked backup import "$bundle" --dry-run | grep -q $'ok\tyes'
+run_unlocked backup import --dry-run "$bundle" | grep -q $'ok\tyes'
 
-dose_output="$(run_cli doses add --mode transfem --route oral --ester E2 \
+dose_output="$(run_unlocked doses add --mode transfem --route oral --ester E2 \
     --dose-mg 2 --time-h 480000)"
 grep -q '^added ' <<<"$dose_output"
 dose_id="${dose_output#added }"
 
-import_output="$(run_cli backup import "$bundle")"
+import_output="$(run_unlocked backup import "$bundle")"
 grep -q $'applied\tyes' <<<"$import_output"
-run_cli doses list --mode transfem | grep -q "$dose_id"
+run_unlocked doses list --mode transfem | grep -q "$dose_id"
+
+plain="$workdir/backup.json"
+plain_output="$(run_unlocked backup export "$plain" --plaintext)"
+grep -q "plaintext health data" <<<"$plain_output"
+grep -q '"format":"oyama-hrt-complete-backup"' "$plain"
+plain_mode="$(stat -c %a "$plain" 2>/dev/null || stat -f %Lp "$plain")"
+test "$plain_mode" = "600"
+
+if run_unlocked backup import "$plain" >"$workdir/plain.out" \
+    2>"$workdir/plain.err"; then
+    echo "plaintext backup was imported without --plaintext" >&2
+    exit 1
+fi
+grep -q -- '--plaintext' "$workdir/plain.err"
+run_unlocked backup import "$plain" --plaintext | grep -q $'applied\tyes'
 
 printf '{"format":"wrong"}\n' >"$workdir/bad.json"
-if run_cli backup preview "$workdir/bad.json" >/dev/null 2>&1; then
+if run_unlocked backup preview --plaintext "$workdir/bad.json" >/dev/null 2>&1; then
     echo "invalid backup was accepted" >&2
     exit 1
 fi

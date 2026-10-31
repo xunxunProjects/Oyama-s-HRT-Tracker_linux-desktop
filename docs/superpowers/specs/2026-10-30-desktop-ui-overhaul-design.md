@@ -1,444 +1,444 @@
-# 桌面版界面重做 — 暖色设计系统、四语言与 RTL
+# Desktop UI Overhaul — Warm Design System, Four Languages, and RTL
 
-- **状态**：已批准（2026-10-30）
-- **日期**：2026-10-30
-- **目标仓库**：`xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop`
-- **关联设计**：`docs/superpowers/specs/2026-10-29-linux-desktop-design.md`
-- **范围**：只改 `app/` 的 Qt/QML 界面与相关 C++ 状态文案；不改模型、存储、备份格式和 CLI 行为
-
----
-
-## 0. 一句话
-
-把现有“深色顶栏 + 深色卡片”的 Qt 界面，换成以暖米色为底、左侧图标导航、留白充足、动效柔和的原生桌面界面；首次启动先选语言，支持中文、英文、俄语、波斯语，波斯语整界面 RTL。
+- **Status:** Approved (2026-10-30)
+- **Date:** 2026-10-30
+- **Target repository:** `xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop`
+- **Related design:** `docs/superpowers/specs/2026-10-29-linux-desktop-design.md`
+- **Scope:** Only the Qt/QML interface under `app/` and the related C++ status copy; the model, storage, backup format, and CLI behavior are unchanged
 
 ---
 
-## 1. 为什么现在做
+## 0. In One Sentence
 
-现有界面功能完整，但视觉上是“能用的工程界面”：
-
-- 深色背景 `#0e1318`、顶栏贯穿窗口、卡片带描边，和网页版的温和感差距明显。
-- 导航图标是 `◉ ＋ ≡ ⚙` 这类字符，风格不统一。
-- 页面之间切换是硬切，按钮和输入框是 Qt Basic 默认样式。
-- 文案全部英文硬编码，无法选择语言；波斯语需要 RTL，现有布局没有考虑。
-
-所有者已经确定：结构向网页版靠拢（左侧导航 + 卡片内容区），默认亮色，使用暖米色系统；并支持四种语言在首次启动时选择。
+Replace the existing Qt interface — a dark top bar with dark cards — with a native desktop interface built on a warm beige base, left-side icon navigation, generous whitespace, and gentle motion. On first launch the user picks a language; Chinese, English, Russian, and Persian are supported, and the entire Persian interface is RTL.
 
 ---
 
-## 2. 目标、非目标、反目标
+## 1. Why Now
 
-### 2.1 目标
+The existing interface is functionally complete, but visually it is "an engineering interface that works":
 
-1. 第一眼看起来像同一个 Oyama 产品：暖色、低对比、大圆角、留白、轻动效。
-2. 桌面结构向网页版靠拢：左侧导航、页面标题、卡片内容区、悬停高亮。
-3. 默认亮色，暗色可切换；两套颜色都达到可读对比度。
-4. 首次启动可选中文 / English / Русский / فارسی，之后可在设置里切换，无需重启。
-5. 波斯语界面整体 RTL：侧栏在右、布局镜像、文字右对齐；图表坐标保持从左到右。
-6. 现有功能、C++ 接口、存储行为、测试全部保留。
-7. Linux 与 FreeBSD 共用同一份 QML，构建产物一致。
+- A dark background `#0e1318`, a top bar spanning the window, and outlined cards leave a clear gap from the gentle feel of the web version.
+- Navigation icons are characters such as `◉ ＋ ≡ ⚙`, with no consistent style.
+- Page transitions are hard cuts, and buttons and text fields use the Qt Basic defaults.
+- All copy is hardcoded English, with no way to choose a language; Persian needs RTL, which the current layout does not consider.
 
-### 2.2 非目标
-
-- 不新增 Labs、Supplies、Plan、账号、社区投票等网页版功能。
-- 不改 PostgreSQL schema、备份格式、CLI 参数。
-- 不做无边框窗口、系统托盘、全局菜单。
-- 不引入 Qt Quick 3D、QtCharts、WebEngine。
-- 不为四种语言做完整本地化审校；第一版由实现者提供初译，母语审校可以作为后续 PR。
-
-### 2.3 反目标
-
-- 为了“高级感”堆毛玻璃、渐变、发光、重阴影。
-- 每个组件各用一套圆角、字号、颜色。
-- 语言切换需要重启，或波斯语只翻译文字却不镜像布局。
-- 改 UI 时动到模型、存储或备份逻辑。
-- 把中文字体或波斯语字体硬编码成某个 Linux 发行版才有的家族名。
+The owner has decided: move the structure toward the web version (left navigation + card content area), default to light, use a warm beige system, and support four languages chosen on first launch.
 
 ---
 
-## 3. 已定决策
+## 2. Goals, Non-Goals, and Anti-Goals
 
-| # | 决策 | 说明 |
-|---|------|------|
-| U1 | 左侧固定侧栏，不做悬浮展开 | 桌面窗口宽度足够；固定 236px，导航项悬停高亮，选中项填充 |
-| U2 | 默认亮色，暗色可切 | `ui.theme` 默认 `light`；可选 `dark`、`system` |
-| U3 | 四语言：`zh`、`en`、`ru`、`fa` | 首次启动整屏选择；设置里可改；波斯语 RTL |
-| U4 | 翻译用运行时 JSON，不编译 `.qm` | 5 个页面、约 120 个 key；运行时切换简单，不依赖 `lrelease` |
-| U5 | C++ 状态消息保留英文 `status`，另加 `statusKey`/`statusArgs` | 不破坏现有测试和 CLI；QML 显示翻译后的 key |
-| U6 | 字体：内置 Inter + Vazirmatn，中文用系统 CJK 字体 | Inter 覆盖英/俄；Vazirmatn 覆盖波斯语；中文在 FreeBSD 安装 Noto CJK 或文泉驿 |
-| U7 | 图标用 QML `Shape` + `PathSvg` 自绘 | 统一 1.75px 线宽，不依赖图标字体或 SVG 图片插件 |
-| U8 | 阴影几乎不用，靠明度分层 | 软件渲染环境性能稳定，也符合“轻”的视觉 |
-| U9 | 圆角三档：卡片 18、控件 12、胶囊 999 | 全应用统一 |
-| U10 | 字号五档：28 / 20 / 15 / 13 / 11 | 字重 400 / 500 / 600 |
+### 2.1 Goals
 
----
+1. At first glance it should look like the same Oyama product: warm, low contrast, large radii, whitespace, light motion.
+2. The desktop structure follows the web version: left navigation, page title, card content area, hover highlight.
+3. Light by default, with dark switchable; both palettes meet readable contrast.
+4. On first launch the user can choose Chinese / English / Русский / فارسی, and can switch later in Settings without restarting.
+5. The Persian interface is RTL throughout: sidebar on the right, mirrored layout, right-aligned text; chart axes stay left-to-right.
+6. All existing features, C++ interfaces, storage behavior, and tests are preserved.
+7. Linux and FreeBSD share the same QML, and the build outputs are identical.
 
-## 4. 视觉系统
+### 2.2 Non-Goals
 
-### 4.1 颜色 token
+- Do not add web-only features such as Labs, Supplies, Plan, accounts, or community voting.
+- Do not change the PostgreSQL schema, backup format, or CLI arguments.
+- Do not build frameless windows, a system tray, or a global menu.
+- Do not introduce Qt Quick 3D, QtCharts, or WebEngine.
+- Do not perform full localization review for the four languages; the first version uses the implementer's initial translations, and native-speaker review can follow in later PRs.
 
-亮色：
+### 2.3 Anti-Goals
 
-| Token | 值 | 用途 |
-|-------|----|------|
-| `bg` | `#EFE6D0` | 窗口底色 |
-| `sidebar` | `#F5EDDF` | 侧栏，比底色略亮 |
-| `surface` | `#FFFDF7` | 卡片 |
-| `surfaceAlt` | `#EFE9D8` | 输入框、次级分区、列表行 |
-| `surfaceHover` | `#F2E8D6` | 悬停 |
-| `surfacePressed` | `#E7DCC6` | 选中 / 按下 |
-| `text` | `#33302A` | 正文、标题 |
-| `textSoft` | `#7A7466` | 20px 以上的次级标题、装饰性文字 |
-| `textMuted` | `#6E6759` | 15px 正文次级、导航默认文字（与 `#7A7466` 同色相，略深，达到 4.5:1） |
-| `textFaint` | `#6B6457` | 11–13px 说明、占位符 |
-| `textDisabled` | `#A69E8E` | 禁用 |
-| `border` | `#DED3BD` | 极少量分隔线、弹出层边界 |
-| `accent` | `#B5793C` | 主色、主按钮、图表线 |
-| `accentHover` | `#A66B31` | 主按钮悬停 |
-| `accentSubtle` | `#F3E3CC` | 主色浅底、空状态图标底 |
-| `accentInk` | `#8C5A28` | 浅底上的主色文字 |
-| `green` | `#4F7A5A` | 成功、CPA 数据 |
-| `brick` | `#B4573E` | 危险、T 数据、删除 |
-| `onAccent` | `#2B241B` | 主按钮文字（暖深色；浅色按钮 + 深色字，对比度约 5.2:1） |
-| `chartLine` | `#B5793C` | 曲线主色（等同 `accent`） |
-| `chartGrid` | `#E4D8C2` | 图表网格 |
-| `shadow` | `rgba(60, 45, 20, 0.06)` | 极轻阴影（只在浮层用） |
-
-暗色：
-
-| Token | 值 | 用途 |
-|-------|----|------|
-| `bg` | `#1F1D1A` | 窗口底色 |
-| `sidebar` | `#1B1917` | 侧栏，比底色略暗 |
-| `surface` | `#2B2823` | 卡片 |
-| `surfaceAlt` | `#35312B` | 输入框、浮层、次级分区 |
-| `surfaceHover` | `#302C27` | 悬停 |
-| `surfacePressed` | `#3A352E` | 选中 / 按下 |
-| `text` | `#E6E0D4` | 正文、标题 |
-| `textMuted` | `#A39C8D` | 次级文字 |
-| `textFaint` | `#9A9385` | 11–13px 说明（在暗色卡片上达到 4.5:1） |
-| `textDisabled` | `#6F695D` | 占位符、禁用 |
-| `border` | `#3D3830` | 分隔线 |
-| `accent` | `#C98F52` | 暗色下提亮的主色 |
-| `accentHover` | `#D9A268` | 主按钮悬停 |
-| `accentSubtle` | `#3A2F23` | 主色浅底 |
-| `accentInk` | `#DFA96F` | 浅底上的主色文字 |
-| `green` | `#7FA98A` | 成功、CPA |
-| `brick` | `#D07A62` | 危险、T、删除 |
-| `onAccent` | `#1F1D1A` | 暗色主按钮文字 |
-| `chartGrid` | `#3A352E` | 图表网格 |
-
-说明：
-
-- 主色只有赭石 `#B5793C` 一个；墨绿和砖红只承担“成功 / 危险 / 第三条数据”的语义，不作为大面积装饰。
-- 暗色不是简单反色：越靠上层越亮（`bg < surface < surfaceAlt`），符合“暗色靠明度递进”。
-- 正文 `#33302A` 在 `#EFE6D0` 上约 10.6:1；暗色正文约 12:1。`textSoft`（`#7A7466`）只用于 20px 以上的次级标题；15px 正文次级、导航默认文字用 `textMuted`（`#6E6759`，约 4.5:1）；11–13px 用 `textFaint`（`#6B6457`，约 4.7:1）。暗色 `textFaint` 提到 `#9A9385`，在 `surface` 上约 4.5:1。主按钮用暖深色字 `#2B241B` 配赭石底（约 5.2:1），和网页版“浅色按钮 + 深色字”一致。
-
-### 4.2 字体
-
-| 语言 | 主字体 | 回退 |
-|------|--------|------|
-| `en` / `ru` | Inter | Noto Sans、Liberation Sans、DejaVu Sans |
-| `zh` | Noto Sans CJK SC | 文泉驿正黑、Noto Sans |
-| `fa` | Vazirmatn | Noto Naskh Arabic、DejaVu Sans |
-
-- Inter Regular / Medium / SemiBold 与 Vazirmatn Regular / Medium / SemiBold 作为资源打包（OFL 1.1），`QFontDatabase::addApplicationFont` 在启动时加载。
-- 中文不打包完整 CJK 字体（体积大）；Linux 使用系统 Noto CJK，FreeBSD 在部署时安装 `font-noto-cjk` 或 `zh-wqy-zenhei`。
-- 标题与正文同一家族，靠字号和字重分层；不使用宋体标题，避免跨平台字体不一致。
-- 字号：页面标题 28、区块标题 20、正文 15、标签 13、说明 11。正文行高 1.55；标题行高 1.2。
-- 字重只用 400 / 500 / 600；不整页加粗。
-
-### 4.3 圆角、间距、阴影
-
-- 圆角：卡片 18；按钮、输入框、导航项 12；胶囊 / 头像 999。全应用只有这三档。
-- 间距：4 / 8 / 12 / 16 / 20 / 24 / 32 / 40。页面左右边距 40（窄窗口 24）；卡片内边距 20；区块之间 24–32。
-- 阴影：默认不用。只有弹出层、Toast 使用 `0 4px 24px rgba(60, 45, 20, 0.06)`（暗色 `rgba(0,0,0,0.35)`）。
-- 分割线：只在设置分组、弹出层边界使用 `border`，其余靠 `surface` 与 `bg` 的明度差。
-
-### 4.4 动效
-
-| 场景 | 时长 | 曲线 |
-|------|------|------|
-| 悬停变色 | 150ms | `Easing.OutCubic` |
-| 按下缩放 0.97 | 90ms | `Easing.OutCubic` |
-| 页面切换：淡入 + 上移 8px | 280ms | `Easing.OutCubic` |
-| 主题切换：颜色过渡 | 240ms | `Easing.InOutCubic` |
-| 保存成功：对勾缩放 + 文案淡入 | 320ms | `Easing.OutBack` |
-| Toast 进入 / 退出 | 220 / 160ms | `Easing.OutCubic` |
-
-- 不使用线性动画；不做大幅滑动。
-- 页面切换只让新页面淡入并上移，旧页面不参与动画，避免布局重排。
-- 保存剂量成功后，主按钮内容在 320ms 内变成“对勾 + 已记录”，停留约 700ms，再回到概览；期间按钮禁用。
+- Piling on frosted glass, gradients, glows, and heavy shadows for a "premium" feel.
+- Giving each component its own radius, font size, and color.
+- Requiring a restart to switch languages, or translating Persian text without mirroring the layout.
+- Touching model, storage, or backup logic while changing the UI.
+- Hardcoding a Chinese or Persian font to a family name that exists only on one Linux distribution.
 
 ---
 
-## 5. 窗口与页面结构
+## 3. Settled Decisions
 
-### 5.1 外壳
+| # | Decision | Notes |
+|---|----------|-------|
+| U1 | Fixed left sidebar, no floating expansion | Desktop windows are wide enough; fixed at 236px, nav items highlight on hover, the selected item is filled |
+| U2 | Light by default, dark switchable | `ui.theme` defaults to `light`; `dark` and `system` are also available |
+| U3 | Four languages: `zh`, `en`, `ru`, `fa` | Full-screen choice on first launch; changeable in Settings; Persian RTL |
+| U4 | Runtime JSON translations, no compiled `.qm` files | 5 pages, about 120 keys; runtime switching is simple and does not depend on `lrelease` |
+| U5 | C++ status messages keep the English `status` and add `statusKey`/`statusArgs` | Does not break existing tests and the CLI; QML displays the translated key |
+| U6 | Fonts: bundled Inter + Vazirmatn, system CJK font for Chinese | Inter covers English/Russian; Vazirmatn covers Persian; on FreeBSD install Noto CJK or WenQuanYi for Chinese |
+| U7 | Icons drawn in QML with `Shape` + `PathSvg` | Uniform 1.75px stroke; no icon font or SVG image plugin |
+| U8 | Almost no shadows; hierarchy through lightness | Stable performance in software-rendered environments, and it fits the "light" look |
+| U9 | Three radii: card 18, control 12, pill 999 | Uniform across the app |
+| U10 | Five type sizes: 28 / 20 / 15 / 13 / 11 | Weights 400 / 500 / 600 |
+
+---
+
+## 4. Visual System
+
+### 4.1 Color Tokens
+
+Light:
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `bg` | `#EFE6D0` | Window background |
+| `sidebar` | `#F5EDDF` | Sidebar, slightly lighter than the background |
+| `surface` | `#FFFDF7` | Cards |
+| `surfaceAlt` | `#EFE9D8` | Text fields, secondary sections, list rows |
+| `surfaceHover` | `#F2E8D6` | Hover |
+| `surfacePressed` | `#E7DCC6` | Selected / pressed |
+| `text` | `#33302A` | Body, headings |
+| `textSoft` | `#7A7466` | Secondary headings at 20px and above, decorative text |
+| `textMuted` | `#6E6759` | 15px secondary body text, default navigation text (same hue as `#7A7466`, slightly darker, meeting 4.5:1) |
+| `textFaint` | `#6B6457` | 11–13px captions, placeholders |
+| `textDisabled` | `#A69E8E` | Disabled |
+| `border` | `#DED3BD` | Very few dividers, popup borders |
+| `accent` | `#B5793C` | Primary color, primary buttons, chart lines |
+| `accentHover` | `#A66B31` | Primary button hover |
+| `accentSubtle` | `#F3E3CC` | Subtle accent background, empty-state icon background |
+| `accentInk` | `#8C5A28` | Accent text on light backgrounds |
+| `green` | `#4F7A5A` | Success, CPA data |
+| `brick` | `#B4573E` | Danger, T data, delete |
+| `onAccent` | `#2B241B` | Primary button text (warm dark; light button + dark text, contrast about 5.2:1) |
+| `chartLine` | `#B5793C` | Curve primary color (same as `accent`) |
+| `chartGrid` | `#E4D8C2` | Chart grid |
+| `shadow` | `rgba(60, 45, 20, 0.06)` | Very light shadow (used only on overlays) |
+
+Dark:
+
+| Token | Value | Use |
+|-------|-------|-----|
+| `bg` | `#1F1D1A` | Window background |
+| `sidebar` | `#1B1917` | Sidebar, slightly darker than the background |
+| `surface` | `#2B2823` | Cards |
+| `surfaceAlt` | `#35312B` | Text fields, overlays, secondary sections |
+| `surfaceHover` | `#302C27` | Hover |
+| `surfacePressed` | `#3A352E` | Selected / pressed |
+| `text` | `#E6E0D4` | Body, headings |
+| `textMuted` | `#A39C8D` | Secondary text |
+| `textFaint` | `#9A9385` | 11–13px captions (meets 4.5:1 on dark cards) |
+| `textDisabled` | `#6F695D` | Placeholders, disabled |
+| `border` | `#3D3830` | Dividers |
+| `accent` | `#C98F52` | Brightened primary color for dark mode |
+| `accentHover` | `#D9A268` | Primary button hover |
+| `accentSubtle` | `#3A2F23` | Subtle accent background |
+| `accentInk` | `#DFA96F` | Accent text on light backgrounds |
+| `green` | `#7FA98A` | Success, CPA |
+| `brick` | `#D07A62` | Danger, T, delete |
+| `onAccent` | `#1F1D1A` | Dark-mode primary button text |
+| `chartGrid` | `#3A352E` | Chart grid |
+
+Notes:
+
+- The primary color is only the ochre `#B5793C`; deep green and brick red carry only the semantics of "success / danger / third data series" and are not used as large decorative areas.
+- Dark is not a simple inversion: higher layers are lighter (`bg < surface < surfaceAlt`), following "dark mode progresses by lightness".
+- Body `#33302A` on `#EFE6D0` is about 10.6:1; dark body is about 12:1. `textSoft` (`#7A7466`) is used only for secondary headings at 20px and above; 15px secondary body text and default navigation text use `textMuted` (`#6E6759`, about 4.5:1); 11–13px uses `textFaint` (`#6B6457`, about 4.7:1). Dark `textFaint` is raised to `#9A9385`, about 4.5:1 on `surface`. Primary buttons use warm dark text `#2B241B` on ochre (about 5.2:1), matching the web version's "light button + dark text".
+
+### 4.2 Fonts
+
+| Language | Primary font | Fallback |
+|----------|--------------|----------|
+| `en` / `ru` | Inter | Noto Sans, Liberation Sans, DejaVu Sans |
+| `zh` | Noto Sans CJK SC | WenQuanYi Zen Hei, Noto Sans |
+| `fa` | Vazirmatn | Noto Naskh Arabic, DejaVu Sans |
+
+- Inter Regular / Medium / SemiBold and Vazirmatn Regular / Medium / SemiBold are bundled as resources (OFL 1.1), loaded at startup with `QFontDatabase::addApplicationFont`.
+- The Chinese locale does not bundle a full CJK font (it is large); Linux uses the system Noto CJK, and FreeBSD installs `font-noto-cjk` or `zh-wqy-zenhei` during deployment.
+- Headings and body use the same family, layered by size and weight; headings do not use SimSun, avoiding cross-platform font inconsistencies.
+- Sizes: page title 28, section title 20, body 15, label 13, caption 11. Body line height 1.55; heading line height 1.2.
+- Only weights 400 / 500 / 600; do not bold whole pages.
+
+### 4.3 Radii, Spacing, Shadows
+
+- Radii: cards 18; buttons, text fields, nav items 12; pills / avatars 999. Only these three tiers across the app.
+- Spacing: 4 / 8 / 12 / 16 / 20 / 24 / 32 / 40. Page left/right margins 40 (24 in narrow windows); card padding 20; 24–32 between sections.
+- Shadows: none by default. Only popups and Toasts use `0 4px 24px rgba(60, 45, 20, 0.06)` (dark `rgba(0,0,0,0.35)`).
+- Dividers: use `border` only for settings groups and popup borders; otherwise rely on the lightness difference between `surface` and `bg`.
+
+### 4.4 Motion
+
+| Scenario | Duration | Curve |
+|----------|----------|-------|
+| Hover color change | 150ms | `Easing.OutCubic` |
+| Press scale 0.97 | 90ms | `Easing.OutCubic` |
+| Page transition: fade in + move up 8px | 280ms | `Easing.OutCubic` |
+| Theme switch: color transition | 240ms | `Easing.InOutCubic` |
+| Save success: checkmark scale + copy fade-in | 320ms | `Easing.OutBack` |
+| Toast enter / exit | 220 / 160ms | `Easing.OutCubic` |
+
+- No linear animations; no large slides.
+- Page transitions only fade in and lift the new page; the old page does not animate, avoiding layout reflow.
+- After a dose is saved successfully, the primary button content becomes "checkmark + Recorded" over 320ms, stays for about 700ms, then returns to Overview; the button is disabled during this time.
+
+---
+
+## 5. Window and Page Structure
+
+### 5.1 Shell
 
 ```text
 ┌──────────────┬────────────────────────────────────────────┐
-│  Oyama       │  页面标题                       模式 / 状态 │
-│  Tracker     │  一句说明                                   │
+│  Oyama       │  Page title                     Mode / status │
+│  Tracker     │  One-line description                       │
 │              │                                            │
-│  ◉ 概览      │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │
-│  ＋ 记录剂量  │  │ 读数卡    │ │ 读数卡    │ │ 读数卡    │   │
-│  ☰ 历史      │  └──────────┘ └──────────┘ └──────────┘   │
-│  ⚙ 设置      │  ┌──────────────────────────────────────┐  │
-│              │  │ 曲线卡                                │  │
+│  ◉ Overview  │  ┌──────────┐ ┌──────────┐ ┌──────────┐   │
+│  ＋ Add dose │  │ Reading  │ │ Reading  │ │ Reading  │   │
+│  ☰ History   │  └──────────┘ └──────────┘ └──────────┘   │
+│  ⚙ Settings  │  ┌──────────────────────────────────────┐  │
+│              │  │ Curve card                            │  │
 │              │  └──────────────────────────────────────┘  │
 │              │                                            │
-│  ● 本地连接   │  ┌──────────────────────────────────────┐  │
-│  ☾ 主题      │  │ 最近记录                              │  │
+│  ● Local     │  ┌──────────────────────────────────────┐  │
+│  ☾ Theme     │  │ Recent records                        │  │
 └──────────────┴────────────────────────────────────────────┘
 ```
 
-- 窗口默认 1200×800，最小 980×680。
-- 侧栏固定 236px，背景 `sidebar`，右侧一条极淡分隔线（`border`）。
-- 内容区左右边距 40，顶部 28，底部 32；概览内容最大宽度 960，表单/设置最大宽度 680。
-- 不再使用 `ApplicationWindow.header` / `footer`。后端状态放到侧栏底部；操作反馈用 Toast。
-- 页面标题在内容区顶部，不吸顶；滚动时标题随内容滚走，减少 Qt 的 sticky/玻璃实现复杂度。
+- Window default 1200×800, minimum 980×680.
+- Sidebar fixed at 236px, background `sidebar`, with a very faint divider on the right (`border`).
+- Content area left/right margins 40, top 28, bottom 32; overview content max width 960, form/settings max width 680.
+- No longer use `ApplicationWindow.header` / `footer`. Backend status moves to the bottom of the sidebar; action feedback uses Toast.
+- The page title sits at the top of the content area and is not sticky; when scrolling, the title scrolls with the content, reducing Qt's sticky/glass implementation complexity.
 
-### 5.2 侧栏
+### 5.2 Sidebar
 
-- 顶部：36×36 圆角应用图标（复用现有品牌色块或字母 `O`），右侧 `Oyama`（600）+ `Tracker`（400，muted）。
-- 导航项：高 48，左右内边距 12，圆角 12，图标 20，文字 15，间距 14。
-  - 默认：文字 `textMuted`，图标 `textMuted`，背景透明。
-  - 悬停：背景 `surfaceHover`，文字 `text`，150ms。
-  - 选中：背景 `surfacePressed`，文字 `text`（500），图标 `accent`。
-  - 按下：整体缩放 0.98。
-- 导航：概览、记录剂量、历史、设置。`记录剂量` 保持独立入口；点击时清空编辑状态。
-- 底部：模式分段控件（transfem / transmasc，高 32，两个等宽胶囊，选中项 `surfacePressed`）；连接状态圆点 + 文案（`本地 · 仅 socket` / `未连接`）；主题切换图标按钮（太阳 / 月亮）；版本号小字（如能拿到）。
-- 模式切换是全局的，所有页面都能用；切换后重新加载数据，未保存的剂量表单会被清空（与现行为一致）。
-- 波斯语：侧栏整体移到窗口右侧，图标与文字顺序镜像，文字右对齐；模式分段控件同样镜像。
+- Top: 36×36 rounded app icon (reuse the existing brand color block or the letter `O`), with `Oyama` (600) + `Tracker` (400, muted) to its right.
+- Nav item: height 48, horizontal padding 12, radius 12, icon 20, text 15, gap 14.
+  - Default: text `textMuted`, icon `textMuted`, transparent background.
+  - Hover: background `surfaceHover`, text `text`, 150ms.
+  - Selected: background `surfacePressed`, text `text` (500), icon `accent`.
+  - Pressed: overall scale 0.98.
+- Navigation: Overview, Add dose, History, Settings. `Add dose` remains a separate entry; clicking it clears the editing state.
+- Bottom: mode segmented control (transfem / transmasc, height 32, two equal-width pills, selected item `surfacePressed`); connection status dot + copy (`Local · socket only` / `Not connected`); theme toggle icon button (sun / moon); small version number (if it can be obtained).
+- Mode switching is global and available on every page; after switching, data reloads and an unsaved dose form is cleared (same as current behavior).
+- Persian: the entire sidebar moves to the right side of the window, icon and text order is mirrored, and text is right-aligned; the mode segmented control is mirrored as well.
 
-### 5.3 页面通用
+### 5.3 Shared Page Patterns
 
-- 标题区：标题 28/600，说明 13/`textMuted`；右侧可放模式切换、后端 chip 或主操作。
-- 卡片：`Card` 组件，背景 `surface`，圆角 18，内边距 20，无边框；暗色下比底亮一档。
-- 空状态：64px 圆形 `accentSubtle` 底 + 40px 线性图标；标题 20/600；说明 15/`textMuted`；一个主按钮。
-- 列表行：高 56–64，圆角 12，悬停 `surfaceHover`；左侧图标、主文字 15、次级 13、右侧数值 15/`accent`。
-- 所有可点击控件有键盘焦点态：2px `accent` 外圈 + 1px 内圈背景色。
-- **数据库未配置**（`app.backend === "none"`）：不阻塞进入主界面；内容区顶部显示常驻提示条（`surfaceAlt`、圆角 12、信息图标 + `数据库尚未配置。先在终端运行 oyama-hrt-cli db setup。`），侧栏状态显示 `未连接`。空状态的 `记录剂量` 主按钮禁用，并在按钮下方说明原因。首次启动的语言选择页仍然先于主界面出现。
-- 数据库连接成功（`managed` / `existing`）：不显示提示条；侧栏圆点变绿，文案 `本地 · 仅 socket`。
-- 运行中数据库报错：用 Toast 显示 `T.t(app.statusKey, app.statusArgs)`，不弹阻塞对话框；`app.backend` 保持原值。
-
----
-
-## 6. 页面明细
-
-### 6.1 概览
-
-- 标题：`概览` / `Overview` / `Обзор` / `نمای کلی`；说明：`当前暴露量与本地模型曲线。`
-- 右上：连接状态 chip 可以省略（侧栏已有）；模式切换在侧栏底部，全局可用。
-- 三张读数卡：E2、CPA、T。标签 11 大写/字距 0.06em；数值 32/600；单位 13，分别用赭石 / 墨绿 / 砖红。
-- 曲线卡：标题 20/600；说明 13；Canvas 高度 320。
-  - **只画 E2 一条曲线**；CPA 和 T 只在读数卡显示，避免双 Y 轴和不同单位带来的复杂度。`curve` 里的 `cpa`/`tLevel` 保留给后续版本。
-  - 网格 `chartGrid`；坐标轴文字 11 `textMuted`；曲线 2.5px `chartLine`（等同 `accent`）；曲线下方 10% 透明度填充。
-  - 无数据：居中空状态（药丸图标 + `暂无剂量记录` + `记录下第一次剂量，就能看到估算曲线。` + 主按钮 `记录剂量`）。
-- 最近记录：标题 20/600；最多 5 条；每行显示 route · ester、时间、剂量；悬停高亮；点击进入历史。
-- 模式切换会重新加载数据，保持现有 `app.mode` 行为。
-
-### 6.2 记录剂量 / 编辑剂量
-
-- 标题随状态变化：`记录剂量` 或 `编辑剂量`；说明一句。
-- 表单卡片最大宽度 640，居中；内边距 24；字段间距 16。
-- 两列网格（窄窗口自动一列）：Route / Ester、Dose (mg) / Days ago。
-- 条件字段（舌下、凝胶、贴片）淡入出现，不突然撑开：`opacity` + `visible`，高度由布局自然变化。
-- 输入框：高 44，背景 `surfaceAlt`，圆角 12，无边框；聚焦时 1.5px `accent` 边；占位符 `textFaint`。
-- 主按钮：`记录剂量` / `保存修改`，赭石底，高 44，圆角 12；取消为幽灵按钮。
-- 错误：字段下方 13px `brick` 文案；不弹窗。
-- 成功：按钮变对勾 + `已记录`，320ms `OutBack`；700ms 后回到概览；错误不跳转。
-
-### 6.3 历史
-
-- 标题 + 记录数（`N 条记录`）。
-- 列表卡片：每行 64px，左侧药丸图标，主文字 `route · ester`，次级时间 + 剂量，右侧编辑 / 删除图标按钮。
-- 悬停整行 `surfaceHover`；编辑/删除按钮默认 `textMuted`，悬停变 `text`；删除悬停变 `brick`。
-- 删除先弹确认对话框（`确认删除这条记录？` / `删除后无法恢复。` / `取消` / `删除`），确认后调 `app.removeDose`。
-- 空状态：`还没有记录` + `记录第一剂后，这里会按时间列出。` + 主按钮。
-
-### 6.4 设置
-
-分组卡片：
-
-1. **身体**：体重、出生年。
-2. **估算模型**：校准方式、校准历史、PK 参数 JSON（等宽字体，最小高度 140）。
-3. **语言与外观**：
-   - 语言：四个胶囊按钮（中文 / English / Русский / فارسی），当前项填充 `surfacePressed`，点击即时切换。
-   - 主题：三个分段按钮（亮色 / 暗色 / 跟随系统），选中项有滑动指示块。
-4. **关于**：应用名、版本、`本地 · 仅 socket`、数据库状态。
-
-- 保存按钮放在“身体/模型”卡片下方；语言和主题即时生效，不需要保存。
-- 设置页最大宽度 680；标签 13/500，输入框同记录页。
+- Header area: title 28/600, description 13/`textMuted`; the right side can hold the mode switch, backend chip, or primary action.
+- Card: `Card` component, background `surface`, radius 18, padding 20, no border; in dark mode it is one step lighter than the background.
+- Empty state: 64px circular `accentSubtle` background + 40px line icon; title 20/600; description 15/`textMuted`; one primary button.
+- List row: height 56–64, radius 12, hover `surfaceHover`; icon on the left, primary text 15, secondary 13, value on the right 15/`accent`.
+- All clickable controls have a keyboard focus state: 2px `accent` outer ring + 1px inner ring in the background color.
+- **Database not configured** (`app.backend === "none"`): do not block entry into the main interface; show a persistent banner at the top of the content area (`surfaceAlt`, radius 12, info icon + `Database not configured. Run oyama-hrt-cli db setup in a terminal.`), and the sidebar status shows `Not connected`. The empty-state `Add dose` primary button is disabled, with the reason explained below the button. The first-launch language picker still appears before the main interface.
+- Database connected (`managed` / `existing`): no banner; the sidebar dot turns green and the copy reads `Local · socket only`.
+- Database error at runtime: show `T.t(app.statusKey, app.statusArgs)` in a Toast, not a blocking dialog; `app.backend` keeps its original value.
 
 ---
 
-## 7. 国际化与 RTL
+## 6. Page Details
 
-### 7.1 语言与选择时机
+### 6.1 Overview
 
-- 语言代码：`zh`、`en`、`ru`、`fa`。
-- 首次启动（`ui.language` 为空）显示整屏语言选择：
-  - 暖色底，中央最大宽度 720。
-  - 品牌图标 + `Choose your language`（英文，因为此时还没有语言）。
-  - 2×2 卡片：`中文`、`English`、`Русский`、`فارسی`；每张卡片用本语言大写字样 + 英文名小字。
-  - 悬停：`surfaceHover` + `accent` 边框；按下缩放 0.98；点击即写入 `ui.language`，选择页淡出，主界面淡入。
-  - 底部小字：`You can change this later in Settings.`
-- 设置页可随时切换；切换后所有 `T.t()` 绑定立即重算，无需重启。
-- 测试 / 截图可用环境变量 `OYAMA_UI_LANGUAGE=en|zh|ru|fa` 跳过选择页；该变量不写入配置。
+- Title: `Overview` (Chinese and English), `Обзор` (Russian), `نمای کلی` (Persian); description: `Current exposure and the local model curve.`
+- Top right: the connection status chip can be omitted (it is already in the sidebar); the mode switch is at the bottom of the sidebar and available globally.
+- Three stat cards: E2, CPA, T. Labels 11 uppercase / letter-spacing 0.06em; values 32/600; units 13, in ochre / deep green / brick red respectively.
+- Chart card: title 20/600; description 13; Canvas height 320.
+  - **Draw only the E2 curve**; CPA and T appear only in the stat cards, avoiding the complexity of dual Y axes and different units. `cpa`/`tLevel` in `curve` are reserved for later versions.
+  - Grid `chartGrid`; axis text 11 `textMuted`; curve 2.5px `chartLine` (same as `accent`); 10% opacity fill under the curve.
+  - No data: centered empty state (pill icon + `No doses yet` + `Record your first dose to see the estimated curve.` + primary button `Add dose`).
+- Recent doses: title 20/600; at most 5; each row shows route · ester, time, and dose; hover highlight; click opens History.
+- Mode switching reloads data and preserves the existing `app.mode` behavior.
 
-### 7.2 运行时翻译
+### 6.2 Add Dose / Edit Dose
 
-- C++ `UiPreferences`（注册为 QML 单例 `Ui`）负责：
-  - `language`、`theme`、`systemDark`、`rtl`、`strings`、`fallbackStrings`。
-  - 用 `QSettings` 持久化 `ui/language`、`ui/theme`。
-  - 启动时从 `:/i18n/{code}.json` 读取；缺失 key 回退到 `en`，再回退到 key 本身。
-  - 系统主题：Qt 6.5+ 用 `QStyleHints::colorScheme()` 并监听 `colorSchemeChanged`；Qt 6.4 用 `QGuiApplication::palette().color(QPalette::Window).lightness() < 128` 做一次性判断，无法感知运行中变化。两条路径都取不到时回退 `light`。最低 Qt 保持 6.4，不因为“跟随系统”提高门槛。
-- QML 单例 `T.qml` 提供 `t(key, args)`、`rtl`、`language`。`t()` 内部读取 `Ui.strings`，使绑定在语言变化时自动重算。
-- 占位符用 `%1`…`%9`，由 `t()` 替换；参数可以是数字或字符串。
-- Key 命名沿用网页版风格：`nav.overview`、`btn.add_dose`、`label.e2`、`status.dose_added` 等；网页版已有的中文直接复用，减少术语分叉。
-- C++ `AppController` 新增：
+- The title changes with state: `Add dose` or `Edit dose`; one-line description.
+- Form card max width 640, centered; padding 24; field spacing 16.
+- Two-column grid (automatically one column in narrow windows): Route / Ester, Dose (mg) / Days ago.
+- Conditional fields (sublingual, gel, patch) fade in rather than suddenly expanding: `opacity` + `visible`, with height changing naturally through the layout.
+- Text fields: height 44, background `surfaceAlt`, radius 12, no border; 1.5px `accent` border on focus; placeholder `textFaint`.
+- Primary button: `Add dose` / `Save changes`, ochre background, height 44, radius 12; Cancel is a ghost button.
+- Errors: 13px `brick` copy below the field; no dialog.
+- Success: the button becomes a checkmark + `Recorded`, 320ms `OutBack`; returns to Overview after 700ms; errors do not navigate.
+
+### 6.3 History
+
+- Title + record count (`N records`).
+- List card: each row 64px, pill icon on the left, primary text `route · ester`, secondary time + dose, edit / delete icon buttons on the right.
+- Hover the whole row `surfaceHover`; edit/delete buttons are `textMuted` by default and `text` on hover; delete turns `brick` on hover.
+- Delete first opens a confirmation dialog (`Delete this dose?` / `This can't be undone.` / `Cancel` / `Delete`), then calls `app.removeDose` after confirmation.
+- Empty state: `No doses yet` + `After you record your first dose, it will be listed here in chronological order.` + primary button.
+
+### 6.4 Settings
+
+Grouped cards:
+
+1. **Body**: weight, birth year.
+2. **Estimation model**: calibration method, calibration history, PK parameter JSON (monospace, minimum height 140).
+3. **Language & appearance**:
+   - Language: four pill buttons (Chinese / English / Русский / فارسی), the current item filled with `surfacePressed`, switching immediately on click.
+   - Theme: three segmented buttons (Light / Dark / System), with a sliding indicator on the selected item.
+4. **About**: app name, version, `Local · socket only`, database status.
+
+- The save button goes below the "Body/Model" cards; language and theme take effect immediately and do not need saving.
+- Settings page max width 680; labels 13/500, text fields the same as the dose page.
+
+---
+
+## 7. Internationalization and RTL
+
+### 7.1 Languages and When to Choose
+
+- Language codes: `zh`, `en`, `ru`, `fa`.
+- On first launch (`ui.language` empty) show a full-screen language picker:
+  - Warm background, centered, max width 720.
+  - Brand icon + `Choose your language` (English, because there is no language yet).
+  - 2×2 cards: Chinese, English, Русский, فارسی; each card uses the language's native name in large type plus the English name in small type.
+  - Hover: `surfaceHover` + `accent` border; pressed scale 0.98; click writes `ui.language`, the picker fades out, and the main interface fades in.
+  - Small text at the bottom: `You can change this later in Settings.`
+- The Settings page can switch at any time; after switching, all `T.t()` bindings recompute immediately, with no restart needed.
+- Tests / screenshots can use the environment variable `OYAMA_UI_LANGUAGE=en|zh|ru|fa` to skip the picker; this variable is not written to configuration.
+
+### 7.2 Runtime Translation
+
+- C++ `UiPreferences` (registered as the QML singleton `Ui`) is responsible for:
+  - `language`, `theme`, `systemDark`, `rtl`, `strings`, `fallbackStrings`.
+  - Persisting `ui/language` and `ui/theme` with `QSettings`.
+  - At startup, reading from `:/i18n/{code}.json`; missing keys fall back to `en`, then to the key itself.
+  - System theme: Qt 6.5+ uses `QStyleHints::colorScheme()` and listens to `colorSchemeChanged`; Qt 6.4 uses `QGuiApplication::palette().color(QPalette::Window).lightness() < 128` as a one-time check and cannot detect runtime changes. If neither path is available, fall back to `light`. The minimum Qt stays 6.4; do not raise the bar for "follow system".
+- QML singleton `T.qml` provides `t(key, args)`, `rtl`, `language`. `t()` reads `Ui.strings` internally so bindings recompute automatically when the language changes.
+- Placeholders use `%1`…`%9`, replaced by `t()`; arguments can be numbers or strings.
+- Key naming follows the web version's style: `nav.overview`, `btn.add_dose`, `label.e2`, `status.dose_added`, etc.; existing Chinese from the web version is reused directly to reduce terminology divergence.
+- C++ `AppController` additions:
   - `Q_PROPERTY(QString statusKey)`
   - `Q_PROPERTY(QStringList statusArgs)`
-  - 所有 `fail()` / 成功赋值同时设置 key 与 args；`status` 保留英文原文，现有测试和 CLI 不受影响。
-  - QML Toast 显示 `T.t(app.statusKey, app.statusArgs)`；`statusKey` 为空时回退 `app.status`。
-- 需要翻译的 C++ 状态约 25 条；动态数据库错误把原始错误文本作为 `%1` 参数，不翻译技术细节。
+  - Every `fail()` / success assignment sets both key and args; `status` keeps the original English so existing tests and the CLI are unaffected.
+  - The QML Toast shows `T.t(app.statusKey, app.statusArgs)`; when `statusKey` is empty, fall back to `app.status`.
+- About 25 C++ status messages need translation; dynamic database errors pass the original error text as the `%1` argument, without translating technical details.
 
-### 7.3 RTL（波斯语）
+### 7.3 RTL (Persian)
 
-- `ApplicationWindow.layoutDirection: T.rtl ? Qt.RightToLeft : Qt.LeftToRight`。
-- 侧栏通过 `RowLayout` 自动换到右侧；导航图标与文字顺序镜像；文字使用 `T.textAlign`（RTL 时 `Text.AlignRight`）。
-- 数字、剂量、单位、时间保持 LTR 数字排版；Qt 的 bidi 算法负责混排。
-- 图表坐标保持从左到右（时间轴不镜像）；图例和标题跟随 RTL。
-- 方向性图标（返回、 chevron）在 RTL 时水平翻转；中性图标（齿轮、太阳）不翻。
-- 表单标签右对齐，输入框文字右对齐；ComboBox 箭头在左侧。
+- `ApplicationWindow.layoutDirection: T.rtl ? Qt.RightToLeft : Qt.LeftToRight`.
+- The sidebar automatically moves to the right via `RowLayout`; nav icon and text order is mirrored; text uses `T.textAlign` (`Text.AlignRight` in RTL).
+- Numbers, doses, units, and times keep LTR numeric layout; Qt's bidi algorithm handles mixed runs.
+- Chart axes stay left-to-right (the time axis is not mirrored); legend and title follow RTL.
+- Directional icons (back, chevron) flip horizontally in RTL; neutral icons (gear, sun) do not.
+- Form labels are right-aligned and input text is right-aligned; the ComboBox arrow is on the left.
 
-### 7.4 翻译范围
+### 7.4 Translation Scope
 
-- 页面标题、导航、按钮、字段标签、占位符、空状态、错误、状态、设置分组、语言/主题名称。
-- 不翻译：药物代号 `E2`、`CPA`、`T`、单位 `pg/mL`、`ng/mL`、`ng/dL`、路由内部值 `oral` 等（显示时可用本地化名称，但提交给模型的仍是英文枚举）。
-- 俄语 / 波斯语初译由实现者完成；医药术语对照英文和中文版本，母语审校后续处理。
-- 在 `app/i18n/README.md` 和每种语言的 JSON 文件头注明：欢迎母语者提交 PR 纠正翻译；不要求发布前完成母语审校。中文、英文同样欢迎纠正。
-
----
-
-## 8. 组件清单
-
-| 文件 | 职责 |
-|------|------|
-| `Theme.qml`（单例） | 亮/暗 token、圆角、间距、字号、动效时长、字体家族 |
-| `T.qml`（单例） | `t(key, args)`、`rtl`、`language`、`textAlign` |
-| `Icon.qml` | 统一线性图标（`Shape` + `PathSvg`），支持 `name`、`size`、`color`、`strokeWidth` |
-| `Card.qml` | 卡片容器，内边距、圆角、背景、可选悬停 |
-| `NavItem.qml` | 侧栏导航项，悬停/选中/按下态，键盘焦点 |
-| `AppButton.qml` | primary / secondary / ghost / danger 四种样式 |
-| `AppTextField.qml` | 圆角输入框、聚焦环、占位符颜色 |
-| `AppComboBox.qml` | 圆角下拉、弹出层、悬停项 |
-| `PageHeader.qml` | 标题、说明、右侧操作区 |
-| `StatCard.qml` | 读数卡（标签、数值、单位、强调色） |
-| `EmptyState.qml` | 图标、标题、说明、操作按钮 |
-| `Toast.qml` | 成功/错误提示，自动消失 |
-| `ConfirmDialog.qml` | 删除确认，遮罩 + 卡片 |
-| `LanguagePicker.qml` | 首次启动语言选择整屏 |
-| `Sidebar.qml` | 品牌、导航、连接状态、主题切换 |
-
-页面文件：`Main.qml`、`OverviewPage.qml`、`AddDosePage.qml`、`HistoryPage.qml`、`SettingsPage.qml` 全部重写。
+- Page titles, navigation, buttons, field labels, placeholders, empty states, errors, statuses, settings groups, language/theme names.
+- Not translated: drug codes `E2`, `CPA`, `T`, units `pg/mL`, `ng/mL`, `ng/dL`, route internal values such as `oral` (localized names may be shown, but the model still receives the English enum).
+- Russian / Persian initial translations are done by the implementer; medical terms are checked against the English and Chinese versions, with native-speaker review handled later.
+- Note in `app/i18n/README.md` and at the top of each language's JSON file: native speakers are welcome to submit PRs correcting translations; native-speaker review is not required before release. Corrections to Chinese and English are equally welcome.
 
 ---
 
-## 9. 代码与数据改动
+## 8. Component Inventory
 
-- `app/qml/`：新增上述组件与单例；页面重写。
-- `app/i18n/en.json`、`zh.json`、`ru.json`、`fa.json`：扁平 key 表。
-- `app/fonts/`：Inter 与 Vazirmatn 的 Regular / Medium / SemiBold；附 `OFL.txt` 和来源说明。
-- `app/src/ui_preferences.h/.cpp`：语言、主题、翻译表、系统暗色监听。
-- `app/src/app_controller.h/.cpp`：`statusKey` / `statusArgs`；所有状态赋值补 key。
-- `app/src/main.cpp`：加载字体、注册 `Ui` 单例、读取 `OYAMA_UI_LANGUAGE`。
-- `CMakeLists.txt`：QML 文件、单例属性、字体/i18n 资源、测试环境变量。
-- `app/tests/`：更新 QML 冒烟测试，确保首次启动不因语言选择页失败；状态 key 的映射如可测则加断言。
-- `THIRD_PARTY_NOTICES.md`：Lucide（ISC）、Inter（OFL）、Vazirmatn（OFL）。
+| File | Responsibility |
+|------|----------------|
+| `Theme.qml` (singleton) | Light/dark tokens, radii, spacing, type sizes, motion durations, font family |
+| `T.qml` (singleton) | `t(key, args)`, `rtl`, `language`, `textAlign` |
+| `Icon.qml` | Unified line icons (`Shape` + `PathSvg`), supporting `name`, `size`, `color`, `strokeWidth` |
+| `Card.qml` | Card container, padding, radius, background, optional hover |
+| `NavItem.qml` | Sidebar nav item, hover/selected/pressed states, keyboard focus |
+| `AppButton.qml` | Four variants: primary / secondary / ghost / danger |
+| `AppTextField.qml` | Rounded text field, focus ring, placeholder color |
+| `AppComboBox.qml` | Rounded dropdown, popup, hovered item |
+| `PageHeader.qml` | Title, description, right-side action area |
+| `StatCard.qml` | Stat card (label, value, unit, accent color) |
+| `EmptyState.qml` | Icon, title, description, action button |
+| `Toast.qml` | Success/error notice, auto-dismiss |
+| `ConfirmDialog.qml` | Delete confirmation, scrim + card |
+| `LanguagePicker.qml` | Full-screen first-launch language picker |
+| `Sidebar.qml` | Brand, navigation, connection status, theme toggle |
 
----
-
-## 10. 验证
-
-1. **构建**：Linux Release 76/76；FreeBSD Debug/Release 构建通过。
-   - FreeBSD 验收环境已就绪：`/mnt/big/freebsd.qcow2`，FreeBSD 15.1，Qt 6.11.2，源码 `/home/oyama/oyama-src`，Plasma X11，SSH 主机端口 2222，账号 `oyama`/`oyama12345`（root 同密码；root SSH 关闭，用 `su -`）。
-2. **测试**：现有 CTest 12/12；QML 冒烟测试在 `OYAMA_UI_LANGUAGE=en` 下通过；设置/历史/记录的交互不回归。
-3. **视觉**：Xvfb 1200×800 截图；至少覆盖：
-   - 亮色英文概览；
-   - 暗色中文概览；
-   - 波斯语概览（侧栏在右、文字右对齐）；
-   - 语言选择页；
-   - 记录剂量成功态；
-   - 历史删除确认。
-4. **主题**：亮/暗切换时所有页面无残留旧色；图表重新绘制。
-5. **语言**：四种语言切换后无截断、无 `%1` 残留、无 key 泄漏；波斯语布局镜像正确。
-6. **字体**：FreeBSD 上中文与波斯语不出现方块；如缺字体，文档记录安装包名。
-7. **回归**：模型向量、存储、备份、CLI 测试全部通过。
-
-**2026-10-30 FreeBSD 验收记录**
-
-- 分支 `desktop-ui-overhaul`，代码提交 `dcf0fde`（本次构建与测试基于该提交；其后仅有文档提交）；源码以 git bundle 同步到 `/home/oyama/oyama-src`，旧的非 git 源码保留为 `~/oyama-src.pre-ui-overhaul`。
-- 环境：FreeBSD 15.1-RELEASE amd64，Qt 6.11.2，CMake 3.31.12，Ninja 1.13.2，PostgreSQL 18.6。
-- 构建：`cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOYAMA_BUILD_QT_SHELL=ON` 成功，118/118 个目标完成。
-- 测试：CTest **19/19** 通过，耗时 27.62 s（包含 6 个 Qt shell 冒烟用例、`qml_components` 与 `app_controller_test`）。
-- 字体：FreeBSD ports 中对应包名为 `noto-sc`（不存在 `font-noto-cjk` 包）；安装后 `fc-list :lang=zh` 可列出 Noto Sans CJK SC。波斯语继续使用随应用打包的 Vazirmatn。
-- 截图：在 FreeBSD 上用 `--screenshot` 配合 `QT_QPA_PLATFORM=offscreen`、`QT_QUICK_BACKEND=software` 生成 `zh-light.png`、`fa-light.png`、`fa-dark.png`（1200×800），已复制到主机 `/tmp/opencode/freebsd-shots/` 检查。中文与波斯文字形均正常显示，波斯语侧栏镜像到右侧，暗色主题颜色正确。
-- 验收后的修复（commit `7fcff39`）：下拉框委托补上 `required property var model` / `required property int index`，修复选项文字空白；侧栏悬停颜色去掉动画，避免软件渲染下多个悬停背景残留。新增 `qml_components` 回归测试，FreeBSD 重新构建并 **19/19** 通过；在 Plasma X11 中实测路线下拉六个选项均可见，鼠标移出后侧栏无残影。
+Page files: `Main.qml`, `OverviewPage.qml`, `AddDosePage.qml`, `HistoryPage.qml`, and `SettingsPage.qml` are all rewritten.
 
 ---
 
-## 11. 风险与缓解
+## 9. Code and Data Changes
 
-| 风险 | 影响 | 缓解 |
-|------|------|------|
-| FreeBSD 缺 CJK / 阿拉伯字体 | 中文或波斯语显示方块 | 打包 Vazirmatn；FreeBSD 安装 Noto CJK / 文泉驿；启动时检测并提示 |
-| 翻译术语不一致 | 医药信息误导 | 复用网页版中文；俄/波斯语对照英文；保留英文枚举值 |
-| 运行时翻译绑定不刷新 | 切换语言后部分文字不变 | `T.t()` 显式读取 `Ui.strings`；截图逐页验证 |
-| RTL 布局错位 | 波斯语不可用 | 用 `RowLayout` + `LayoutMirroring`；逐页截图；图表保持 LTR |
-| QML 软件渲染性能 | 动画卡顿 | 不用 shader/模糊/重阴影；只做颜色、透明度、位移、缩放 |
-| 状态 key 改动破坏测试 | CI 失败 | 保留英文 `status`；新增 key 不改旧字段 |
-| 范围蔓延 | 交付延期 | 只做本文列出的页面与组件；Labs/Plan/Supplies 不做 |
-
----
-
-## 12. 实施顺序
-
-1. `UiPreferences` + `T.qml` + 四份 JSON + 字体资源；语言选择页。
-2. `Theme.qml` + 基础组件（Icon、Card、Button、TextField、ComboBox、NavItem）。
-3. `Main.qml` + `Sidebar.qml` 外壳；页面切换动画；Toast。
-4. 概览页（读数卡、曲线、空状态、最近记录）。
-5. 记录剂量页（表单、条件字段、成功态）。
-6. 历史页（列表、悬停、删除确认、空状态）。
-7. 设置页（分组、语言、主题、保存）。
-8. 暗色与 RTL 全页面走查；字体与对比度修正。
-9. Linux Release 构建 + CTest + 截图；FreeBSD 同步构建 + CTest + 截图。
-10. 安装到 `~/oyama-hrt-dist`，交付路径与运行说明。
+- `app/qml/`: add the components and singletons above; rewrite the pages.
+- `app/i18n/en.json`, `zh.json`, `ru.json`, `fa.json`: flat key tables.
+- `app/fonts/`: Inter and Vazirmatn Regular / Medium / SemiBold, with `OFL.txt` and source notes.
+- `app/src/ui_preferences.h/.cpp`: language, theme, translation tables, system dark-mode monitoring.
+- `app/src/app_controller.h/.cpp`: `statusKey` / `statusArgs`; every status assignment also sets a key.
+- `app/src/main.cpp`: load fonts, register the `Ui` singleton, read `OYAMA_UI_LANGUAGE`.
+- `CMakeLists.txt`: QML files, singleton properties, font/i18n resources, test environment variables.
+- `app/tests/`: update the QML smoke tests so first launch does not fail because of the language picker; add assertions for the status-key mapping where testable.
+- `THIRD_PARTY_NOTICES.md`: Lucide (ISC), Inter (OFL), Vazirmatn (OFL).
 
 ---
 
-## 13. Builder check 处理记录
+## 10. Verification
 
-实现前让一个不了解上下文的新构建者读过本文，提出 6 个会改变计划的问题；处理如下：
+1. **Build**: Linux Release 76/76; FreeBSD Debug/Release builds pass.
+   - The FreeBSD acceptance environment is ready: `/mnt/big/freebsd.qcow2`, FreeBSD 15.1, Qt 6.11.2, source `/home/oyama/oyama-src`, Plasma X11, SSH host port 2222, account `oyama`/`oyama12345` (root has the same password; root SSH is disabled, so use `su -`).
+2. **Tests**: existing CTest 12/12; the QML smoke tests pass with `OYAMA_UI_LANGUAGE=en`; settings/history/dose interactions do not regress.
+3. **Visual**: Xvfb 1200×800 screenshots; at minimum cover:
+   - light English Overview;
+   - dark Chinese Overview;
+   - Persian Overview (sidebar on the right, right-aligned text);
+   - the language picker;
+   - the dose success state;
+   - the history delete confirmation.
+4. **Theme**: when switching light/dark, no page retains the old colors; the chart repaints.
+5. **Language**: after switching among the four languages, there is no truncation, no leftover `%1`, and no key leaks; the Persian layout mirrors correctly.
+6. **Fonts**: no tofu for Chinese and Persian on FreeBSD; if a font is missing, document the package name.
+7. **Regression**: model vectors, storage, backup, and CLI tests all pass.
 
-| # | 问题 | 处理 |
-|---|------|------|
-| 1 | 没有数据库时，原来的 footer 提示被移除，空状态 CTA 会失败 | **本文件决定**：不加阻塞式数据库设置页；保留主界面，顶部常驻提示条 + 侧栏“未连接” + 空状态 CTA 禁用。语言选择页先于一切。不新增 `connecting` 等连接状态，沿用 `app.backend` 的 `none`/`managed`/`existing`。 |
-| 2 | FreeBSD 验收环境是什么 | **已具备**：`/mnt/big/freebsd.qcow2`，FreeBSD 15.1，Qt 6.11.2，源码 `/home/oyama/oyama-src`，Plasma X11；SSH 2222，`oyama`/`oyama12345`。 |
-| 3 | 是否把最低 Qt 从 6.4 提到 6.5 | **本文件决定**：保持 6.4。Qt 6.5+ 用 `QStyleHints::colorScheme`；6.4 用调色板明度做一次性判断；未知时回退 light。“跟随系统”在 6.4 上是尽力而为，文档写明。 |
-| 4 | 曲线画几条 | **本文件决定**：只画 E2；CPA/T 只出现在读数卡。`chartLine` 就是 `accent`。多序列留到后续版本。 |
-| 5 | WCAG AA 是硬门槛还是 hex 值优先 | **本文件决定**：小字可读性优先，但不改变整体色相。新增 `textSoft` 保留 `#7A7466` 给 20px+；15px/nav 用略深的 `textMuted` `#6E6759`；11–13px 用 `#6B6457`；暗色 `textFaint` 用 `#9A9385`；主按钮改用暖深色字 `#2B241B`（和网页版浅色按钮一致）。其余 hex 按表执行。 |
-| 6 | transfem/transmasc 切换放哪 | **本文件决定**：放侧栏底部，全局可用；切换会重载数据并清空未保存的剂量表单。 |
+**2026-10-30 FreeBSD acceptance record**
 
-第 1、3、4、5、6 项都是实现者可以自行决定的；如果所有者对其中任何一项有不同偏好，在批准时指出即可。
+- Branch `desktop-ui-overhaul`, code commit `dcf0fde` (this build and test run is based on that commit; only documentation commits followed). The source was synced with a git bundle to `/home/oyama/oyama-src`; the old non-git source tree was kept as `~/oyama-src.pre-ui-overhaul`.
+- Environment: FreeBSD 15.1-RELEASE amd64, Qt 6.11.2, CMake 3.31.12, Ninja 1.13.2, PostgreSQL 18.6.
+- Build: `cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DOYAMA_BUILD_QT_SHELL=ON` succeeded; 118/118 targets completed.
+- Tests: CTest **19/19** passed in 27.62 s (including the six Qt shell smoke cases, `qml_components`, and `app_controller_test`).
+- Fonts: the FreeBSD ports package is named `noto-sc` (there is no `font-noto-cjk` package); after installation `fc-list :lang=zh` lists Noto Sans CJK SC. Persian continues to use the bundled Vazirmatn.
+- Screenshots: generated on FreeBSD with `--screenshot` plus `QT_QPA_PLATFORM=offscreen` and `QT_QUICK_BACKEND=software` as `zh-light.png`, `fa-light.png`, and `fa-dark.png` (1200×800), then copied to the host at `/tmp/opencode/freebsd-shots/` for inspection. CJK and Persian glyphs render correctly, the Persian sidebar is mirrored to the right, and the dark theme colors match.
+- Post-acceptance fixes (commit `7fcff39`): the combo-box delegate now declares `required property var model` / `required property int index`, fixing blank option text; the sidebar hover color animation was removed to avoid residual hover backgrounds under software rendering. A `qml_components` regression test was added, the FreeBSD rebuild passed **19/19**, and a manual Plasma X11 check confirmed that the route dropdown shows all six options and that no sidebar background remains after the pointer leaves.
 
-## 14. 所有者确认结果（2026-10-30）
+---
 
-1. 波斯语**整界面镜像**：侧栏到右侧，布局 RTL。已确认。
-2. 俄语 / 波斯语**接受“实现者初译 + 后续母语审校”**；在翻译文件和 README 中写明欢迎母语者提交 PR 纠正。已确认。
-3. 语言选择使用**整屏欢迎页**，不是进入应用后弹窗。已确认。
+## 11. Risks and Mitigations
 
-设计已获批准，进入实现计划阶段。
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| FreeBSD lacks CJK / Arabic fonts | Chinese or Persian shows tofu | Bundle Vazirmatn; install Noto CJK / WenQuanYi on FreeBSD; detect at startup and warn |
+| Inconsistent translation terminology | Misleading medical information | Reuse the web version's Chinese; check Russian/Persian against English; keep English enum values |
+| Runtime translation bindings do not refresh | Some text stays unchanged after switching | `T.t()` reads `Ui.strings` explicitly; verify page by page with screenshots |
+| RTL layout misalignment | Persian is unusable | Use `RowLayout` + `LayoutMirroring`; screenshot each page; keep charts LTR |
+| QML software rendering performance | Animation stutter | No shaders/blur/heavy shadows; only color, opacity, position, and scale |
+| Status key changes break tests | CI failure | Keep the English `status`; add keys without changing old fields |
+| Scope creep | Delivery delay | Only the pages and components listed here; no Labs/Plan/Supplies |
+
+---
+
+## 12. Implementation Order
+
+1. `UiPreferences` + `T.qml` + the four JSON files + font resources; language picker.
+2. `Theme.qml` + base components (Icon, Card, Button, TextField, ComboBox, NavItem).
+3. `Main.qml` + `Sidebar.qml` shell; page transition animation; Toast.
+4. Overview page (stat cards, chart, empty state, recent doses).
+5. Add dose page (form, conditional fields, success state).
+6. History page (list, hover, delete confirmation, empty state).
+7. Settings page (groups, language, theme, save).
+8. Dark and RTL walkthrough of all pages; font and contrast fixes.
+9. Linux Release build + CTest + screenshots; FreeBSD build + CTest + screenshots.
+10. Install to `~/oyama-hrt-dist`, with delivery paths and run instructions.
+
+---
+
+## 13. Builder Check Resolution Record
+
+Before implementation, a fresh builder with no context read this document and raised six questions that would change the plan; the resolutions are below:
+
+| # | Question | Resolution |
+|---|----------|------------|
+| 1 | With no database, the old footer hint is removed and the empty-state CTA would fail | **Decided in this document**: no blocking database setup page; keep the main interface with a persistent top banner + sidebar "Not connected" + disabled empty-state CTA. The language picker comes before everything. Do not add a `connecting` connection state; keep `app.backend`'s `none`/`managed`/`existing`. |
+| 2 | What is the FreeBSD acceptance environment? | **Ready**: `/mnt/big/freebsd.qcow2`, FreeBSD 15.1, Qt 6.11.2, source `/home/oyama/oyama-src`, Plasma X11; SSH 2222, `oyama`/`oyama12345`. |
+| 3 | Should the minimum Qt move from 6.4 to 6.5? | **Decided in this document**: stay on 6.4. Qt 6.5+ uses `QStyleHints::colorScheme`; 6.4 uses palette lightness for a one-time check; fall back to light when unknown. "Follow system" is best-effort on 6.4, and the document says so. |
+| 4 | How many curves should be drawn? | **Decided in this document**: only E2; CPA/T appear only in the stat cards. `chartLine` is `accent`. Multiple series are left to a later version. |
+| 5 | Is WCAG AA a hard gate, or are the hex values prioritized? | **Decided in this document**: small-text readability comes first, without changing the overall hue. Add `textSoft`, keeping `#7A7466` for 20px+; 15px/nav uses the slightly darker `textMuted` `#6E6759`; 11–13px uses `#6B6457`; dark `textFaint` uses `#9A9385`; primary buttons switch to warm dark text `#2B241B` (matching the web version's light buttons). All other hex values follow the table. |
+| 6 | Where does the transfem/transmasc switch go? | **Decided in this document**: at the bottom of the sidebar, globally available; switching reloads data and clears an unsaved dose form. |
+
+Items 1, 3, 4, 5, and 6 are all decisions the implementer can make independently; if the owner prefers otherwise on any of them, it is enough to say so at approval time.
+
+## 14. Owner Confirmation Results (2026-10-30)
+
+1. Persian **fully mirrored interface**: sidebar on the right, RTL layout. Confirmed.
+2. Russian / Persian **accept "implementer's initial translation + later native-speaker review"**; state in the translation files and README that native speakers are welcome to submit PRs with corrections. Confirmed.
+3. Language selection uses a **full-screen welcome page**, not a dialog after entering the app. Confirmed.
+
+The design is approved and moves to the implementation planning stage.

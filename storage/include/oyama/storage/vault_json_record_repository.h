@@ -1,6 +1,5 @@
 #pragma once
 
-#include "connection.h"
 #include "types.h"
 
 #include <optional>
@@ -10,13 +9,11 @@
 
 namespace oyama::storage {
 
-/// Repository for the JSON-carrying tables: dose templates, quick doses,
-/// supplies and plan items.  Payload shape stays with the upstream backup
-/// format until the fields settle.
-class JsonRecordRepository {
-public:
-    JsonRecordRepository(Connection& connection, JsonRecordKind kind);
+class VaultStore;
 
+class VaultJsonRecordRepository {
+public:
+    VaultJsonRecordRepository(VaultStore& vault, JsonRecordKind kind);
     [[nodiscard]] JsonRecordKind kind() const noexcept;
     [[nodiscard]] std::vector<JsonRecord> list(Mode mode);
     [[nodiscard]] std::optional<JsonRecord> get(std::string_view id);
@@ -24,9 +21,9 @@ public:
     [[nodiscard]] bool remove(std::string_view id);
 
 private:
-    Connection& connection_;
+    VaultStore& vault_;
     JsonRecordKind kind_;
-    std::string table_;
+    std::string vault_kind_;
 };
 
 }  // namespace oyama::storage

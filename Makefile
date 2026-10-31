@@ -2,7 +2,7 @@
 #
 # Everything here is intentionally plain Make: no GNU-only functions are
 # required. The real build configuration remains CMake; this is the short path
-# documented in 依赖清单.md.
+# documented in docs/dependencies.md.
 #
 #   make                 configure + Release build
 #   make test            build, then run CTest

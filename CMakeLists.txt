@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(oyama_hrt_linux_desktop
-    VERSION 0.1.2
+    VERSION 0.5.0
     DESCRIPTION "Oyama's HRT Tracker - Linux/BSD desktop"
     LANGUAGES C CXX)
 
@@ -18,7 +18,22 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PostgreSQL 14 REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 include(GNUInstallDirs)
+
+add_library(oyama_vault STATIC
+    vault/src/vault.c
+    vault/src/vault_crypto.c)
+target_include_directories(oyama_vault
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(oyama_vault
+    PUBLIC PkgConfig::SODIUM PostgreSQL::PostgreSQL)
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(oyama_vault PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 add_library(oyama_pk STATIC
     core/src/pk.c)
@@ -36,32 +51,39 @@ endif()
 add_library(oyama_storage STATIC
     storage/src/app_config.cpp
     storage/src/backup.cpp
+    storage/src/backup_crypto.cpp
     storage/src/connection.cpp
     storage/src/database.cpp
-    storage/src/dose_event_repository.cpp
     storage/src/error.cpp
-    storage/src/json_record_repository.cpp
-    storage/src/lab_result_repository.cpp
+    storage/src/legacy_migration.cpp
+    storage/src/legacy_promotion.cpp
     storage/src/local_cluster.cpp
     storage/src/migration.cpp
-    storage/src/preferences_repository.cpp
-    storage/src/settings_repository.cpp
-    storage/src/tombstone_repository.cpp
+    storage/src/passphrase.cpp
+    storage/src/passphrase_wordlist.cpp
     storage/src/types.cpp
-    storage/src/uuid.cpp)
+    storage/src/uuid.cpp
+    storage/src/vault_codec.cpp
+    storage/src/vault_store.cpp
+    storage/src/vault_dose_event_repository.cpp
+    storage/src/vault_json_record_repository.cpp
+    storage/src/vault_lab_result_repository.cpp
+    storage/src/vault_preferences_repository.cpp
+    storage/src/vault_settings_repository.cpp
+    storage/src/vault_tombstone_repository.cpp)
 target_include_directories(oyama_storage
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
 target_link_libraries(oyama_storage
     PUBLIC PostgreSQL::PostgreSQL
-    PRIVATE nlohmann_json::nlohmann_json)
+    PRIVATE nlohmann_json::nlohmann_json oyama_vault)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_storage PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_executable(oyama-hrt-cli cli/main.cpp)
-target_link_libraries(oyama-hrt-cli PRIVATE oyama_storage)
+target_link_libraries(oyama-hrt-cli PRIVATE oyama_storage PkgConfig::SODIUM)
 target_compile_definitions(oyama-hrt-cli PRIVATE
     OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
     OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
@@ -108,10 +130,15 @@ if(OYAMA_BUILD_QT_SHELL)
             app/src/main.cpp
             app/src/app_controller.cpp
             app/src/app_controller.h
+            app/src/legacy_migration_worker.cpp
+            app/src/legacy_migration_worker.h
             app/src/ui_preferences.cpp
             app/src/ui_preferences.h)
         set(OYAMA_QML_FILES
             app/qml/Main.qml
+            app/qml/VaultGate.qml
+            app/qml/SetupVaultPage.qml
+            app/qml/UnlockVaultPage.qml
             app/qml/Sidebar.qml
             app/qml/NavItem.qml
             app/qml/FirstRun.qml
@@ -173,6 +200,7 @@ if(OYAMA_BUILD_QT_SHELL)
             oyama_storage
             oyama_pk
             nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
             Qt6::Core
             Qt6::Qml
             Qt6::Quick
@@ -228,6 +256,100 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME pk_smoke_test COMMAND pk_smoke_test)
 
+    add_executable(vault_crypto_test vault/tests/vault_crypto_test.c)
+    target_include_directories(vault_crypto_test PRIVATE vault/src)
+    target_link_libraries(vault_crypto_test PRIVATE oyama_vault)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_crypto_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME vault_crypto_test COMMAND vault_crypto_test)
+
+    add_executable(vault_meta_test vault/tests/vault_meta_test.c)
+    target_include_directories(vault_meta_test PRIVATE vault/src)
+    target_link_libraries(vault_meta_test PRIVATE oyama_vault PostgreSQL::PostgreSQL)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_meta_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME vault_meta_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/vault/tests/run_vault_pg_test.sh
+                $<TARGET_FILE:vault_meta_test>)
+    set_tests_properties(vault_meta_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(vault_records_test vault/tests/vault_records_test.c)
+    target_include_directories(vault_records_test PRIVATE vault/src)
+    target_link_libraries(vault_records_test PRIVATE oyama_vault PostgreSQL::PostgreSQL)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_records_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME vault_records_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/vault/tests/run_vault_pg_test.sh
+                $<TARGET_FILE:vault_records_test>)
+    set_tests_properties(vault_records_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(vault_store_test storage/tests/vault_store_test.cpp)
+    target_include_directories(vault_store_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(vault_store_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_store_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME vault_store_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_vault_store_test.sh
+                $<TARGET_FILE:vault_store_test>)
+    set_tests_properties(vault_store_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(vault_codec_test storage/tests/vault_codec_test.cpp)
+    target_link_libraries(vault_codec_test PRIVATE
+        oyama_storage
+        nlohmann_json::nlohmann_json)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_codec_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME vault_codec_test COMMAND vault_codec_test)
+
+    add_executable(vault_repository_test storage/tests/vault_repository_test.cpp)
+    target_include_directories(vault_repository_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(vault_repository_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_repository_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME vault_repository_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_vault_repository_test.sh
+                $<TARGET_FILE:vault_repository_test>)
+    set_tests_properties(vault_repository_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(legacy_migration_test storage/tests/legacy_migration_test.cpp)
+    target_include_directories(legacy_migration_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(legacy_migration_test PRIVATE
+        oyama_storage
+        nlohmann_json::nlohmann_json)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(legacy_migration_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME legacy_migration_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_legacy_migration_test.sh
+                $<TARGET_FILE:legacy_migration_test>)
+    set_tests_properties(legacy_migration_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(legacy_promotion_test storage/tests/legacy_promotion_test.cpp)
+    target_include_directories(legacy_promotion_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(legacy_promotion_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(legacy_promotion_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME legacy_promotion_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_legacy_promotion_test.sh
+                $<TARGET_FILE:legacy_promotion_test>)
+    set_tests_properties(legacy_promotion_integration PROPERTIES SKIP_RETURN_CODE 77)
+
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
     target_compile_definitions(storage_test PRIVATE
@@ -249,6 +371,13 @@ if(BUILD_TESTING)
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_with_temp_postgres.sh
                 $<TARGET_FILE:storage_test>)
     set_tests_properties(storage_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(backup_crypto_test storage/tests/backup_crypto_test.cpp)
+    target_link_libraries(backup_crypto_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(backup_crypto_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME backup_crypto_test COMMAND backup_crypto_test)
 
     add_executable(backup_test storage/tests/backup_test.cpp)
     target_link_libraries(backup_test PRIVATE oyama_storage nlohmann_json::nlohmann_json)
@@ -276,6 +405,13 @@ if(BUILD_TESTING)
     set_tests_properties(cli_integration PROPERTIES SKIP_RETURN_CODE 77)
 
     add_test(
+        NAME cli_vault_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cli/tests/run_cli_vault_integration.sh
+                $<TARGET_FILE:oyama-hrt-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
+    set_tests_properties(cli_vault_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_test(
         NAME cli_managed_integration
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cli/tests/run_cli_managed_integration.sh
                 $<TARGET_FILE:oyama-hrt-cli>
@@ -288,6 +424,13 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:oyama-hrt-cli>
                 ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
     set_tests_properties(cli_backup_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_test(
+        NAME cli_migration_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cli/tests/run_cli_migration.sh
+                $<TARGET_FILE:oyama-hrt-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
+    set_tests_properties(cli_migration_integration PROPERTIES SKIP_RETURN_CODE 77)
 
 
     if(TARGET oyama-hrt-app)
@@ -313,12 +456,15 @@ if(BUILD_TESTING)
         add_executable(app_controller_test
             app/tests/app_controller_test.cpp
             app/src/app_controller.cpp
-            app/src/app_controller.h)
+            app/src/app_controller.h
+            app/src/legacy_migration_worker.cpp
+            app/src/legacy_migration_worker.h)
         target_include_directories(app_controller_test PRIVATE app/src)
         target_link_libraries(app_controller_test PRIVATE
             oyama_storage
             oyama_pk
             nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
             Qt6::Core)
         target_compile_definitions(app_controller_test PRIVATE
             OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
@@ -330,6 +476,27 @@ if(BUILD_TESTING)
             COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/app/tests/run_app_controller_test.sh
                     $<TARGET_FILE:app_controller_test>)
         set_tests_properties(app_controller_test PROPERTIES SKIP_RETURN_CODE 77)
+
+        add_executable(legacy_migration_worker_test
+            app/tests/legacy_migration_worker_test.cpp
+            app/src/legacy_migration_worker.cpp
+            app/src/legacy_migration_worker.h)
+        target_include_directories(legacy_migration_worker_test PRIVATE app/src)
+        target_link_libraries(legacy_migration_worker_test PRIVATE
+            oyama_storage
+            nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
+            Qt6::Core)
+        target_compile_definitions(legacy_migration_worker_test PRIVATE
+            OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
+            OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(legacy_migration_worker_test PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+        add_test(NAME legacy_migration_worker_test
+            COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/app/tests/run_legacy_migration_worker_test.sh
+                    $<TARGET_FILE:legacy_migration_worker_test>)
+        set_tests_properties(legacy_migration_worker_test PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 endif()
 

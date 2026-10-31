@@ -1,14 +1,15 @@
 # Storage layer
 
-C++20 + libpq. This layer owns the local PostgreSQL schema, migrations, and
-typed access to application data. It has no Qt, network, or UI dependency.
+C++20 + libpq + libsodium. This layer owns the local PostgreSQL schema,
+migrations, the encrypted vault, and typed access to application data. It has
+no Qt, network, or UI dependency.
 
 ## Connection rules
 
 - PostgreSQL is reached through a Unix-domain socket only.
 - No TCP host is accepted, even if `PGHOST` contains one.
-- No password is stored or prompted for; the server must use peer/ident auth or
-  a local trust configuration.
+- No database password is stored or prompted for; the server must use
+  peer/ident auth or a local trust configuration.
 - One `Connection` belongs to one thread. Do not share it between threads.
 - All writes run in a `Transaction`; `Database` does not enable autocommit
   tricks.
@@ -16,7 +17,8 @@ typed access to application data. It has no Qt, network, or UI dependency.
 `ConnectionConfig::from_environment()` reads `OYAMA_PG_*` first and then the
 matching libpq `PG*` variables. `ConnectionConfig::find_socket_dir()` searches
 the usual local socket directories, including `$XDG_RUNTIME_DIR` and
-`/run/postgresql`.
+`/run/postgresql`. `ConnectionConfig::to_conninfo()` produces an escaped libpq
+connection string for the C vault boundary.
 
 ## Application-managed cluster
 
@@ -56,60 +58,88 @@ SQL files live in `migrations/` and are named `NNNN_name.sql`. The runner:
 Migrations are forward-only. A destructive change needs an export/rebuild plan;
 do not edit an already-applied file.
 
+## Encrypted vault
+
+Application data is encrypted before it reaches libpq. PostgreSQL sees only:
+
+- `vault_meta` — a single row with the format version, Argon2id parameters and
+  salt, AEAD algorithm, wrap nonce, and the wrapped Data Encryption Key (DEK);
+- `vault_records(id uuid PRIMARY KEY, blob bytea)` — one authenticated,
+  versioned ciphertext blob per logical record.
+
+The DEK is random, generated at setup, wrapped by an Argon2id-derived KEK, and
+exists only in application memory after unlock. `VaultStore::lock()` and
+`oyama_vault_lock()` zero it. Key material is never sent to PostgreSQL, written
+to WAL, logged, or placed in a backup.
+
+The C99 ABI is `include/oyama/vault.h` (`oyama_vault_*`). It is the only code
+that talks to libpq for vault records. C++ wrappers live in `vault_store.h`,
+strict JSON codecs in `vault_codec.h`, and repositories in
+`vault_*_repository.h`. The encrypted design is documented in
+`docs/superpowers/specs/2026-10-31-encrypted-vault-design.md`.
+
+PostgreSQL cannot filter or sort encrypted payloads. Repositories scan the
+requested kind, decrypt in memory, filter by mode, and sort there.
+`VaultDoseEventRepository::list(mode)` sorts by `(time_h, id)`. This is
+intentionally simple for personal data volumes. Record IDs remain clear so a
+record can be addressed; the UUID is bound into the AEAD associated data, so
+swapping blobs between IDs fails authentication.
+
+Migrations 0001 and 0002 are retained for legacy import and old clusters. The
+current application does not read or write those plaintext tables after a vault
+is created; `0003_vault_schema.sql` adds the vault tables.
+
 ## Repositories
 
-- `SettingsRepository` — the single global settings row (weight, birth year,
-  PK params, calibration).
-- `DoseEventRepository`, `LabResultRepository` — typed dose and lab rows.
-- `JsonRecordRepository` — dose templates, quick doses, supplies, plan items;
-  the table is selected by `JsonRecordKind`, never by caller text.
-- `PreferencesRepository`, `TombstoneRepository` — UI preferences and import
-  tombstones.
+All repositories take a `VaultStore&` and use the strict codecs. A malformed or
+out-of-range payload throws `VaultCodecError`; records are never silently
+dropped.
 
-Repositories validate UUIDs and basic numeric/text constraints before sending
-SQL. JSON columns are checked by the schema to be JSON objects where required.
+- `VaultSettingsRepository` — the global settings singleton.
+- `VaultDoseEventRepository`, `VaultLabResultRepository` — typed dose and lab
+  records, filtered and ordered in memory.
+- `VaultJsonRecordRepository` — dose templates, quick doses, supplies, and plan
+  items; the record kind is selected by `JsonRecordKind`, never by caller text.
+- `VaultPreferencesRepository`, `VaultTombstoneRepository` — UI preferences and
+  import tombstones.
 
 ## Backup import/export
 
-`backup.h` exposes the upstream-compatible complete-backup path:
+`backup.h` exposes only the vault-backed path:
 
-- `preview_backup(Connection&, path, now_ms)` parses and validates the bundle,
-  computes the LWW/tombstone merge, and reports counts, blocked categories,
-  issues, and statistics without writing.
-- `import_backup(Connection&, path, now_ms)` applies the same merge in one
-  transaction. Root-envelope errors throw; a blocked category is left untouched
-  while other categories are still applied.
-- `export_backup(Connection&, path, now_ms)` writes a complete v1 bundle with
-  mode 0600 and includes the local `birthYear` extension.
+- `export_encrypted_backup(VaultStore&, path, now_ms, phrase)` writes the
+  `OYAMAEBK` v1 envelope: Argon2id + AES-256-GCM (or XChaCha20-Poly1305 when
+  AES-GCM is unavailable), fresh salt and nonce, and mode 0600. This is the CLI
+  default.
+- `preview_backup(VaultStore&, path, now_ms, phrase)` and
+  `import_backup(VaultStore&, path, now_ms, phrase)` auto-detect encrypted
+  files. The phrase is required for encrypted input, and decryption happens
+  before any database write. Import runs in one vault transaction.
+- `export_backup(VaultStore&, path, now_ms)` writes the explicit plaintext
+  upstream-compatible v1 JSON. The CLI exposes this only behind `--plaintext`
+  and warns that the file contains health data.
 
-The format intentionally follows upstream: stamped categories (`events`,
+The JSON format intentionally follows upstream: stamped categories (`events`,
 `labResults`, `doseTemplates`) use `updatedAt` LWW with deterministic
 fingerprint tie-breaking; tombstones use 5-minute future tolerance, 180-day
 TTL, and a 5000-per-kind cap. `quickDoses`, `supplies`, and `plan` have no
 upstream timestamps, so an incoming id that already exists locally blocks that
 category rather than overwriting silently. Upstream v1 has no `birthYear`; the
 optional top-level extension is preserved here but lost through an upstream
-round-trip. IDs are required to be UUIDs by this database, and a lab without an
-`assay` is stored as `immuno`.
+round-trip. Lab records without an assay are stored as `immuno`.
 
 ## Tests
 
-`storage_test` runs unit checks. When `OYAMA_TEST_PG_SOCKET` and
-`OYAMA_TEST_PG_DB` are set it also runs integration checks against that
-database, creating and dropping a private schema.
+Unit tests cover the C vault crypto, codecs, passphrase handling, migrations, and
+backup crypto. PostgreSQL integration tests cover setup/unlock, record CRUD,
+repositories, legacy import and promotion, the app controller, and the CLI.
 
-`run_with_temp_postgres.sh` starts a throwaway cluster with `initdb` and
-`pg_ctl`, creates `oyama_hrt_test`, and runs the same binary. It exits 77 when
-server binaries are unavailable, which CTest reports as skipped. Set
-`PG_BINDIR` if `initdb` is not on `PATH`.
-
-`cli/tests/run_cli_managed_integration.sh` exercises the full managed-cluster
-path: setup, config persistence, ping, status, stop/start, idempotent setup,
-existing-cluster selection, and the missing-tools error.
-`backup_test` runs backup/merge integration checks; `cli/tests/run_cli_backup_integration.sh`
-exercises `backup export/preview/import` and the invalid-envelope path.
+`run_with_temp_postgres.sh` and its wrappers start a throwaway cluster with
+`initdb` and `pg_ctl`, create `oyama_hrt_test`, and run the test binary. They
+exit 77 when server binaries are unavailable, which CTest reports as skipped.
+Set `PG_BINDIR` if `initdb` is not on `PATH`.
 
 ## Not implemented yet
 
 - Calibration history storage and model integration.
-- Qt/QML view models beyond the M2 shell's `AppController`.
+- Qt/QML view models beyond the vault-gated M2 shell.

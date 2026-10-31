@@ -56,48 +56,86 @@ ApplicationWindow {
         }
     }
 
-    RowLayout {
+    // The application shell is inert until the vault is unlocked; the gate
+    // below covers it completely, so nothing behind it can be reached.
+    Item {
+        id: shell
+        objectName: "appShell"
         anchors.fill: parent
-        spacing: 0
-        visible: !window.firstRun
+        enabled: app.vaultState === "unlocked"
 
-        Sidebar {
-            Layout.fillHeight: true
-            currentIndex: window.pageIndex
-            onNavigate: function(index) {
-                if (index === window.pageIndex && index === 2)
-                    settingsPage.open("")
-                window.pageIndex = index
-            }
-        }
+        RowLayout {
+            anchors.fill: parent
+            spacing: 0
+            visible: !window.firstRun
 
-        StackLayout {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
-            currentIndex: window.pageIndex
+            // The sidebar and the lock action share the rail so the lock can
+            // sit at its foot and stay above the panel when it opens.
+            Item {
+                Layout.preferredWidth: Theme.railWidth
+                Layout.fillHeight: true
+                z: 40
 
-            OverviewPage {
-                id: overviewPage
-                onLogRequested: {
-                    window.pageIndex = 1
-                    historyPage.openAdd()
+                Sidebar {
+                    anchors.fill: parent
+                    currentIndex: window.pageIndex
+                    onNavigate: function(index) {
+                        if (index === window.pageIndex && index === 2)
+                            settingsPage.open("")
+                        window.pageIndex = index
+                    }
+                }
+
+                AppButton {
+                    objectName: "lockButton"
+                    z: 50
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottom: parent.bottom
+                    anchors.bottomMargin: 20
+                    variant: "ghost"
+                    iconName: "lock"
+                    text: qsTr("Lock")
+                    visible: app.vaultState === "unlocked" && !window.firstRun
+                    onClicked: app.lockVault()
                 }
             }
 
-            HistoryPage {
-                id: historyPage
-            }
+            StackLayout {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                currentIndex: window.pageIndex
 
-            SettingsPage {
-                id: settingsPage
-                onIntroRequested: window.firstRun = true
+                OverviewPage {
+                    id: overviewPage
+                    onLogRequested: {
+                        window.pageIndex = 1
+                        historyPage.openAdd()
+                    }
+                }
+
+                HistoryPage {
+                    id: historyPage
+                }
+
+                SettingsPage {
+                    id: settingsPage
+                    onIntroRequested: window.firstRun = true
+                }
             }
+        }
+
+        FirstRun {
+            anchors.fill: parent
+            visible: window.firstRun
+            onFinished: window.firstRun = false
         }
     }
 
-    FirstRun {
+    // A full-window layer, above the shell's header, navigation and pages,
+    // until the vault is unlocked.
+    VaultGate {
+        objectName: "vaultGate"
         anchors.fill: parent
-        visible: window.firstRun
-        onFinished: window.firstRun = false
+        visible: app.vaultState !== "unlocked"
     }
 }

@@ -55,8 +55,8 @@ setup_output="$(run_cli --port "$port" --dbname "$dbname" \
     --pg-bin-dir "$bindir" db setup --managed --yes)"
 grep -q $'backend\tmanaged' <<<"$setup_output"
 grep -q $'cluster\trunning' <<<"$setup_output"
-grep -q $'schema_version\t2' <<<"$setup_output"
-grep -q $'applied\t2' <<<"$setup_output"
+grep -q $'schema_version\t3' <<<"$setup_output"
+grep -q $'applied\t3' <<<"$setup_output"
 
 ping_output="$(run_cli db ping)"
 grep -q $'database\t'"$dbname" <<<"$ping_output"
@@ -66,7 +66,13 @@ grep -q $'backend\tmanaged' <<<"$status_output"
 grep -q $'initialized\tyes' <<<"$status_output"
 grep -q $'running\tyes' <<<"$status_output"
 
-settings_output="$(run_cli settings set --weight 70 --birth-year 1990)"
+phrase="correct horse battery staple"
+printf '%s\n' "$phrase" | run_cli vault setup --phrase-stdin \
+    --kdf-ops 1 --kdf-mem 8388608 >/dev/null
+grep -qx 'locked' <<<"$(run_cli vault status)"
+
+settings_output="$(printf '%s\n' "$phrase" | \
+    run_cli --phrase-stdin settings set --weight 70 --birth-year 1990)"
 grep -q $'body_weight_kg\t70' <<<"$settings_output"
 grep -q $'birth_year\t1990' <<<"$settings_output"
 
@@ -114,7 +120,7 @@ grep -q 'applied 0 migration(s)' <<<"$init_output"
 
 second_setup="$(run_cli db setup --managed --yes)"
 grep -q 'using existing configuration' <<<"$second_setup"
-grep -q $'schema_version\t2' <<<"$second_setup"
+grep -q $'schema_version\t3' <<<"$second_setup"
 grep -q $'applied\t0' <<<"$second_setup"
 
 existing_config="$root/existing-config"

@@ -1,6 +1,17 @@
 #include <oyama/storage/storage.h>
+#include <oyama/storage/backup_crypto.h>
+#include <oyama/storage/legacy_migration.h>
+#include <oyama/storage/legacy_promotion.h>
+#include <oyama/storage/passphrase.h>
+#include <oyama/storage/vault_dose_event_repository.h>
+#include <oyama/storage/vault_settings_repository.h>
+#include <oyama/storage/vault_store.h>
 
+#include <sodium.h>
+
+#include <array>
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -13,6 +24,7 @@
 #include <string>
 #include <string_view>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -24,15 +36,26 @@ using oyama::storage::Connection;
 using oyama::storage::ConnectionConfig;
 using oyama::storage::Database;
 using oyama::storage::DoseEvent;
-using oyama::storage::DoseEventRepository;
 using oyama::storage::Error;
+using oyama::storage::LegacyCounts;
+using oyama::storage::LegacyDetection;
+using oyama::storage::LegacyImportResult;
+using oyama::storage::LegacyMigrator;
+using oyama::storage::LegacyPaths;
 using oyama::storage::LocalCluster;
 using oyama::storage::LocalClusterConfig;
 using oyama::storage::Mode;
+using oyama::storage::PromotionState;
+using oyama::storage::is_encrypted_backup;
+using oyama::storage::Passphrase;
 using oyama::storage::Settings;
-using oyama::storage::SettingsRepository;
+using oyama::storage::VaultDoseEventRepository;
+using oyama::storage::VaultKdfParams;
+using oyama::storage::VaultSettingsRepository;
+using oyama::storage::VaultState;
+using oyama::storage::VaultStore;
 
-constexpr const char* kVersion = "0.1.2";
+constexpr const char* kVersion = "0.5.0";
 
 struct GlobalOptions {
     ConnectionConfig config;
@@ -46,6 +69,8 @@ struct GlobalOptions {
     bool port_set{false};
     bool data_dir_set{false};
     bool pg_bin_dir_set{false};
+    bool phrase_stdin{false};
+    bool backup_phrase_stdin{false};
 };
 
 std::filesystem::path default_migrations_dir() {
@@ -82,9 +107,16 @@ void print_usage(std::ostream& output) {
         << "  --port PORT        PostgreSQL port (default: 5432)\n"
         << "  --migrations DIR   migration directory\n"
         << "  --data-dir DIR     managed cluster data directory\n"
-        << "  --pg-bin-dir DIR   directory containing initdb/pg_ctl/postgres\n\n"
+        << "  --pg-bin-dir DIR   directory containing initdb/pg_ctl/postgres\n"
+        << "  --phrase-stdin     read the vault phrase from one stdin line\n"
+        << "  --backup-phrase-stdin\n"
+        << "                     read a separate backup phrase from one stdin line\n\n"
         << "Commands:\n"
         << "  version\n"
+        << "  vault status      show uninitialized, locked, or unlocked\n"
+        << "  vault setup [--phrase-stdin] [--kdf-ops N --kdf-mem BYTES]\n"
+        << "  vault unlock-check --phrase-stdin\n"
+        << "  vault change-phrase --phrase-stdin --new-phrase-stdin\n"
         << "  db setup [--existing|--managed] [--yes] [--force]\n"
         << "            first-run selection of an existing or managed cluster\n"
         << "  db start           start the application-managed cluster\n"
@@ -93,6 +125,7 @@ void print_usage(std::ostream& output) {
         << "  db ping\n"
         << "  db init            create the database if missing, then migrate\n"
         << "  db migrate\n"
+        << "  db migrate-vault [--yes] [--phrase-stdin] [--purge-old PATH]\n"
         << "  db status          show migration status\n"
         << "  settings show\n"
         << "  settings set [--weight KG] [--birth-year YEAR]\n"
@@ -105,9 +138,10 @@ void print_usage(std::ostream& output) {
         << "            --dose-mg N --time-h H [--extras JSON]\n"
         << "            [--updated-at MS] [--created-at MS] [--id UUID]\n"
         << "  doses remove --id UUID\n"
-        << "  backup export FILE\n"
-        << "  backup preview FILE\n"
-        << "  backup import FILE [--dry-run]\n";
+        << "  backup export FILE [--plaintext]\n"
+        << "  backup preview FILE [--backup-phrase-stdin]\n"
+        << "  backup import FILE [--dry-run] [--plaintext]\n"
+        << "                [--backup-phrase-stdin]\n";
 }
 
 std::string require_value(const std::vector<std::string>& args, std::size_t& index,
@@ -149,6 +183,19 @@ std::int64_t parse_i64(const std::string& value, std::string_view option) {
     try {
         std::size_t consumed = 0;
         const auto result = std::stoll(value, &consumed);
+        if (consumed != value.size()) {
+            throw std::invalid_argument("trailing characters");
+        }
+        return result;
+    } catch (const std::exception&) {
+        throw Error("invalid integer for " + std::string(option) + ": " + value);
+    }
+}
+
+std::uint64_t parse_u64(const std::string& value, std::string_view option) {
+    try {
+        std::size_t consumed = 0;
+        const auto result = std::stoull(value, &consumed);
         if (consumed != value.size()) {
             throw std::invalid_argument("trailing characters");
         }
@@ -210,6 +257,10 @@ GlobalOptions parse_global_options(const std::vector<std::string>& args,
             options.pg_bin_dir =
                 require_value(args, index, "--pg-bin-dir");
             options.pg_bin_dir_set = true;
+        } else if (option == "--phrase-stdin") {
+            options.phrase_stdin = true;
+        } else if (option == "--backup-phrase-stdin") {
+            options.backup_phrase_stdin = true;
         } else {
             throw Error("unknown global option: " + option);
         }
@@ -256,6 +307,278 @@ std::int64_t now_ms() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::system_clock::now().time_since_epoch())
         .count();
+}
+
+constexpr const char* kPlaintextWarning =
+    "Deleting the old database directory removes the files this application "
+    "knows about. It does not guarantee erasure on SSDs, copy-on-write "
+    "filesystems, snapshots, RAID, or backups. Full-disk encryption and "
+    "destruction of the old medium are the only reliable remedies.";
+
+class SecretString {
+public:
+    SecretString() = default;
+    ~SecretString() { clear(); }
+
+    SecretString(const SecretString&) = delete;
+    SecretString& operator=(const SecretString&) = delete;
+
+    SecretString(SecretString&& other) noexcept
+        : value_(std::move(other.value_)) {
+        other.clear();
+    }
+
+    SecretString& operator=(SecretString&& other) noexcept {
+        if (this != &other) {
+            clear();
+            value_ = std::move(other.value_);
+            other.clear();
+        }
+        return *this;
+    }
+
+    void assign(std::string value) {
+        clear();
+        value_ = std::move(value);
+    }
+
+    [[nodiscard]] const std::string& value() const noexcept { return value_; }
+
+    void clear() noexcept {
+        if (!value_.empty()) {
+            sodium_memzero(value_.data(), value_.size());
+        }
+        value_.clear();
+    }
+
+private:
+    std::string value_;
+};
+
+std::string read_secret_from_stdin() {
+    std::array<char, 4098> buffer{};
+    if (!std::cin.getline(buffer.data(), buffer.size())) {
+        const bool too_long = std::cin.fail() && !std::cin.eof();
+        sodium_memzero(buffer.data(), buffer.size());
+        if (too_long) {
+            throw Error("phrase on stdin is longer than 4096 bytes");
+        }
+        throw Error("could not read the vault phrase from stdin");
+    }
+    const auto count = static_cast<std::size_t>(std::cin.gcount());
+    std::string raw(buffer.data(), count);
+    sodium_memzero(buffer.data(), buffer.size());
+    if (!raw.empty() && raw.back() == '\r') {
+        raw.pop_back();
+    }
+    std::string normalized = Passphrase::normalize(raw);
+    sodium_memzero(raw.data(), raw.size());
+    if (normalized.empty()) {
+        throw Error("empty phrase on stdin");
+    }
+    return normalized;
+}
+
+struct UnlockedVault {
+    explicit UnlockedVault(const ConnectionConfig& config) : vault(config) {}
+
+    VaultStore vault;
+    SecretString phrase;
+};
+
+UnlockedVault open_unlocked_vault(const GlobalOptions& global,
+                                  bool phrase_stdin) {
+    UnlockedVault unlocked(global.config);
+    unlocked.vault.open();
+    const VaultState state = unlocked.vault.state();
+    if (state == VaultState::Uninitialized) {
+        throw Error("vault is not initialized; run `oyama-hrt-cli vault setup`");
+    }
+    if (state == VaultState::Unlocked) {
+        return unlocked;
+    }
+    if (!phrase_stdin) {
+        throw Error(
+            "vault is locked; pass --phrase-stdin to supply the vault phrase");
+    }
+    unlocked.phrase.assign(read_secret_from_stdin());
+    unlocked.vault.unlock(unlocked.phrase.value());
+    return unlocked;
+}
+
+bool backup_file_is_encrypted(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    if (!input) {
+        throw Error("could not open backup: " + path.string());
+    }
+    char magic[8];
+    input.read(magic, sizeof(magic));
+    if (input.bad()) {
+        throw Error("could not read backup: " + path.string());
+    }
+    const auto count = static_cast<std::size_t>(input.gcount());
+    return is_encrypted_backup(std::string_view(magic, count));
+}
+
+void print_plaintext_warning() {
+    std::cout << "warning\t" << kPlaintextWarning << '\n';
+}
+
+bool path_exists(const std::filesystem::path& path) {
+    std::error_code error;
+    const bool exists = std::filesystem::exists(path, error);
+    if (error) {
+        throw Error("could not inspect " + path.string() + ": " +
+                    error.message());
+    }
+    return exists;
+}
+
+ConnectionConfig cluster_connection(const LocalCluster& cluster,
+                                    const AppConfig& config) {
+    ConnectionConfig connection = cluster.connection_config();
+    connection.dbname = config.dbname;
+    connection.user = config.user;
+    return connection;
+}
+
+void ensure_database_exists(const ConnectionConfig& config) {
+    ConnectionConfig admin_config = config;
+    admin_config.dbname = "postgres";
+    Connection admin(admin_config);
+    const auto exists = admin.exec_params(
+        "SELECT 1 FROM pg_database WHERE datname = $1", {config.dbname});
+    if (exists.rows() == 0) {
+        (void)admin.exec("CREATE DATABASE " +
+                         admin.quote_identifier(config.dbname));
+    }
+}
+
+void print_legacy_counts(const LegacyCounts& counts) {
+    std::cout << "count\tsettings\t" << counts.settings << '\n';
+    std::cout << "count\tpreferences\t" << counts.preferences << '\n';
+    std::cout << "count\tdose_events\t" << counts.dose_events << '\n';
+    std::cout << "count\tlab_results\t" << counts.lab_results << '\n';
+    std::cout << "count\tdose_templates\t" << counts.dose_templates << '\n';
+    std::cout << "count\tquick_doses\t" << counts.quick_doses << '\n';
+    std::cout << "count\tsupplies\t" << counts.supplies << '\n';
+    std::cout << "count\tplan_items\t" << counts.plan_items << '\n';
+    std::cout << "count\ttombstones\t" << counts.tombstones << '\n';
+}
+
+void print_promotion_plaintext(const LegacyPaths& paths) {
+    const auto plaintext = oyama::storage::find_plaintext_dirs(paths);
+    if (plaintext.size() != 1) {
+        throw Error("expected exactly one plaintext directory but found " +
+                    std::to_string(plaintext.size()));
+    }
+    std::cout << "plaintext path: " << plaintext.front().string() << '\n';
+    print_plaintext_warning();
+}
+
+void purge_plaintext(const LegacyPaths& paths,
+                     const std::filesystem::path& requested, bool yes) {
+    if (!yes) {
+        throw Error("deleting the plaintext directory requires --yes");
+    }
+    if (requested.empty()) {
+        throw Error("--purge-old requires a path");
+    }
+    std::error_code error;
+    std::filesystem::path target = std::filesystem::absolute(requested, error);
+    if (error) {
+        throw Error("could not resolve --purge-old path: " + error.message());
+    }
+    target = target.lexically_normal();
+
+    const auto plaintext = oyama::storage::find_plaintext_dirs(paths);
+    if (plaintext.size() != 1) {
+        throw Error("expected exactly one plaintext directory but found " +
+                    std::to_string(plaintext.size()));
+    }
+    if (target != plaintext.front()) {
+        throw Error("--purge-old path does not exactly match the plaintext "
+                    "directory: " +
+                    plaintext.front().string());
+    }
+
+    const std::filesystem::file_status status =
+        std::filesystem::symlink_status(plaintext.front(), error);
+    if (error) {
+        throw Error("could not inspect " + plaintext.front().string() + ": " +
+                    error.message());
+    }
+    if (std::filesystem::is_symlink(status)) {
+        throw Error("refusing to delete a symlinked plaintext path: " +
+                    plaintext.front().string());
+    }
+    if (!std::filesystem::is_directory(status)) {
+        throw Error("plaintext path is not a directory: " +
+                    plaintext.front().string());
+    }
+
+    std::filesystem::remove_all(plaintext.front(), error);
+    if (error) {
+        throw Error("could not remove " + plaintext.front().string() + ": " +
+                    error.message());
+    }
+    std::cout << "purged\t" << plaintext.front().string() << '\n';
+    print_plaintext_warning();
+}
+
+void require_promotion_confirmation(bool yes) {
+    if (yes) {
+        return;
+    }
+    if (::isatty(STDIN_FILENO) != 1) {
+        throw Error("refusing to promote the migrated vault without --yes");
+    }
+    std::cout << "Promote the migrated vault and keep the old cluster as a "
+                 "plaintext sibling? [y/N]: "
+              << std::flush;
+    std::string answer;
+    if (!std::getline(std::cin, answer)) {
+        throw Error("migration cancelled");
+    }
+    if (answer != "y" && answer != "Y" && answer != "yes" &&
+        answer != "YES") {
+        throw Error("migration cancelled");
+    }
+}
+
+AppConfig migration_config(const GlobalOptions& global) {
+    if (!global.app_config.has_value()) {
+        throw Error("no database configuration found; run `db setup "
+                    "--managed`");
+    }
+    if (global.app_config->backend != Backend::Managed) {
+        throw Error(
+            "db migrate-vault only supports an application-managed cluster; "
+            "for an existing server, use the previous binary's JSON export "
+            "(`oyama-hrt-cli backup export --out old.json`) and import it "
+            "with `oyama-hrt-cli backup import old.json --plaintext "
+            "--phrase-stdin`");
+    }
+    AppConfig config = *global.app_config;
+    if (global.data_dir_set) {
+        config.data_dir = global.data_dir.string();
+    }
+    if (global.socket_set) {
+        config.socket_dir = global.config.socket_dir;
+    }
+    if (global.port_set) {
+        config.port = global.config.port;
+    }
+    if (global.dbname_set) {
+        config.dbname = global.config.dbname;
+    }
+    if (global.user_set) {
+        config.user = global.config.user;
+    }
+    if (global.pg_bin_dir_set) {
+        config.server_bin_dir = global.pg_bin_dir;
+    }
+    return config;
 }
 
 Mode parse_mode_or_throw(const std::string& value) {
@@ -639,13 +962,355 @@ int command_db_setup(const GlobalOptions& global,
     throw Error("db setup did not select a backend");
 }
 
+int command_db_migrate_vault(const GlobalOptions& global,
+                             const std::vector<std::string>& args,
+                             std::size_t index) {
+    bool yes = false;
+    bool phrase_stdin = global.phrase_stdin;
+    std::optional<std::filesystem::path> purge_old;
+    while (index < args.size()) {
+        const std::string option = args[index];
+        if (option == "--yes" || option == "-y") {
+            yes = true;
+        } else if (option == "--phrase-stdin") {
+            phrase_stdin = true;
+        } else if (option == "--purge-old") {
+            if (purge_old.has_value()) {
+                throw Error("--purge-old specified more than once");
+            }
+            purge_old = require_value(args, index, option);
+        } else if (option == "--help" || option == "-h") {
+            print_usage(std::cout);
+            return 0;
+        } else {
+            throw Error("unknown db migrate-vault option: " + option);
+        }
+        ++index;
+    }
+
+    const AppConfig config = migration_config(global);
+    const LegacyPaths paths =
+        oyama::storage::make_legacy_paths(config.data_dir, config.socket_dir);
+    const PromotionState state = oyama::storage::inspect_promotion(paths);
+
+    if (state == PromotionState::ManualReview) {
+        throw Error("migration directory state requires manual inspection at " +
+                    paths.data_dir.parent_path().string());
+    }
+    if (state == PromotionState::Promoted) {
+        if (purge_old.has_value()) {
+            purge_plaintext(paths, *purge_old, yes);
+            return 0;
+        }
+        print_promotion_plaintext(paths);
+        return 0;
+    }
+
+    LocalClusterConfig old_config;
+    old_config.data_dir = paths.data_dir;
+    old_config.socket_dir = paths.socket_dir;
+    old_config.server_bin_dir = config.server_bin_dir;
+    old_config.port = config.port;
+    LocalCluster old_cluster(old_config);
+
+    LocalClusterConfig target_config = old_config;
+    target_config.data_dir = paths.target_data_dir;
+    target_config.socket_dir = paths.target_socket_dir;
+    target_config.log_file =
+        paths.target_data_dir.parent_path() /
+        (paths.target_data_dir.filename().string() + ".log");
+    LocalCluster target_cluster(target_config);
+
+    if (state == PromotionState::TargetPending &&
+        !path_exists(paths.data_dir)) {
+        require_promotion_confirmation(yes);
+        if (!target_cluster.is_initialized()) {
+            throw Error("migration target is not an initialized cluster: " +
+                        paths.target_data_dir.string());
+        }
+        target_cluster.start();
+        try {
+            Connection target_connection(
+                cluster_connection(target_cluster, config));
+            const auto meta = target_connection.exec(
+                "SELECT to_regclass('vault_meta') IS NOT NULL AND "
+                "EXISTS (SELECT 1 FROM vault_meta)");
+            if (!meta.boolean(0, 0)) {
+                throw Error("migration target has no vault metadata; "
+                            "refusing to finish promotion");
+            }
+        } catch (...) {
+            try {
+                target_cluster.stop();
+            } catch (...) {
+            }
+            throw;
+        }
+        oyama::storage::promote_after_verification(old_cluster, target_cluster,
+                                                   paths);
+        print_promotion_plaintext(paths);
+        if (purge_old.has_value()) {
+            purge_plaintext(paths, *purge_old, yes);
+        }
+        return 0;
+    }
+
+    if (!phrase_stdin) {
+        throw Error("db migrate-vault requires --phrase-stdin");
+    }
+    SecretString phrase;
+    phrase.assign(read_secret_from_stdin());
+
+    if (state == PromotionState::TargetPending) {
+        std::cout << "resuming\t" << paths.target_data_dir.string() << '\n';
+    }
+    require_promotion_confirmation(yes);
+
+    const bool old_was_running =
+        old_cluster.is_initialized() && old_cluster.is_running();
+    LegacyImportResult result;
+    try {
+        old_cluster.start();
+        {
+            Connection old_connection(
+                cluster_connection(old_cluster, config));
+            (void)old_connection.exec(
+                "SET default_transaction_read_only = on");
+            const LegacyDetection detection =
+                oyama::storage::detect_legacy(old_connection);
+            if (detection.has_meta) {
+                throw Error("old cluster already contains a vault "
+                            "(vault_meta); mixed legacy and vault data must "
+                            "use the JSON export/restore path");
+            }
+            if (!detection.has_legacy) {
+                throw Error("no legacy plaintext data found in " +
+                            paths.data_dir.string());
+            }
+
+            target_cluster.initialize();
+            target_cluster.start();
+            const ConnectionConfig target_connection_config =
+                cluster_connection(target_cluster, config);
+            ensure_database_exists(target_connection_config);
+            {
+                Database target_database(target_connection_config,
+                                         global.migrations);
+                (void)target_database.migrate();
+                std::cout << "target schema version "
+                          << target_database.current_version() << '\n';
+            }
+            {
+                VaultStore vault(target_connection_config);
+                vault.open();
+                if (vault.state() == VaultState::Uninitialized) {
+                    vault.setup(phrase.value());
+                    vault.unlock(phrase.value());
+                } else if (vault.state() == VaultState::Locked) {
+                    vault.unlock(phrase.value());
+                }
+                if (!vault.is_unlocked()) {
+                    throw Error("target vault could not be unlocked");
+                }
+
+                LegacyMigrator migrator(
+                    old_connection, vault,
+                    [](std::string_view kind, std::size_t done,
+                       std::size_t total) {
+                        std::cout << "progress\t" << kind << '\t' << done
+                                  << '/' << total << '\n';
+                    });
+                result = migrator.import_all();
+                if (result.source_sha256 != result.target_sha256) {
+                    throw Error("migration verification failed: source and "
+                                "target digests differ");
+                }
+            }
+        }
+    } catch (...) {
+        try {
+            target_cluster.stop();
+        } catch (...) {
+        }
+        if (!old_was_running) {
+            try {
+                old_cluster.stop();
+            } catch (...) {
+            }
+        }
+        throw;
+    }
+
+    print_legacy_counts(result.counts);
+    std::cout << "source_sha256\t" << result.source_sha256 << '\n';
+    std::cout << "target_sha256\t" << result.target_sha256 << '\n';
+    std::cout << "verified\tyes\n";
+
+    oyama::storage::promote_after_verification(old_cluster, target_cluster,
+                                               paths);
+    print_promotion_plaintext(paths);
+    if (purge_old.has_value()) {
+        purge_plaintext(paths, *purge_old, yes);
+    }
+    return 0;
+}
+
+int command_vault(const GlobalOptions& global,
+                  const std::vector<std::string>& args, std::size_t index) {
+    if (index >= args.size()) {
+        throw Error("vault needs status, setup, unlock-check or change-phrase");
+    }
+    const std::string command = args[index++];
+    ensure_managed_running(global);
+
+    if (command == "status") {
+        if (index != args.size()) {
+            throw Error("unexpected argument for vault status: " + args[index]);
+        }
+        VaultStore vault(global.config);
+        vault.open();
+        switch (vault.state()) {
+        case VaultState::Uninitialized:
+            std::cout << "uninitialized\n";
+            break;
+        case VaultState::Locked:
+            std::cout << "locked\n";
+            break;
+        case VaultState::Unlocked:
+            std::cout << "unlocked\n";
+            break;
+        }
+        return 0;
+    }
+
+    if (command == "setup") {
+        bool phrase_stdin = global.phrase_stdin;
+        bool saw_ops = false;
+        bool saw_mem = false;
+        VaultKdfParams params;
+        while (index < args.size()) {
+            const std::string option = args[index];
+            if (option == "--phrase-stdin") {
+                phrase_stdin = true;
+            } else if (option == "--kdf-ops") {
+                params.opslimit =
+                    parse_u64(require_value(args, index, option), option);
+                saw_ops = true;
+            } else if (option == "--kdf-mem") {
+                params.memlimit =
+                    parse_u64(require_value(args, index, option), option);
+                saw_mem = true;
+            } else if (option == "--help" || option == "-h") {
+                print_usage(std::cout);
+                return 0;
+            } else {
+                throw Error("unknown vault setup option: " + option);
+            }
+            ++index;
+        }
+        if (saw_ops != saw_mem) {
+            throw Error("--kdf-ops and --kdf-mem must be used together");
+        }
+
+        VaultStore vault(global.config);
+        vault.open();
+        if (vault.state() != VaultState::Uninitialized) {
+            throw Error("vault is already initialized");
+        }
+
+        if (phrase_stdin) {
+            SecretString phrase;
+            phrase.assign(read_secret_from_stdin());
+            vault.setup(phrase.value(), params);
+        } else {
+            const auto words = Passphrase::generate();
+            SecretString phrase;
+            phrase.assign(Passphrase::join(words));
+            std::cout << "phrase\t" << phrase.value() << '\n' << std::flush;
+
+            const auto positions = Passphrase::challenge(words.size());
+            std::vector<std::string> answers;
+            answers.reserve(positions.size());
+            for (const std::size_t position : positions) {
+                std::cout << "word " << (position + 1) << ": " << std::flush;
+                std::string answer;
+                if (!std::getline(std::cin, answer)) {
+                    throw Error("vault setup cancelled");
+                }
+                answers.push_back(answer);
+            }
+            if (!Passphrase::verify_challenge(phrase.value(), positions,
+                                              answers)) {
+                throw Error("vault setup challenge did not match; no vault was "
+                            "created");
+            }
+            vault.setup(phrase.value(), params);
+        }
+        std::cout << "initialized\n";
+        return 0;
+    }
+
+    if (command == "unlock-check") {
+        bool phrase_stdin = global.phrase_stdin;
+        while (index < args.size()) {
+            const std::string option = args[index];
+            if (option == "--phrase-stdin") {
+                phrase_stdin = true;
+            } else if (option == "--help" || option == "-h") {
+                print_usage(std::cout);
+                return 0;
+            } else {
+                throw Error("unknown vault unlock-check option: " + option);
+            }
+            ++index;
+        }
+        (void)open_unlocked_vault(global, phrase_stdin);
+        std::cout << "unlocked\n";
+        return 0;
+    }
+
+    if (command == "change-phrase") {
+        bool phrase_stdin = global.phrase_stdin;
+        bool new_phrase_stdin = false;
+        while (index < args.size()) {
+            const std::string option = args[index];
+            if (option == "--phrase-stdin") {
+                phrase_stdin = true;
+            } else if (option == "--new-phrase-stdin") {
+                new_phrase_stdin = true;
+            } else if (option == "--help" || option == "-h") {
+                print_usage(std::cout);
+                return 0;
+            } else {
+                throw Error("unknown vault change-phrase option: " + option);
+            }
+            ++index;
+        }
+        if (!new_phrase_stdin) {
+            throw Error("vault change-phrase requires --new-phrase-stdin");
+        }
+        UnlockedVault unlocked = open_unlocked_vault(global, phrase_stdin);
+        SecretString new_phrase;
+        new_phrase.assign(read_secret_from_stdin());
+        unlocked.vault.change_phrase(new_phrase.value());
+        std::cout << "changed\n";
+        return 0;
+    }
+
+    throw Error("unknown vault command: " + command);
+}
+
 int command_db(const GlobalOptions& global,
                const std::vector<std::string>& args, std::size_t index) {
     if (index >= args.size()) {
         throw Error("db needs setup, start, stop, cluster-status, ping, init, "
-                    "migrate or status");
+                    "migrate, migrate-vault or status");
     }
     const std::string command = args[index++];
+
+    if (command == "migrate-vault") {
+        return command_db_migrate_vault(global, args, index);
+    }
 
     if (command == "setup") {
         return command_db_setup(global, args, index);
@@ -763,8 +1428,10 @@ int command_settings(const GlobalOptions& global,
         throw Error("settings needs show or set");
     }
     const std::string command = args[index++];
-    Database database(global.config, global.migrations);
-    SettingsRepository repository(database.connection());
+    ensure_managed_running(global);
+    UnlockedVault unlocked =
+        open_unlocked_vault(global, global.phrase_stdin);
+    VaultSettingsRepository repository(unlocked.vault);
 
     if (command == "show") {
         if (index != args.size()) {
@@ -861,53 +1528,95 @@ int command_backup(const GlobalOptions& global,
         throw Error("backup needs export, preview or import");
     }
     const std::string command = args[index++];
+    if (command != "export" && command != "preview" && command != "import") {
+        throw Error("unknown backup command: " + command);
+    }
+
     bool dry_run = false;
+    bool plaintext = false;
+    bool backup_phrase_stdin = global.backup_phrase_stdin;
     std::filesystem::path file;
-    if (command == "import") {
-        for (; index < args.size(); ++index) {
-            if (args[index] == "--dry-run") {
-                dry_run = true;
-            } else if (file.empty()) {
-                file = args[index];
-            } else {
-                throw Error("unexpected argument for backup import: " +
-                            args[index]);
+    while (index < args.size()) {
+        const std::string option = args[index];
+        if (option == "--dry-run") {
+            if (command != "import") {
+                throw Error("--dry-run is only valid for backup import");
             }
-        }
-        if (file.empty()) {
-            throw Error("backup import needs a file");
-        }
-    } else {
-        if (index >= args.size()) {
-            throw Error("backup " + command + " needs a file");
-        }
-        file = args[index++];
-        if (index != args.size()) {
+            dry_run = true;
+        } else if (option == "--plaintext") {
+            plaintext = true;
+        } else if (option == "--backup-phrase-stdin") {
+            backup_phrase_stdin = true;
+        } else if (option == "--help" || option == "-h") {
+            print_usage(std::cout);
+            return 0;
+        } else if (option.rfind("--", 0) == 0) {
+            throw Error("unknown backup " + command + " option: " + option);
+        } else if (file.empty()) {
+            file = option;
+        } else {
             throw Error("unexpected argument for backup " + command + ": " +
-                        args[index]);
+                        option);
+        }
+        ++index;
+    }
+    if (file.empty()) {
+        throw Error("backup " + command + " needs a file");
+    }
+
+    bool encrypted = false;
+    if (command != "export") {
+        encrypted = backup_file_is_encrypted(file);
+        if (command == "import" && !encrypted && !plaintext) {
+            throw Error("backup is not encrypted; pass --plaintext to import "
+                        "an upstream JSON backup");
         }
     }
 
     ensure_managed_running(global);
-    Connection connection(global.config);
+    UnlockedVault unlocked =
+        open_unlocked_vault(global, global.phrase_stdin);
+
     if (command == "export") {
-        export_backup(connection, file, now_ms());
+        if (plaintext) {
+            export_backup(unlocked.vault, file, now_ms());
+            std::cout << "exported " << file.string() << '\n';
+            std::cout << "warning\tbackup contains plaintext health data\n";
+            return 0;
+        }
+        SecretString backup_phrase;
+        std::string_view phrase = unlocked.phrase.value();
+        if (backup_phrase_stdin) {
+            backup_phrase.assign(read_secret_from_stdin());
+            phrase = backup_phrase.value();
+        }
+        export_encrypted_backup(unlocked.vault, file, now_ms(), phrase);
         std::cout << "exported " << file.string() << '\n';
-        std::cout << "warning\tbackup contains plaintext health data\n";
         return 0;
     }
+
+    SecretString backup_phrase;
+    std::string_view file_phrase;
+    if (encrypted) {
+        if (backup_phrase_stdin) {
+            backup_phrase.assign(read_secret_from_stdin());
+            file_phrase = backup_phrase.value();
+        } else {
+            file_phrase = unlocked.phrase.value();
+        }
+    }
+
     if (command == "preview" || (command == "import" && dry_run)) {
-        const auto preview = preview_backup(connection, file, now_ms());
+        const auto preview = preview_backup(unlocked.vault, file, now_ms(),
+                                            file_phrase);
         print_backup_preview(preview);
         return preview.ok ? 0 : 1;
     }
-    if (command == "import") {
-        const auto result = import_backup(connection, file, now_ms());
-        print_backup_preview(result.preview);
-        std::cout << "applied\t" << (result.applied ? "yes" : "no") << '\n';
-        return result.applied ? 0 : 1;
-    }
-    throw Error("unknown backup command: " + command);
+    const auto result =
+        import_backup(unlocked.vault, file, now_ms(), file_phrase);
+    print_backup_preview(result.preview);
+    std::cout << "applied\t" << (result.applied ? "yes" : "no") << '\n';
+    return result.applied ? 0 : 1;
 }
 
 int command_doses(const GlobalOptions& global,
@@ -916,8 +1625,10 @@ int command_doses(const GlobalOptions& global,
         throw Error("doses needs list, add or remove");
     }
     const std::string command = args[index++];
-    Database database(global.config, global.migrations);
-    DoseEventRepository repository(database.connection());
+    ensure_managed_running(global);
+    UnlockedVault unlocked =
+        open_unlocked_vault(global, global.phrase_stdin);
+    VaultDoseEventRepository repository(unlocked.vault);
 
     if (command == "list") {
         Mode mode = Mode::Transfem;
@@ -1058,6 +1769,9 @@ int main(int argc, char** argv) {
         }
         if (command == "db") {
             return command_db(global, args, index);
+        }
+        if (command == "vault") {
+            return command_vault(global, args, index);
         }
         if (command == "settings") {
             return command_settings(global, args, index);

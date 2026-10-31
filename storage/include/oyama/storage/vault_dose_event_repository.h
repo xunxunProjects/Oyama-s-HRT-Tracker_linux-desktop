@@ -1,6 +1,5 @@
 #pragma once
 
-#include "connection.h"
 #include "types.h"
 
 #include <cstddef>
@@ -10,9 +9,11 @@
 
 namespace oyama::storage {
 
-class DoseEventRepository {
+class VaultStore;
+
+class VaultDoseEventRepository {
 public:
-    explicit DoseEventRepository(Connection& connection);
+    explicit VaultDoseEventRepository(VaultStore& vault);
 
     [[nodiscard]] std::vector<DoseEvent> list(Mode mode);
     [[nodiscard]] std::optional<DoseEvent> get(std::string_view id);
@@ -21,7 +22,7 @@ public:
     [[nodiscard]] std::size_t count(Mode mode);
 
 private:
-    Connection& connection_;
+    VaultStore& vault_;
 };
 
 }  // namespace oyama::storage

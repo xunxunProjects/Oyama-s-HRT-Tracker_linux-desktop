@@ -24,6 +24,10 @@ struct ConnectionConfig {
     std::string application_name{"oyama-hrt"};
     int connect_timeout_seconds{5};
 
+    /// Returns a libpq keyword/value connection string.  Values are quoted
+    /// and escaped so socket paths containing spaces or quotes are safe.
+    [[nodiscard]] std::string to_conninfo() const;
+
     /// Reads OYAMA_PG_* first, then the corresponding libpq PG* variables.
     /// PG* values are never used to enable a TCP host.
     [[nodiscard]] static ConnectionConfig from_environment();

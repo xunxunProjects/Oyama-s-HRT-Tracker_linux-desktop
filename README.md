@@ -1,18 +1,21 @@
 # Oyama's HRT Tracker — Linux / BSD Desktop
 
 A native Qt 6 desktop application for Linux and BSD. Local-only: no account,
-no cloud, no telemetry. Health records live in a local PostgreSQL database, and
-data moves in and out through the upstream `oyama-hrt-complete-backup` format.
+no cloud, no telemetry. Health records live in a local PostgreSQL database and
+are encrypted at the application layer before they reach PostgreSQL. Data moves
+in and out through the upstream `oyama-hrt-complete-backup` format, encrypted by
+default.
 
-**Status: model core, storage foundation, local database setup, backup
-import/export, and an early Qt/QML shell implemented (M2).** The C99
+**Status: model core, encrypted storage, legacy migration, encrypted backups,
+and an early vault-gated Qt/QML shell implemented (M2).** The C99
 pharmacokinetic core is in `core/`, with a strict C test and a comparison
 harness that checks it against the upstream TypeScript model to machine
 precision. `storage/` contains the PostgreSQL schema, forward-only migration
-runner, typed repositories, the application-managed cluster lifecycle, and the
-LWW/tombstone backup merge; `cli/` exposes setup, migration, data, and backup
-commands. `app/` now has a Qt 6/QML shell with Overview, Add dose, History, and
-Settings screens wired to the local database and the PK model, including
+runner, the encrypted vault and its C ABI, typed repositories, the
+application-managed cluster lifecycle, and the LWW/tombstone backup merge;
+`cli/` exposes setup, vault, migration, data, and backup commands. `app/` has a
+Qt 6/QML shell with setup/unlock/lock gates and Overview, Add dose, History, and
+Settings screens wired to the encrypted vault and the PK model, including
 route-specific dose extras and in-place dose editing. It is an early milestone:
 Labs, Plan, Supplies, Forecast, packaging, and full upstream UI parity are still
 ahead.
@@ -25,14 +28,14 @@ ahead.
 ## Build
 
 Requirements: CMake 3.21+, Ninja (or another CMake generator), a C99 compiler,
-a C++20 compiler, and libpq 14 or newer. PostgreSQL server 14+ is needed for the
-database and for the integration tests. For the application-managed cluster,
-`initdb`, `pg_ctl`, and `postgres` must be on `PATH` or in a directory passed
-with `--pg-bin-dir`/`PG_BINDIR`. The Qt shell additionally needs Qt 6.4+ with
-the Core, Qml, Quick, and QuickControls2 modules; it is skipped automatically
-when those are missing and can be disabled explicitly with
-`-DOYAMA_BUILD_QT_SHELL=OFF`. There is no network, OpenSSL, Node, Rust, Qt
-WebEngine, or Electron dependency. Qt is used only for the local desktop UI.
+a C++20 compiler, libpq 14 or newer, and libsodium 1.0.18 or newer. PostgreSQL
+server 14+ is needed for the database and for the integration tests. For the
+application-managed cluster, `initdb`, `pg_ctl`, and `postgres` must be on
+`PATH` or in a directory passed with `--pg-bin-dir`/`PG_BINDIR`. The Qt shell
+additionally needs Qt 6.4+ with the Core, Qml, Quick, and QuickControls2
+modules; it is skipped automatically when those are missing and can be disabled
+explicitly with `-DOYAMA_BUILD_QT_SHELL=OFF`. There is no network, Node, Rust,
+Qt WebEngine, or Electron dependency. Qt is used only for the local desktop UI.
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -49,14 +52,16 @@ sudo make install
 ```
 
 The package names and platform-specific notes are in
-[`依赖清单.md`](依赖清单.md). OpenBSD is a native build target; its binary is
+[`docs/dependencies.md`](docs/dependencies.md). OpenBSD is a native build target; its binary is
 not interchangeable with the Linux or FreeBSD builds.
 
 The PK test binary is `build/pk_smoke_test`; the comparison dumper is
-`build/oyama_pk_dump` (see `tools/compare/README.md`). The storage tests are
-`build/storage_test` and `build/backup_test`; the integration CTests start
-throwaway PostgreSQL clusters when `initdb`/`pg_ctl` are available, or skip.
-Set `PG_BINDIR=/path/to/postgres/bin` if the server tools are not on `PATH`.
+`build/oyama_pk_dump` (see `tools/compare/README.md`). Storage tests include
+`storage_test`, `vault_store_test`, `vault_codec_test`, `vault_repository_test`,
+`legacy_migration_test`, `legacy_promotion_test`, `backup_crypto_test`, and
+`backup_test`; the integration CTests start throwaway PostgreSQL clusters when
+`initdb`/`pg_ctl` are available, or skip. Set `PG_BINDIR=/path/to/postgres/bin`
+if the server tools are not on `PATH`.
 
 The Qt shell is `build/oyama-hrt-app`. It uses the database configured by
 `oyama-hrt-cli db setup`. A headless QML smoke check is available with
@@ -108,6 +113,27 @@ directory, port, database name, user, and, for a managed cluster, the data
 directory and PostgreSQL binary directory. Subsequent commands use that config
 automatically; command-line connection flags still override it.
 
+After the cluster exists, create the encrypted vault and its paper recovery
+phrase:
+
+```sh
+build/oyama-hrt-cli vault setup
+```
+
+The normal interactive setup generates seven EFF Diceware words (about 90 bits
+of entropy), prints them once, and asks you to write them down and re-enter
+three positions. Write the phrase on paper, keep it offline, and store it
+somewhere you trust, such as a safe. There is no password reset, recovery key,
+or support override: losing the phrase makes the vault permanently
+unreadable. Do not paste it into a clipboard, a chat window, a shell argument,
+or a file on the same machine.
+
+`vault setup --phrase-stdin` accepts an externally supplied phrase for
+provisioning and tests; normal users should use the interactive generator. The
+CLI reads data-command phrases from one stdin line with the global
+`--phrase-stdin` option. It never accepts the phrase as a command-line
+argument.
+
 The managed cluster:
 
 - lives in `$XDG_DATA_HOME/oyama-hrt/pgdata` (default
@@ -131,25 +157,74 @@ build/oyama-hrt-cli db cluster-status
 build/oyama-hrt-cli db ping
 build/oyama-hrt-cli db init
 build/oyama-hrt-cli db status
-build/oyama-hrt-cli settings set --weight 70 --birth-year 1995
-build/oyama-hrt-cli doses add \
+build/oyama-hrt-cli vault status
+build/oyama-hrt-cli vault setup
+build/oyama-hrt-cli vault unlock-check --phrase-stdin
+build/oyama-hrt-cli vault change-phrase --phrase-stdin --new-phrase-stdin
+build/oyama-hrt-cli db migrate-vault --yes --phrase-stdin
+build/oyama-hrt-cli settings set --weight 70 --birth-year 1995 --phrase-stdin
+build/oyama-hrt-cli doses add --phrase-stdin \
   --mode transfem --route oral --ester E2 --dose-mg 2 --time-h 480000
-build/oyama-hrt-cli backup export ~/oyama-backup.json
-build/oyama-hrt-cli backup preview ~/oyama-backup.json
-build/oyama-hrt-cli backup import ~/oyama-backup.json
+build/oyama-hrt-cli backup export ~/oyama-backup.json --phrase-stdin
+build/oyama-hrt-cli backup preview ~/oyama-backup.json --phrase-stdin
+build/oyama-hrt-cli backup import ~/oyama-backup.json --phrase-stdin
+```
+
+Every command that needs the vault reads one line from stdin when given
+`--phrase-stdin`; the phrase is never accepted as an argv value. For interactive
+use, read it without echo and pipe it:
+
+```sh
+read -r -s -p 'Vault phrase: ' VAULT_PHRASE; echo
+printf '%s\n' "$VAULT_PHRASE" | build/oyama-hrt-cli --phrase-stdin settings show
+unset VAULT_PHRASE
 ```
 
 `db init` creates the `oyama_hrt` database when missing and applies all pending
 migrations in one transaction. Migrations live in `storage/migrations/` and are
 forward-only; the runner records a checksum for each applied file.
 
+### Migrating an old plaintext cluster
+
+For an application-managed cluster created by an older build, `db migrate-vault`
+imports the old rows into a new vault and verifies the result:
+
+```sh
+build/oyama-hrt-cli db migrate-vault --yes --phrase-stdin
+```
+
+The command creates a sibling cluster at `<data_dir>-migrate`, applies the vault
+schema, imports every legacy row in one transaction, compares canonical
+SHA-256 digests of the source and target, and only then promotes the new cluster
+into the original path. The old plaintext directory is renamed to
+`<data_dir>-plaintext-<UTC timestamp>` and its path is printed. That directory is
+still plaintext. Deleting it is not guaranteed erasure, especially on SSDs,
+copy-on-write filesystems, snapshots, or backups; `shred` is best-effort only.
+Full-disk encryption (for example LUKS2) is the reliable protection for the old
+cluster, WAL, free pages, and any copies.
+
+`--purge-old <exact path>` deletes that exact plaintext directory after a
+confirmed migration and requires `--yes`. The app performs the same migration in
+a background worker when the configured backend is managed. For an existing
+(non-managed) server, the app refuses to migrate in place: export with the old
+binary to JSON, then import that file with
+`backup import old.json --plaintext --phrase-stdin`.
+
 ### Backup import/export
 
-Backups use the upstream `oyama-hrt-complete-backup` format, version 1. Export
-includes the optional `birthYear` extension; upstream ignores it, so a
-round-trip through the upstream app loses that field (the CLI preview reports
-it). Import and export are plaintext JSON and contain health data; export writes
-the file with mode 0600 and prints a warning.
+Backups are encrypted by default. `backup export FILE` writes an `OYAMAEBK` v1
+envelope using Argon2id and AES-256-GCM (or XChaCha20-Poly1305 when AES-GCM is
+unavailable), with a fresh salt and nonce and mode 0600. The vault phrase is used
+unless `--backup-phrase-stdin` supplies a separate backup phrase. `backup
+preview` and `backup import` auto-detect encrypted files; a missing or wrong
+phrase, or any tampering, is rejected before the database is written.
+`backup import --dry-run` previews without applying.
+
+`backup export --plaintext FILE` writes the upstream
+`oyama-hrt-complete-backup` JSON v1 format for interoperability. That file
+contains health data in clear text; the CLI prints a warning and writes mode
+0600. Use an encrypted volume or a pipe instead of leaving it on an ordinary
+disk. Plaintext import requires the explicit `--plaintext` flag.
 
 Merge behavior follows upstream:
 
@@ -162,14 +237,39 @@ Merge behavior follows upstream:
   untouched while other categories still merge;
 - import runs in one transaction, so a failure leaves the database unchanged.
 
-Our schema stores UUID record IDs, so non-UUID IDs from another client are
-rejected rather than rewritten. Lab records without an assay are imported as
-`immuno` because the local schema requires an assay value.
+The plaintext JSON includes the optional `birthYear` extension; upstream ignores
+it, so a round-trip through the upstream app loses that field (the CLI preview
+reports it). Our schema stores UUID record IDs, so non-UUID IDs from another
+client are rejected rather than rewritten. Lab records without an assay are
+imported as `immuno` because the local schema requires an assay value.
 
-The storage library exposes `LocalCluster`; the Qt shell calls
-`ensure_running()` during application startup, applies migrations, and loads
-settings and doses through the same repositories as the CLI. The app leaves a
-managed cluster running on exit; use `oyama-hrt-cli db stop` to stop it.
+The storage library exposes `LocalCluster` and the `VaultStore`; the Qt shell
+calls `ensure_running()` during application startup, applies migrations, shows
+the setup or unlock gate, and only then loads settings and doses through the
+vault-backed repositories. The app locks the vault after 15 minutes of
+inactivity and on quit, zeroing the in-memory DEK. It leaves a managed cluster
+running on exit; use `oyama-hrt-cli db stop` to stop it.
+
+## Security and threat model
+
+The vault protects data at rest: copied database files, WAL, backups, and a
+powered-off disk contain ciphertext, not health records. The phrase is never
+written by the application, logged, placed in argv, or offered through a
+clipboard.
+
+It does not protect against a malicious process or user that can act as your
+local account while the vault is unlocked. Such an attacker can read process
+memory, speak to the same PostgreSQL socket, or observe input. A cold-boot or
+memory-freezing attacker can also recover keys or plaintext from a running
+machine. Use full-disk encryption, a locked screen, a trusted operating system,
+and suspend/hibernate settings you understand. The application cannot promise
+that C++/Qt, libpq, PostgreSQL, the kernel page cache, swap, or a core dump
+never held a copy.
+
+There is no recovery phrase escrow and no back door. Losing the phrase means
+losing the data. The old plaintext cluster, if any, remains a separate exposure
+until it is removed or protected by full-disk encryption; deleting files is not
+guaranteed erasure.
 
 > [!WARNING]
 > **Not medical advice.** This application shows estimates from a
@@ -177,19 +277,25 @@ managed cluster running on exit; use `oyama-hrt-cli db stop` to stop it.
 > blood levels. Do not start, stop, or adjust any medication based on this
 > application alone.
 
-## 中文简介
+## Project status
 
-这是 Oyama's HRT Tracker 的 Linux / BSD 原生桌面版，使用 Qt 6 + QML 重写界面，
-核心药代动力学模型用 C99 实现。它只在本机运行，没有登录、云同步、遥测或分享功能；
-数据存在本地 PostgreSQL 中，通过导出/导入与主仓库版本互通。
+Version 0.5.0 is the first release with the encrypted local vault. The C99
+pharmacokinetic core has been compared point-by-point with the upstream
+TypeScript model across 36 scenarios and 413,323 fields, with a maximum
+relative error of about 1.1e-15. The PostgreSQL storage layer, migration
+runner, managed cluster lifecycle, application-level vault, legacy plaintext
+migration, encrypted backups, first-run setup, LWW/tombstone merge, and the
+CLI are implemented.
 
-目前 C99 药代动力学核心已经完成，并与上游 TypeScript 模型做了逐点对比
-（36 个场景、413,323 个字段，最大相对误差约 1.1e-15）。PostgreSQL 存储层、
-迁移调度、托管本地 cluster 生命周期、首次设置向导、备份导入/导出与
-LWW/删除合并、基础 CLI 也已经落地。Qt 6/QML 桌面壳已经进入 M2：Overview、
-Add dose、History、Settings 四个页面已接入本地数据库和 PK 模型，并支持
-按给药途径的 extras 与剂量就地编辑；Plan、Labs、Supplies、Forecast、
-桌面打包以及完整界面对齐仍未完成。
+The first launch generates a seven-word recovery phrase, shows it once, and
+asks you to write it down. There is no recovery service and no back door; if
+the phrase is lost, the data is lost. Backups are encrypted by default;
+`--plaintext` exports the upstream-compatible JSON only when explicitly
+requested.
+
+The Qt 6/QML shell implements the vault setup, unlock, and lock screens plus
+Overview, Add dose, History, and Settings. Plan, Labs, Supplies, Forecast,
+desktop packaging, and the remaining upstream UI parity work are still ahead.
 
 ## Repository layout
 
@@ -198,8 +304,12 @@ core/
   include/oyama/       stable C99 PK API
   src/                 PK implementation
   tests/               C99 behavioural tests
+vault/
+  include/oyama/       C99 encrypted-vault ABI
+  src/                 libpq/libsodium vault implementation
+  tests/               crypto and v1 vault tests
 storage/
-  include/oyama/       C++20 storage API (connection, migrations, repositories)
+  include/oyama/       C++20 storage API (vault, connection, migrations, repositories)
   src/                 libpq implementation
   migrations/          forward-only SQL schema migrations
   tests/               unit and PostgreSQL integration tests

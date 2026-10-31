@@ -1,6 +1,5 @@
 #pragma once
 
-#include "connection.h"
 #include "types.h"
 
 #include <optional>
@@ -9,9 +8,11 @@
 
 namespace oyama::storage {
 
-class LabResultRepository {
+class VaultStore;
+
+class VaultLabResultRepository {
 public:
-    explicit LabResultRepository(Connection& connection);
+    explicit VaultLabResultRepository(VaultStore& vault);
 
     [[nodiscard]] std::vector<LabResult> list(Mode mode);
     [[nodiscard]] std::optional<LabResult> get(std::string_view id);
@@ -19,7 +20,7 @@ public:
     [[nodiscard]] bool remove(std::string_view id);
 
 private:
-    Connection& connection_;
+    VaultStore& vault_;
 };
 
 }  // namespace oyama::storage

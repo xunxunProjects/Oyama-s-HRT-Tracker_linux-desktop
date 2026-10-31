@@ -6,10 +6,17 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include <cstddef>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <oyama/storage/storage.h>
+#include <oyama/storage/vault_store.h>
+
+class QEvent;
+class QThread;
+class QTimer;
 
 class AppController : public QObject {
     Q_OBJECT
@@ -18,6 +25,12 @@ class AppController : public QObject {
     Q_PROPERTY(QStringList statusArgs READ statusArgs NOTIFY changed)
     Q_PROPERTY(QString mode READ mode WRITE setMode NOTIFY modeChanged)
     Q_PROPERTY(QString backend READ backend NOTIFY changed)
+    Q_PROPERTY(QString vaultState READ vaultState NOTIFY changed)
+    Q_PROPERTY(bool vaultBusy READ vaultBusy NOTIFY changed)
+    Q_PROPERTY(bool migrationRetryAvailable READ migrationRetryAvailable
+                   NOTIFY changed)
+    Q_PROPERTY(QString setupPhrase READ setupPhrase NOTIFY changed)
+    Q_PROPERTY(QVariantList setupChallenge READ setupChallenge NOTIFY changed)
     Q_PROPERTY(QVariantList doses READ doses NOTIFY changed)
     Q_PROPERTY(QVariantList curve READ curve NOTIFY changed)
     Q_PROPERTY(double currentE2 READ currentE2 NOTIFY changed)
@@ -38,6 +51,11 @@ public:
     [[nodiscard]] QStringList statusArgs() const { return status_args_; }
     [[nodiscard]] QString mode() const { return mode_; }
     [[nodiscard]] QString backend() const { return backend_; }
+    [[nodiscard]] QString vaultState() const { return vault_state_; }
+    [[nodiscard]] bool vaultBusy() const { return vault_busy_; }
+    [[nodiscard]] bool migrationRetryAvailable() const;
+    [[nodiscard]] QString setupPhrase() const { return setup_phrase_; }
+    [[nodiscard]] QVariantList setupChallenge() const;
     [[nodiscard]] QVariantList doses() const { return doses_; }
     [[nodiscard]] QVariantList curve() const { return curve_; }
     [[nodiscard]] double currentE2() const { return current_e2_; }
@@ -52,6 +70,14 @@ public:
     void setMode(const QString& mode);
 
     Q_INVOKABLE void reload();
+    Q_INVOKABLE bool beginVaultSetup();
+    Q_INVOKABLE bool confirmVaultSetup(const QVariantList& answers,
+                                      bool acknowledged);
+    Q_INVOKABLE void cancelVaultSetup();
+    Q_INVOKABLE bool unlockVault(const QString& phrase);
+    Q_INVOKABLE void lockVault();
+    Q_INVOKABLE bool retryLegacyMigration();
+    Q_INVOKABLE void cancelLegacyMigration();
     Q_INVOKABLE bool addDose(const QString& route, const QString& ester,
                              double dose_mg, double time_h,
                              const QVariantMap& extras = {});
@@ -68,9 +94,18 @@ public:
     // The model's parameter defaults, by the keys pkParamsJson uses.
     [[nodiscard]] Q_INVOKABLE QVariantMap pkDefaults() const;
 
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 signals:
     void changed();
     void modeChanged();
+
+private slots:
+    void on_migration_progress(const QString& kind, int done, int total);
+    void on_migration_finished();
+    void on_migration_failed(const QString& message,
+                             const QString& plaintext_path);
 
 private:
     void setStatus(const QString& key, const QString& message,
@@ -79,9 +114,20 @@ private:
               const QStringList& args = {});
     void load_data();
     void compute_curve(const std::vector<oyama::storage::DoseEvent>& events);
+    void set_vault_state(const QString& state);
+    void set_vault_busy(bool busy);
+    void clear_setup();
+    void clear_models();
+    void start_idle_timer();
+    [[nodiscard]] bool require_unlocked();
+    [[nodiscard]] bool start_migration_worker();
+    void join_migration_thread();
+    void clear_pending_migration_phrase();
+    [[nodiscard]] QString migration_plaintext_path() const;
 
     std::unique_ptr<oyama::storage::Database> database_;
     std::unique_ptr<oyama::storage::LocalCluster> cluster_;
+    std::unique_ptr<oyama::storage::VaultStore> vault_;
     oyama::storage::AppConfig app_config_;
     oyama::storage::Settings settings_;
 
@@ -90,6 +136,14 @@ private:
     QStringList status_args_;
     QString mode_{"transfem"};
     QString backend_{"none"};
+    QString vault_state_{"unavailable"};
+    bool vault_busy_{false};
+    QString setup_phrase_;
+    std::vector<std::size_t> setup_challenge_;
+    bool legacy_pending_{false};
+    std::string pending_migration_phrase_;
+    QThread* migration_thread_{nullptr};
+    QTimer* idle_timer_{nullptr};
     QVariantList doses_;
     QVariantList curve_;
     double current_e2_{0.0};

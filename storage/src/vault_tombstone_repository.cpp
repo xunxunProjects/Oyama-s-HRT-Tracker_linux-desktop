@@ -1,0 +1,94 @@
+#include "oyama/storage/vault_tombstone_repository.h"
+
+#include "oyama/storage/uuid.h"
+#include "oyama/storage/vault_codec.h"
+#include "oyama/storage/vault_store.h"
+
+#include <algorithm>
+#include <map>
+#include <utility>
+
+namespace oyama::storage {
+namespace {
+
+bool matches(const Tombstone& tombstone, std::string_view kind,
+             std::string_view record_id) {
+    return tombstone.kind == kind && tombstone.record_id == record_id;
+}
+
+}  // namespace
+
+VaultTombstoneRepository::VaultTombstoneRepository(VaultStore& vault)
+    : vault_(vault) {}
+
+void VaultTombstoneRepository::record(const Tombstone& tombstone) {
+    std::string record_id;
+    std::int64_t deleted_at = tombstone.deleted_at;
+    for (const auto& record : vault_.scan("tombstone")) {
+        const auto existing = decode_tombstone(record.payload);
+        if (!matches(existing, tombstone.kind, tombstone.record_id)) {
+            continue;
+        }
+        record_id = record.id;
+        deleted_at = std::max(deleted_at, existing.deleted_at);
+        break;
+    }
+    if (record_id.empty()) {
+        record_id = generate_uuid_v4();
+    }
+    const Tombstone merged{tombstone.kind, tombstone.record_id, deleted_at};
+    vault_.put(VaultRecord{record_id, "tombstone",
+                           static_cast<std::uint64_t>(merged.deleted_at),
+                           encode_tombstone(merged)});
+}
+
+bool VaultTombstoneRepository::remove(std::string_view kind,
+                                      std::string_view record_id) {
+    bool removed = false;
+    const auto records = vault_.scan("tombstone");
+    for (const auto& record : records) {
+        const auto tombstone = decode_tombstone(record.payload);
+        if (!matches(tombstone, kind, record_id)) {
+            continue;
+        }
+        (void)vault_.remove(record.id);
+        removed = true;
+    }
+    return removed;
+}
+
+std::vector<Tombstone> VaultTombstoneRepository::list() {
+    std::map<std::pair<std::string, std::string>, Tombstone> unique;
+    for (const auto& record : vault_.scan("tombstone")) {
+        const auto tombstone = decode_tombstone(record.payload);
+        const auto key = std::make_pair(tombstone.kind, tombstone.record_id);
+        const auto found = unique.find(key);
+        if (found == unique.end() ||
+            tombstone.deleted_at > found->second.deleted_at) {
+            unique[key] = tombstone;
+        }
+    }
+    std::vector<Tombstone> tombstones;
+    tombstones.reserve(unique.size());
+    for (const auto& [key, tombstone] : unique) {
+        (void)key;
+        tombstones.push_back(tombstone);
+    }
+    return tombstones;
+}
+
+std::size_t VaultTombstoneRepository::prune_before(std::int64_t cutoff) {
+    std::size_t removed = 0;
+    const auto records = vault_.scan("tombstone");
+    for (const auto& record : records) {
+        const auto tombstone = decode_tombstone(record.payload);
+        if (tombstone.deleted_at >= cutoff) {
+            continue;
+        }
+        (void)vault_.remove(record.id);
+        ++removed;
+    }
+    return removed;
+}
+
+}  // namespace oyama::storage
