@@ -28,7 +28,8 @@ ahead.
 ## Build
 
 Requirements: CMake 3.21+, Ninja (or another CMake generator), a C99 compiler,
-a C++20 compiler, libpq 14 or newer, and libsodium 1.0.18 or newer. PostgreSQL
+a C++20 compiler, libpq 14 or newer, libsodium 1.0.18 or newer, and
+nlohmann/json 3.11 or newer. PostgreSQL
 server 14+ is needed for the database and for the integration tests. For the
 application-managed cluster, `initdb`, `pg_ctl`, and `postgres` must be on
 `PATH` or in a directory passed with `--pg-bin-dir`/`PG_BINDIR`. The Qt shell

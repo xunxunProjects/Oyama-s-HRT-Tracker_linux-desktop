@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The caller may have exported a config from manual testing; the test must use
+# its own throwaway cluster.
+unset OYAMA_CONFIG_FILE
+
 # End-to-end backup CLI test with a managed, socket-only PostgreSQL cluster.
 
 cli="${1:?usage: run_cli_backup_integration.sh CLI MIGRATIONS_DIR}"

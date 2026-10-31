@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# The caller may have exported a config from manual testing; the test must use
+# its own throwaway cluster.
+unset OYAMA_CONFIG_FILE
+
 # End-to-end CLI test for vault setup/unlock, encrypted data commands, and
 # encrypted/plaintext backup handling against a throwaway PostgreSQL cluster.
 

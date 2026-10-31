@@ -15,6 +15,9 @@ the top-level `Makefile`; the finer CMake options are in the main
 | C compiler | C99 | PK core |
 | C++ compiler | C++20 | Desktop app and storage layer |
 | PostgreSQL | 14+ | Database server and libpq |
+| libsodium | 1.0.18+ | Vault encryption (Argon2id, AES-GCM, XChaCha20-Poly1305) |
+| nlohmann/json | 3.11+ | Storage and backup JSON parsing |
+| Bash | 4+ | Integration test scripts only |
 | Qt | 6.4+ | Core, Qml, Quick, QuickControls2 |
 
 `initdb`, `pg_ctl`, and `postgres` are needed for the application-managed local
@@ -54,15 +57,17 @@ sudo pacman -S --needed cmake ninja postgresql postgresql-libs \
 ### Debian / Ubuntu
 
 ```sh
-sudo apt install cmake ninja-build build-essential libpq-dev postgresql \
+sudo apt install cmake ninja-build build-essential libpq-dev \
+  libsodium-dev nlohmann-json3-dev postgresql \
   qt6-base-dev qt6-declarative-dev
 ```
 
 ### FreeBSD
 
 ```sh
-sudo pkg install cmake ninja git-lite postgresql18-client \
-  postgresql18-server qt6-base qt6-declarative noto-sc
+sudo pkg install cmake ninja git-lite libsodium nlohmann-json \
+  postgresql18-client postgresql18-server \
+  qt6-base qt6-declarative noto-sc bash
 ```
 
 `noto-sc` provides the Simplified Chinese UI font. A Plasma X11 session also
@@ -72,12 +77,23 @@ compositor on FreeBSD.
 ### OpenBSD
 
 ```sh
-doas pkg_add cmake ninja postgresql-client postgresql-server \
-  qt6-qtbase qt6-qtdeclarative noto-cjk
+doas pkg_add cmake ninja libsodium nlohmann-json \
+  postgresql-client postgresql-server \
+  qt6-qtbase qt6-qtdeclarative noto-cjk bash
 ```
 
 OpenBSD package names vary by release and repository. Build natively on an
 OpenBSD host or VM; do not run PostgreSQL test clusters as root.
+
+`pkg_add` accepts package names, not ports paths. For example,
+`pkg_add textproc/nlohmann-json` fails with `file:textproc/: empty`; use
+`pkg_add nlohmann-json` instead.
+
+OpenBSD's base clang does not add `/usr/local/include` to the header search
+path. This project adds it in its OpenBSD CMake block, so the command above
+works as written. If you configure an older checkout or a custom build and see
+`nlohmann/json.hpp` not found, add
+`-DCMAKE_CXX_FLAGS="-I/usr/local/include"` to the CMake configure command.
 
 ## Build and install
 
@@ -102,9 +118,17 @@ ctest --test-dir build --output-on-failure
 sudo cmake --install build
 ```
 
-The 0.5.0 release suite has 24 tests. Integration tests return `77` (skip) when
+The 0.5.0 release suite has 31 tests. Integration tests return `77` (skip) when
 the PostgreSQL server tools are unavailable. OpenBSD must be rebuilt and tested
 on an OpenBSD host or VM; a Linux result is not evidence for an OpenBSD binary.
+
+The integration tests create their own throwaway clusters under `TMPDIR` and
+set their own XDG paths. If they fail with state-related messages such as
+`schema_migrations already exists` or `managed legacy data must start
+uninitialized`, rerun with a clean `TMPDIR` and make sure `OYAMA_CONFIG_FILE` is
+not exported in your shell; a stale value from manual testing can override the
+test configuration. Use `ctest --test-dir build -V` to capture the exact
+scenario and cluster path.
 
 ## Runtime requirements
 
