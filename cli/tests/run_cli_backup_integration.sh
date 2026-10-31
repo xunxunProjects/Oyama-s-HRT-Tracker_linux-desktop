@@ -62,7 +62,7 @@ if grep -q "plaintext health data" <<<"$export_output"; then
     exit 1
 fi
 test -f "$bundle"
-test "$(head -c 8 "$bundle")" = "OYAMAEBK"
+test "$(dd if="$bundle" bs=1 count=8 2>/dev/null)" = "OYAMAEBK"
 mode="$(stat -c %a "$bundle" 2>/dev/null || stat -f %Lp "$bundle")"
 test "$mode" = "600"
 

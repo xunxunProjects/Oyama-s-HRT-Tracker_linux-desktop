@@ -98,6 +98,7 @@ std::size_t plaintext_sibling_count() {
 template <typename Predicate>
 bool wait_for_migration(QCoreApplication& application, Predicate done,
                         int timeout_ms = 180000) {
+    (void)application;  // processEvents() acts on the global application object.
     QElapsedTimer timer;
     timer.start();
     while (!done()) {

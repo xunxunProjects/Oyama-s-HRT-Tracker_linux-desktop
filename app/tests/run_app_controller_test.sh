@@ -50,6 +50,17 @@ start_cluster() {
         start >/dev/null
 }
 
+# Stops a test cluster as soon as its scenario is done.  OpenBSD's default
+# SEMMNS/SEMMNI limits are small, and three 100-connection PostgreSQL clusters
+# running at once can exhaust the semaphore pool.
+stop_cluster() {
+    local cluster="$1"
+    if [[ -f "$cluster/postmaster.pid" ]]; then
+        "$pg_bindir/pg_ctl" -D "$cluster" -m fast -w stop \
+            >/dev/null 2>&1 || true
+    fi
+}
+
 # Creates a managed legacy cluster with the 0001/0002 schema and the shared
 # seed, then stops it so the app must start it.  An extra invalid row is added
 # when requested so the strict codec rejects the import.
@@ -121,19 +132,18 @@ export OYAMA_CONFIG_FILE="$config"
 export OYAMA_MIGRATIONS_DIR="$migrations"
 
 "$binary"
+stop_cluster "$data"
 
 OYAMA_APP_CONTROLLER_SCENARIO=managed-legacy \
     OYAMA_CONFIG_FILE="$root/managed_pending.conf" "$binary"
+stop_cluster "$root/managed_pending-data"
 
 OYAMA_APP_CONTROLLER_SCENARIO=managed-legacy-migrate \
     OYAMA_CONFIG_FILE="$root/managed_migrate.conf" "$binary"
 
 # Simulate a crash after the old directory became a plaintext sibling but
 # before the verified target was renamed into place.
-if [[ -f "$root/managed_migrate-data/postmaster.pid" ]]; then
-    "$pg_bindir/pg_ctl" -D "$root/managed_migrate-data" -m fast -w stop \
-        >/dev/null
-fi
+stop_cluster "$root/managed_migrate-data"
 mv "$root/managed_migrate-data" "$root/managed_crash-data-migrate"
 mkdir "$root/managed_crash-data-plaintext-20260101T000000Z"
 mkdir -p "$root/managed_crash-socket" "$root/managed_crash-socket-migrate"
@@ -153,6 +163,8 @@ chmod 600 "$root/managed_crash.conf"
 
 OYAMA_APP_CONTROLLER_SCENARIO=managed-crash-recovery \
     OYAMA_CONFIG_FILE="$root/managed_crash.conf" "$binary"
+stop_cluster "$root/managed_crash-data"
 
 OYAMA_APP_CONTROLLER_SCENARIO=managed-legacy-retry \
     OYAMA_CONFIG_FILE="$root/managed_retry.conf" "$binary"
+stop_cluster "$root/managed_retry-data"
