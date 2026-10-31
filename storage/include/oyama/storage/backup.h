@@ -68,7 +68,7 @@ void export_backup(Connection& connection, const std::filesystem::path& path,
 
 /// Vault-backed variants.  They read and write the exact same upstream
 /// `oyama-hrt-complete-backup` v1 JSON through the encrypted vault.
-/// `backup_phrase` is reserved for the encrypted envelope added in Task 12.
+/// Encrypted files are detected by the magic and opened with `backup_phrase`.
 [[nodiscard]] std::string export_backup_json(VaultStore& vault,
                                              std::int64_t now_ms);
 
@@ -83,5 +83,13 @@ void export_backup(Connection& connection, const std::filesystem::path& path,
 /// Writes the upstream-compatible bundle with mode 0600.
 void export_backup(VaultStore& vault, const std::filesystem::path& path,
                    std::int64_t now_ms);
+
+/// Writes an encrypted `OYAMAEBK` v1 envelope around the same upstream JSON.
+/// The plaintext bundle exists only in memory; the file is written with mode
+/// 0600.
+void export_encrypted_backup(VaultStore& vault,
+                             const std::filesystem::path& path,
+                             std::int64_t now_ms,
+                             std::string_view backup_phrase);
 
 }  // namespace oyama::storage

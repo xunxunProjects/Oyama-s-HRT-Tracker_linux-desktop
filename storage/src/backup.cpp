@@ -1,4 +1,5 @@
 #include <oyama/storage/backup.h>
+#include <oyama/storage/backup_crypto.h>
 
 #include <oyama/storage/storage.h>
 #include <oyama/storage/vault_dose_event_repository.h>
@@ -1428,14 +1429,18 @@ std::string read_backup_file(const std::filesystem::path& path) {
 
 json parse_backup_file(const std::filesystem::path& path,
                        std::string_view backup_phrase) {
-    // The phrase is reserved for the encrypted envelope (Task 12).
-    (void)backup_phrase;
     const auto bytes = read_backup_file(path);
-    if (bytes.rfind("OYAMAEBK", 0) == 0) {
-        throw Error("encrypted backup support not built");
+    std::string plaintext;
+    if (is_encrypted_backup(bytes)) {
+        if (backup_phrase.empty()) {
+            throw Error("encrypted backup requires a backup phrase");
+        }
+        plaintext = decrypt_backup_json(bytes, backup_phrase);
+    } else {
+        plaintext = bytes;
     }
     try {
-        return json::parse(bytes);
+        return json::parse(plaintext);
     } catch (const std::exception& error) {
         throw Error("could not parse backup: " + std::string(error.what()));
     }
@@ -1571,6 +1576,15 @@ void export_backup(Connection& connection,
 void export_backup(VaultStore& vault, const std::filesystem::path& path,
                    std::int64_t now_ms) {
     write_backup_file(path, export_backup_json(vault, now_ms));
+}
+
+void export_encrypted_backup(VaultStore& vault,
+                             const std::filesystem::path& path,
+                             std::int64_t now_ms,
+                             std::string_view backup_phrase) {
+    const auto sealed =
+        encrypt_backup_json(export_backup_json(vault, now_ms), backup_phrase);
+    write_backup_file(path, sealed);
 }
 
 }  // namespace oyama::storage

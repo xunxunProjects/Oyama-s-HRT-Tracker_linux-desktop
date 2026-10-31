@@ -47,6 +47,7 @@ endif()
 add_library(oyama_storage STATIC
     storage/src/app_config.cpp
     storage/src/backup.cpp
+    storage/src/backup_crypto.cpp
     storage/src/connection.cpp
     storage/src/database.cpp
     storage/src/dose_event_repository.cpp
@@ -258,6 +259,13 @@ if(BUILD_TESTING)
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_with_temp_postgres.sh
                 $<TARGET_FILE:storage_test>)
     set_tests_properties(storage_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(backup_crypto_test storage/tests/backup_crypto_test.cpp)
+    target_link_libraries(backup_crypto_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(backup_crypto_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME backup_crypto_test COMMAND backup_crypto_test)
 
     add_executable(backup_test storage/tests/backup_test.cpp)
     target_link_libraries(backup_test PRIVATE oyama_storage nlohmann_json::nlohmann_json)

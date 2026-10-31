@@ -1,5 +1,6 @@
 #include <oyama/storage/storage.h>
 #include <oyama/storage/backup.h>
+#include <oyama/storage/backup_crypto.h>
 #include <oyama/storage/vault_dose_event_repository.h>
 #include <oyama/storage/vault_lab_result_repository.h>
 #include <oyama/storage/vault_settings_repository.h>
@@ -461,16 +462,85 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
     check(!labs.get(kLab).has_value(), "tombstone removes the vault lab");
 
     const auto encrypted = dir / "vault-encrypted.bin";
-    write_file(encrypted, "OYAMAEBK-not-built-yet");
+    const std::string backup_phrase = "separate backup phrase";
+    export_encrypted_backup(vault, encrypted, now, backup_phrase);
+    struct stat encrypted_metadata {};
+    check(::stat(encrypted.c_str(), &encrypted_metadata) == 0,
+          "encrypted vault export exists");
+    check((encrypted_metadata.st_mode & 0777) == 0600,
+          "encrypted vault export mode is 0600");
+    std::ifstream encrypted_input(encrypted, std::ios::binary);
+    const std::string encrypted_text(
+        (std::istreambuf_iterator<char>(encrypted_input)),
+        std::istreambuf_iterator<char>());
+    check(is_encrypted_backup(encrypted_text),
+          "encrypted export has the OYAMAEBK magic");
+    check(encrypted_text.find("oyama-hrt-complete-backup") ==
+              std::string::npos,
+          "encrypted export contains no plaintext");
+
+    const auto encrypted_preview =
+        preview_backup(vault, encrypted, now, backup_phrase);
+    check(encrypted_preview.ok, "encrypted vault bundle previews");
+    check_equal(encrypted_preview.counts.at("transfem").events,
+                std::size_t{1}, "encrypted preview counts the dose");
+    check_equal(encrypted_preview.counts.at("transfem").lab_results,
+                std::size_t{0}, "encrypted preview counts the tombstoned lab");
+
     rejected = false;
     try {
-        (void)preview_backup(vault, encrypted, now, phrase);
+        (void)preview_backup(vault, encrypted, now);
     } catch (const Error& error) {
-        rejected = std::string(error.what()).find(
-                       "encrypted backup support not built") !=
+        rejected = std::string(error.what()).find("phrase") !=
                    std::string::npos;
     }
-    check(rejected, "encrypted vault backup reports unsupported");
+    check(rejected, "encrypted preview requires a backup phrase");
+
+    rejected = false;
+    try {
+        (void)preview_backup(vault, encrypted, now, "wrong backup phrase");
+    } catch (const Error&) {
+        rejected = true;
+    }
+    check(rejected, "encrypted preview rejects the wrong phrase");
+
+    const auto before_wrong_import = export_backup_json(vault, now);
+    rejected = false;
+    try {
+        (void)import_backup(vault, encrypted, now, "wrong backup phrase");
+    } catch (const Error&) {
+        rejected = true;
+    }
+    check(rejected, "encrypted import rejects the wrong phrase");
+    check(export_backup_json(vault, now) == before_wrong_import,
+          "wrong encrypted import leaves the vault unchanged");
+
+    auto tampered_text = encrypted_text;
+    tampered_text.back() = static_cast<char>(
+        static_cast<unsigned char>(tampered_text.back()) ^ 0x01U);
+    const auto tampered = dir / "vault-tampered.bin";
+    write_file(tampered, tampered_text);
+    rejected = false;
+    try {
+        (void)import_backup(vault, tampered, now, backup_phrase);
+    } catch (const Error&) {
+        rejected = true;
+    }
+    check(rejected, "tampered encrypted import is rejected");
+    check(export_backup_json(vault, now) == before_wrong_import,
+          "tampered encrypted import leaves the vault unchanged");
+
+    vault.clear();
+    const auto encrypted_import =
+        import_backup(vault, encrypted, now, backup_phrase);
+    check(encrypted_import.applied, "encrypted vault import applies");
+    const auto encrypted_events = events.list(Mode::Transfem);
+    check_equal(encrypted_events.size(), std::size_t{1},
+                "encrypted import restores the dose");
+    if (encrypted_events.size() == 1) {
+        check_equal(encrypted_events.front().id, std::string(kEventA),
+                    "encrypted import keeps the dose id");
+    }
 
     std::filesystem::remove_all(dir);
 }
