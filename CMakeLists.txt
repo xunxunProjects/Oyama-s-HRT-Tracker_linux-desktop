@@ -110,6 +110,9 @@ if(OYAMA_BUILD_QT_SHELL)
             VERSION 1.0
             QML_FILES
                 app/qml/Main.qml
+                app/qml/VaultGate.qml
+                app/qml/SetupVaultPage.qml
+                app/qml/UnlockVaultPage.qml
                 app/qml/OverviewPage.qml
                 app/qml/AddDosePage.qml
                 app/qml/HistoryPage.qml

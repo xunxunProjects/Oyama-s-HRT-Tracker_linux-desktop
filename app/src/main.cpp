@@ -1,5 +1,6 @@
 #include "app_controller.h"
 
+#include <QDebug>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
@@ -42,6 +43,38 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     if (app.arguments().contains("--self-test")) {
+        // The smoke check boots the offscreen shell and verifies that the
+        // vault gate covers and disables the application shell whenever the
+        // vault is not unlocked.  It never prompts for a phrase.
+        QObject* root = engine.rootObjects().constFirst();
+        QObject* gate = root->findChild<QObject*>(QStringLiteral("vaultGate"));
+        if (gate == nullptr) {
+            qCritical("self-test: vault gate was not found");
+            return 1;
+        }
+        QObject* shell = root->findChild<QObject*>(QStringLiteral("appShell"));
+        if (shell == nullptr) {
+            qCritical("self-test: application shell was not found");
+            return 1;
+        }
+        const bool unlocked = controller.vaultState() == QStringLiteral("unlocked");
+        if (gate->property("visible").toBool() == unlocked) {
+            qCritical("self-test: vault gate visibility does not match state %s",
+                      qPrintable(controller.vaultState()));
+            return 1;
+        }
+        if (controller.vaultState() == QStringLiteral("unavailable") &&
+            root->findChild<QObject*>(QStringLiteral("vaultUnavailable")) ==
+                nullptr) {
+            qCritical("self-test: unavailable vault panel was not loaded");
+            return 1;
+        }
+        if (shell->property("enabled").toBool() != unlocked) {
+            qCritical("self-test: application shell enabled state does not "
+                      "match state %s",
+                      qPrintable(controller.vaultState()));
+            return 1;
+        }
         return 0;
     }
     return app.exec();
