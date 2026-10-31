@@ -7,6 +7,7 @@ TestCase {
     id: testCase
     name: "AppComponents"
     when: windowShown
+    visible: true
     width: 480
     height: 600
 
@@ -38,6 +39,23 @@ TestCase {
         title: "Delete this record?"
         cancelText: "Keep it"
         confirmText: "Delete"
+    }
+
+    SettingsRow {
+        id: firstSetting
+        x: 20
+        y: 500
+        width: 300
+        title: "First"
+    }
+
+    SettingsRow {
+        id: secondSetting
+        x: 20
+        y: 556
+        width: 300
+        divider: true
+        title: "Second"
     }
 
     HormoneChart {
@@ -105,6 +123,17 @@ TestCase {
         prompt.focusKeep()
         keyClick(Qt.Key_Escape)
         compare(cancelled.count, 2)
+    }
+
+    // Moving down a list must leave only the row under the pointer filled;
+    // animating the fill out leaves a trail of grey rows behind the pointer.
+    function test_settingsHoverClearsAtOnce() {
+        compare(firstSetting.background.children[0].color.a, 0)
+        mouseMove(firstSetting, firstSetting.width / 2, firstSetting.height / 2)
+        tryCompare(firstSetting.background.children[0].color, "a", 1)
+        mouseMove(secondSetting, secondSetting.width / 2, secondSetting.height / 2)
+        compare(firstSetting.background.children[0].color.a, 0)
+        compare(secondSetting.background.children[0].color.a, 1)
     }
 
     function test_chartTimeAtX() {
