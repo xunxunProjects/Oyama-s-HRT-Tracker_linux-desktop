@@ -17,6 +17,7 @@ struct oyama_vault {
     uint64_t kdf_memlimit;
     unsigned char alg;
     int unlocked;
+    int in_transaction;
 };
 
 static int fail(oyama_error *err, int code, const char *message) {
@@ -171,6 +172,13 @@ int oyama_vault_open(const char *conninfo, oyama_vault **out,
 void oyama_vault_lock(oyama_vault *vault) {
     if (vault == NULL) {
         return;
+    }
+    if (vault->in_transaction && vault->conn != NULL) {
+        PGresult *result = PQexec(vault->conn, "ROLLBACK");
+        if (result != NULL) {
+            PQclear(result);
+        }
+        vault->in_transaction = 0;
     }
     if (vault->dek != NULL) {
         sodium_memzero(vault->dek, OYAMA_VAULT_KEY_BYTES);
@@ -655,4 +663,626 @@ change_cleanup:
     sodium_memzero(wrapped, sizeof(wrapped));
     sodium_memzero(meta_aad, sizeof(meta_aad));
     return rc;
+}
+
+static int hex_value(char c) {
+    if (c >= '0' && c <= '9') {
+        return c - '0';
+    }
+    if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    }
+    if (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10;
+    }
+    return -1;
+}
+
+static int parse_uuid(const char *text, unsigned char out[16]) {
+    size_t i;
+    size_t byte_index = 0;
+
+    if (text == NULL || strlen(text) != 36) {
+        return 0;
+    }
+    i = 0;
+    while (i < 36) {
+        int hi;
+        int lo;
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (text[i] != '-') {
+                return 0;
+            }
+            ++i;
+            continue;
+        }
+        if (i + 1 >= 36 || byte_index >= 16) {
+            return 0;
+        }
+        hi = hex_value(text[i]);
+        lo = hex_value(text[i + 1]);
+        if (hi < 0 || lo < 0) {
+            return 0;
+        }
+        out[byte_index++] = (unsigned char)((hi << 4) | lo);
+        i += 2;
+    }
+    return byte_index == 16;
+}
+
+static void format_uuid(const unsigned char in[16], char out[37]) {
+    static const char hex[] = "0123456789abcdef";
+    size_t i;
+    size_t pos = 0;
+
+    for (i = 0; i < 16; ++i) {
+        if (i == 4 || i == 6 || i == 8 || i == 10) {
+            out[pos++] = '-';
+        }
+        out[pos++] = hex[in[i] >> 4];
+        out[pos++] = hex[in[i] & 0x0f];
+    }
+    out[pos] = '\0';
+}
+
+static void put_u32_be(unsigned char *out, uint32_t value) {
+    out[0] = (unsigned char)(value >> 24);
+    out[1] = (unsigned char)(value >> 16);
+    out[2] = (unsigned char)(value >> 8);
+    out[3] = (unsigned char)value;
+}
+
+static void put_u64_be(unsigned char *out, uint64_t value) {
+    out[0] = (unsigned char)(value >> 56);
+    out[1] = (unsigned char)(value >> 48);
+    out[2] = (unsigned char)(value >> 40);
+    out[3] = (unsigned char)(value >> 32);
+    out[4] = (unsigned char)(value >> 24);
+    out[5] = (unsigned char)(value >> 16);
+    out[6] = (unsigned char)(value >> 8);
+    out[7] = (unsigned char)value;
+}
+
+static uint32_t get_u32_be(const unsigned char *in) {
+    return ((uint32_t)in[0] << 24) | ((uint32_t)in[1] << 16) |
+           ((uint32_t)in[2] << 8) | (uint32_t)in[3];
+}
+
+static uint64_t get_u64_be(const unsigned char *in) {
+    return ((uint64_t)in[0] << 56) | ((uint64_t)in[1] << 48) |
+           ((uint64_t)in[2] << 40) | ((uint64_t)in[3] << 32) |
+           ((uint64_t)in[4] << 24) | ((uint64_t)in[5] << 16) |
+           ((uint64_t)in[6] << 8) | (uint64_t)in[7];
+}
+
+static int require_unlocked(oyama_vault *vault, oyama_error *err) {
+    if (vault == NULL || vault->conn == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "vault handle is not open");
+    }
+    if (!vault->unlocked || vault->dek == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_LOCKED, "vault is locked");
+    }
+    return OYAMA_VAULT_OK;
+}
+
+static int build_envelope(const char *kind, uint64_t updated_at_ms,
+                          const void *payload, size_t payload_len,
+                          unsigned char **out, size_t *out_len,
+                          oyama_error *err) {
+    size_t kind_len;
+    size_t total;
+    unsigned char *envelope;
+    size_t pos = 0;
+
+    if (out == NULL || out_len == NULL || kind == NULL ||
+        (payload == NULL && payload_len != 0)) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "invalid record envelope argument");
+    }
+    *out = NULL;
+    *out_len = 0;
+    kind_len = strlen(kind);
+    if (kind_len == 0 || kind_len > 63 || payload_len > UINT32_MAX ||
+        kind_len > UINT32_MAX) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "record kind or payload is invalid");
+    }
+    if (payload_len > SIZE_MAX - 4 - kind_len - 8 - 4) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "record is too large");
+    }
+    total = 4 + kind_len + 8 + 4 + payload_len;
+    envelope = sodium_malloc(total);
+    if (envelope == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_NOMEM,
+                    "cannot allocate record envelope");
+    }
+    put_u32_be(envelope + pos, (uint32_t)kind_len);
+    pos += 4;
+    memcpy(envelope + pos, kind, kind_len);
+    pos += kind_len;
+    put_u64_be(envelope + pos, updated_at_ms);
+    pos += 8;
+    put_u32_be(envelope + pos, (uint32_t)payload_len);
+    pos += 4;
+    if (payload_len != 0) {
+        memcpy(envelope + pos, payload, payload_len);
+    }
+    *out = envelope;
+    *out_len = total;
+    return succeed(err);
+}
+
+static int parse_envelope(const unsigned char *envelope, size_t envelope_len,
+                          const char **kind, size_t *kind_len,
+                          uint64_t *updated_at_ms,
+                          const unsigned char **payload, size_t *payload_len,
+                          oyama_error *err) {
+    size_t pos;
+    uint32_t klen;
+    uint32_t plen;
+    size_t expected;
+
+    if (envelope == NULL || kind == NULL || kind_len == NULL ||
+        updated_at_ms == NULL || payload == NULL || payload_len == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "invalid record envelope");
+    }
+    if (envelope_len < 4 + 8 + 4) {
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                    "record envelope is truncated");
+    }
+    klen = get_u32_be(envelope);
+    if (klen == 0 || klen > 63) {
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                    "record kind length is invalid");
+    }
+    if (envelope_len < 4 + (size_t)klen + 8 + 4) {
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                    "record envelope is truncated");
+    }
+    if (memchr(envelope + 4, '\0', klen) != NULL) {
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                    "record kind contains NUL");
+    }
+    pos = 4 + (size_t)klen;
+    *kind = (const char *)(envelope + 4);
+    *kind_len = klen;
+    *updated_at_ms = get_u64_be(envelope + pos);
+    pos += 8;
+    plen = get_u32_be(envelope + pos);
+    pos += 4;
+    expected = pos + (size_t)plen;
+    if (expected != envelope_len) {
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                    "record envelope length is invalid");
+    }
+    *payload = envelope + pos;
+    *payload_len = plen;
+    return succeed(err);
+}
+
+static int read_bytea(PGresult *result, int row, int column,
+                      unsigned char **out, size_t *out_len, oyama_error *err,
+                      const char *what) {
+    const char *text;
+    unsigned char *decoded;
+    size_t decoded_len = 0;
+
+    if (out == NULL || out_len == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "invalid bytea argument");
+    }
+    *out = NULL;
+    *out_len = 0;
+    if (PQgetisnull(result, row, column)) {
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT, what);
+    }
+    text = PQgetvalue(result, row, column);
+    decoded = PQunescapeBytea((const unsigned char *)text, &decoded_len);
+    if (decoded == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_NOMEM,
+                    "cannot decode database blob");
+    }
+    *out = decoded;
+    *out_len = decoded_len;
+    return OYAMA_VAULT_OK;
+}
+
+int oyama_vault_put(oyama_vault *vault, const char *id, const char *kind,
+                    uint64_t updated_at_ms, const void *payload,
+                    size_t payload_len, oyama_error *err) {
+    unsigned char uuid[16];
+    char canonical[37];
+    unsigned char *envelope = NULL;
+    size_t envelope_len = 0;
+    unsigned char *blob = NULL;
+    size_t blob_len = 0;
+    PGresult *result;
+    const char *values[2];
+    int lengths[2];
+    int formats[2];
+    int rc;
+
+    rc = require_unlocked(vault, err);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    if (id == NULL || kind == NULL || (payload == NULL && payload_len != 0) ||
+        !parse_uuid(id, uuid)) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "record id, kind, or payload is invalid");
+    }
+    if (payload_len > INT_MAX) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "record payload is too large");
+    }
+    format_uuid(uuid, canonical);
+    rc = build_envelope(kind, updated_at_ms, payload, payload_len, &envelope,
+                        &envelope_len, err);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    rc = oyama_vault_seal_record(uuid, envelope, envelope_len, vault->dek,
+                                 vault->alg, &blob, &blob_len, err);
+    sodium_memzero(envelope, envelope_len);
+    sodium_free(envelope);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    if (blob_len > INT_MAX) {
+        oyama_vault_secure_free(blob, blob_len);
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "encrypted record is too large");
+    }
+
+    values[0] = canonical;
+    values[1] = (const char *)blob;
+    lengths[0] = 0;
+    lengths[1] = (int)blob_len;
+    formats[0] = 0;
+    formats[1] = 1;
+    result = PQexecParams(
+        vault->conn,
+        "INSERT INTO vault_records(id, blob) VALUES($1::uuid, $2) "
+        "ON CONFLICT (id) DO UPDATE SET blob = EXCLUDED.blob",
+        2, NULL, values, lengths, formats, 0);
+    if (result == NULL) {
+        oyama_vault_secure_free(blob, blob_len);
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    PQerrorMessage(vault->conn));
+    }
+    if (PQresultStatus(result) != PGRES_COMMAND_OK) {
+        rc = result_error(vault, result, err, "cannot store vault record");
+    } else {
+        rc = succeed(err);
+        PQclear(result);
+    }
+    oyama_vault_secure_free(blob, blob_len);
+    return rc;
+}
+
+int oyama_vault_get(oyama_vault *vault, const char *id, oyama_record *out,
+                    oyama_error *err) {
+    unsigned char uuid[16];
+    char canonical[37];
+    const char *values[1];
+    PGresult *result;
+    unsigned char *blob = NULL;
+    size_t blob_len = 0;
+    unsigned char *envelope = NULL;
+    size_t envelope_len = 0;
+    const char *kind = NULL;
+    size_t kind_len = 0;
+    uint64_t updated_at_ms = 0;
+    const unsigned char *payload = NULL;
+    size_t payload_len = 0;
+    unsigned char *payload_copy;
+    int rc;
+
+    if (out == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "record output is required");
+    }
+    memset(out, 0, sizeof(*out));
+    rc = require_unlocked(vault, err);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    if (id == NULL || !parse_uuid(id, uuid)) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "record id is invalid");
+    }
+    format_uuid(uuid, canonical);
+    values[0] = canonical;
+    result = PQexecParams(vault->conn,
+                          "SELECT blob FROM vault_records WHERE id = $1::uuid",
+                          1, NULL, values, NULL, NULL, 0);
+    if (result == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    PQerrorMessage(vault->conn));
+    }
+    if (PQresultStatus(result) != PGRES_TUPLES_OK) {
+        return result_error(vault, result, err, "cannot read vault record");
+    }
+    if (PQntuples(result) == 0) {
+        PQclear(result);
+        return fail(err, OYAMA_VAULT_ERR_NOT_FOUND, "record not found");
+    }
+    if (PQntuples(result) != 1) {
+        PQclear(result);
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                    "record id is not unique");
+    }
+    rc = read_bytea(result, 0, 0, &blob, &blob_len, err,
+                    "record blob is null");
+    PQclear(result);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    rc = oyama_vault_open_record(uuid, blob, blob_len, vault->dek, vault->alg,
+                                 &envelope, &envelope_len, err);
+    PQfreemem(blob);
+    if (rc != OYAMA_VAULT_OK) {
+        if (rc == OYAMA_VAULT_ERR_NOMEM) {
+            return rc;
+        }
+        return fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                    "record authentication failed");
+    }
+    rc = parse_envelope(envelope, envelope_len, &kind, &kind_len,
+                        &updated_at_ms, &payload, &payload_len, err);
+    if (rc != OYAMA_VAULT_OK) {
+        sodium_memzero(envelope, envelope_len);
+        sodium_free(envelope);
+        return rc;
+    }
+    payload_copy = sodium_malloc(payload_len == 0 ? 1 : payload_len);
+    if (payload_copy == NULL) {
+        sodium_memzero(envelope, envelope_len);
+        sodium_free(envelope);
+        return fail(err, OYAMA_VAULT_ERR_NOMEM,
+                    "cannot allocate record payload");
+    }
+    if (payload_len != 0) {
+        memcpy(payload_copy, payload, payload_len);
+    }
+    memcpy(out->id, canonical, sizeof(out->id));
+    memcpy(out->kind, kind, kind_len);
+    out->kind[kind_len] = '\0';
+    out->updated_at_ms = updated_at_ms;
+    out->payload.data = payload_copy;
+    out->payload.len = payload_len;
+    sodium_memzero(envelope, envelope_len);
+    sodium_free(envelope);
+    return succeed(err);
+}
+
+int oyama_vault_remove(oyama_vault *vault, const char *id, oyama_error *err) {
+    unsigned char uuid[16];
+    char canonical[37];
+    const char *values[1];
+    PGresult *result;
+    char *tuples;
+    int rc;
+
+    rc = require_unlocked(vault, err);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    if (id == NULL || !parse_uuid(id, uuid)) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "record id is invalid");
+    }
+    format_uuid(uuid, canonical);
+    values[0] = canonical;
+    result = PQexecParams(vault->conn,
+                          "DELETE FROM vault_records WHERE id = $1::uuid", 1,
+                          NULL, values, NULL, NULL, 0);
+    if (result == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    PQerrorMessage(vault->conn));
+    }
+    if (PQresultStatus(result) != PGRES_COMMAND_OK) {
+        return result_error(vault, result, err, "cannot remove vault record");
+    }
+    tuples = PQcmdTuples(result);
+    if (tuples == NULL || strcmp(tuples, "0") == 0) {
+        PQclear(result);
+        return fail(err, OYAMA_VAULT_ERR_NOT_FOUND, "record not found");
+    }
+    if (strcmp(tuples, "1") != 0) {
+        PQclear(result);
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    "unexpected delete count");
+    }
+    PQclear(result);
+    return succeed(err);
+}
+
+int oyama_vault_scan(oyama_vault *vault, const char *kind_or_null,
+                     oyama_vault_scan_cb callback, void *user_data,
+                     oyama_error *err) {
+    PGresult *result;
+    int rows;
+    int i;
+    int rc = OYAMA_VAULT_OK;
+
+    rc = require_unlocked(vault, err);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    if (callback == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "scan callback is required");
+    }
+    result = PQexec(vault->conn,
+                    "SELECT id, blob FROM vault_records ORDER BY id");
+    if (result == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    PQerrorMessage(vault->conn));
+    }
+    if (PQresultStatus(result) != PGRES_TUPLES_OK) {
+        return result_error(vault, result, err, "cannot scan vault records");
+    }
+    rows = PQntuples(result);
+    for (i = 0; i < rows; ++i) {
+        const char *id_text = PQgetvalue(result, i, 0);
+        unsigned char uuid[16];
+        unsigned char *blob = NULL;
+        size_t blob_len = 0;
+        unsigned char *envelope = NULL;
+        size_t envelope_len = 0;
+        const char *kind = NULL;
+        size_t kind_len = 0;
+        uint64_t updated_at_ms = 0;
+        const unsigned char *payload = NULL;
+        size_t payload_len = 0;
+        char kind_buffer[64];
+        int matches;
+        int stop;
+
+        if (!parse_uuid(id_text, uuid)) {
+            fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                 "vault record has an invalid UUID");
+            rc = OYAMA_VAULT_ERR_CORRUPT;
+            break;
+        }
+        rc = read_bytea(result, i, 1, &blob, &blob_len, err,
+                        "record blob is null");
+        if (rc != OYAMA_VAULT_OK) {
+            break;
+        }
+        rc = oyama_vault_open_record(uuid, blob, blob_len, vault->dek,
+                                     vault->alg, &envelope, &envelope_len,
+                                     err);
+        PQfreemem(blob);
+        if (rc != OYAMA_VAULT_OK) {
+            if (rc != OYAMA_VAULT_ERR_NOMEM) {
+                fail(err, OYAMA_VAULT_ERR_CORRUPT,
+                     "record authentication failed");
+                rc = OYAMA_VAULT_ERR_CORRUPT;
+            }
+            break;
+        }
+        rc = parse_envelope(envelope, envelope_len, &kind, &kind_len,
+                            &updated_at_ms, &payload, &payload_len, err);
+        if (rc != OYAMA_VAULT_OK) {
+            sodium_memzero(envelope, envelope_len);
+            sodium_free(envelope);
+            break;
+        }
+        matches = kind_or_null == NULL ||
+                  (strlen(kind_or_null) == kind_len &&
+                   memcmp(kind_or_null, kind, kind_len) == 0);
+        stop = 0;
+        if (matches) {
+            memcpy(kind_buffer, kind, kind_len);
+            kind_buffer[kind_len] = '\0';
+            stop = callback(user_data, id_text, kind_buffer, updated_at_ms,
+                            payload, payload_len);
+        }
+        sodium_memzero(envelope, envelope_len);
+        sodium_free(envelope);
+        if (stop != 0) {
+            break;
+        }
+    }
+    PQclear(result);
+    return rc;
+}
+
+int oyama_vault_clear(oyama_vault *vault, oyama_error *err) {
+    PGresult *result;
+    int rc;
+
+    rc = require_unlocked(vault, err);
+    if (rc != OYAMA_VAULT_OK) {
+        return rc;
+    }
+    result = PQexec(vault->conn, "DELETE FROM vault_records");
+    if (result == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    PQerrorMessage(vault->conn));
+    }
+    if (PQresultStatus(result) != PGRES_COMMAND_OK) {
+        return result_error(vault, result, err, "cannot clear vault records");
+    }
+    PQclear(result);
+    return succeed(err);
+}
+
+int oyama_vault_begin(oyama_vault *vault, oyama_error *err) {
+    PGresult *result;
+
+    if (vault == NULL || vault->conn == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "vault handle is not open");
+    }
+    if (vault->in_transaction) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "transaction already open");
+    }
+    result = PQexec(vault->conn, "BEGIN");
+    if (result == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    PQerrorMessage(vault->conn));
+    }
+    if (PQresultStatus(result) != PGRES_COMMAND_OK) {
+        return result_error(vault, result, err, "cannot begin transaction");
+    }
+    PQclear(result);
+    vault->in_transaction = 1;
+    return succeed(err);
+}
+
+int oyama_vault_commit(oyama_vault *vault, oyama_error *err) {
+    PGresult *result;
+    int rc;
+
+    if (vault == NULL || vault->conn == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "vault handle is not open");
+    }
+    if (!vault->in_transaction) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "no transaction is open");
+    }
+    result = PQexec(vault->conn, "COMMIT");
+    vault->in_transaction = 0;
+    if (result == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    PQerrorMessage(vault->conn));
+    }
+    if (PQresultStatus(result) != PGRES_COMMAND_OK) {
+        rc = result_error(vault, result, err, "cannot commit transaction");
+        return rc;
+    }
+    PQclear(result);
+    return succeed(err);
+}
+
+int oyama_vault_rollback(oyama_vault *vault, oyama_error *err) {
+    PGresult *result;
+
+    if (vault == NULL || vault->conn == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "vault handle is not open");
+    }
+    if (!vault->in_transaction) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "no transaction is open");
+    }
+    result = PQexec(vault->conn, "ROLLBACK");
+    vault->in_transaction = 0;
+    if (result == NULL) {
+        return fail(err, OYAMA_VAULT_ERR_DATABASE,
+                    PQerrorMessage(vault->conn));
+    }
+    if (PQresultStatus(result) != PGRES_COMMAND_OK) {
+        return result_error(vault, result, err, "cannot roll back transaction");
+    }
+    PQclear(result);
+    return succeed(err);
 }

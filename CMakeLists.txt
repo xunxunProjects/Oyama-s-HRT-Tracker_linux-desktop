@@ -151,6 +151,18 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:vault_meta_test>)
     set_tests_properties(vault_meta_integration PROPERTIES SKIP_RETURN_CODE 77)
 
+    add_executable(vault_records_test vault/tests/vault_records_test.c)
+    target_include_directories(vault_records_test PRIVATE vault/src)
+    target_link_libraries(vault_records_test PRIVATE oyama_vault PostgreSQL::PostgreSQL)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_records_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME vault_records_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/vault/tests/run_vault_pg_test.sh
+                $<TARGET_FILE:vault_records_test>)
+    set_tests_properties(vault_records_integration PROPERTIES SKIP_RETURN_CODE 77)
+
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
     target_compile_definitions(storage_test PRIVATE
