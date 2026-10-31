@@ -14,9 +14,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
+#include <fcntl.h>
 #include <fstream>
 #include <functional>
 #include <limits>
@@ -26,6 +29,7 @@
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -1469,17 +1473,101 @@ void fill_counts(BackupPreview& preview, const ParsedBundle& parsed) {
 
 void write_backup_file(const std::filesystem::path& path,
                        std::string_view contents) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output) {
-        throw Error("could not write backup: " + path.string());
+    if (path.filename().empty()) {
+        throw Error("could not write backup: destination has no file name: " +
+                    path.string());
     }
-    output.write(contents.data(),
-                 static_cast<std::streamsize>(contents.size()));
-    output.close();
-    if (!output) {
-        throw Error("could not write backup: " + path.string());
+
+    const auto parent =
+        path.parent_path().empty() ? std::filesystem::path(".")
+                                   : path.parent_path();
+
+    struct stat existing {};
+    if (::lstat(path.c_str(), &existing) == 0) {
+        if (!S_ISREG(existing.st_mode)) {
+            throw Error("could not write backup: destination is not a regular "
+                        "file: " +
+                        path.string());
+        }
+    } else if (errno != ENOENT) {
+        throw Error("could not write backup: " + path.string() + ": " +
+                    std::strerror(errno));
     }
-    (void)::chmod(path.c_str(), 0600);
+
+    std::string pattern =
+        (parent / (path.filename().string() + ".tmp.XXXXXX")).string();
+    std::vector<char> pattern_buffer(pattern.begin(), pattern.end());
+    pattern_buffer.push_back('\0');
+
+    int fd = ::mkstemp(pattern_buffer.data());
+    if (fd < 0) {
+        throw Error("could not write backup: " + path.string() + ": " +
+                    std::strerror(errno));
+    }
+    const std::string temp_path(pattern_buffer.data());
+
+    auto remove_temp = [&]() {
+        if (fd >= 0) {
+            ::close(fd);
+            fd = -1;
+        }
+        ::unlink(temp_path.c_str());
+    };
+
+    if (::fchmod(fd, 0600) != 0) {
+        const int error = errno;
+        remove_temp();
+        throw Error("could not secure backup file: " + path.string() + ": " +
+                    std::strerror(error));
+    }
+
+    std::size_t offset = 0;
+    while (offset < contents.size()) {
+        const auto remaining = contents.size() - offset;
+        const auto chunk = std::min<std::size_t>(
+            remaining,
+            static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()));
+        const ssize_t written =
+            ::write(fd, contents.data() + offset, chunk);
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            const int error = errno;
+            remove_temp();
+            throw Error("could not write backup: " + path.string() + ": " +
+                        std::strerror(error));
+        }
+        if (written == 0) {
+            remove_temp();
+            throw Error("could not write backup: short write: " +
+                        path.string());
+        }
+        offset += static_cast<std::size_t>(written);
+    }
+
+    if (::fsync(fd) != 0) {
+        const int error = errno;
+        remove_temp();
+        throw Error("could not flush backup: " + path.string() + ": " +
+                    std::strerror(error));
+    }
+
+    if (::close(fd) != 0) {
+        const int error = errno;
+        fd = -1;
+        ::unlink(temp_path.c_str());
+        throw Error("could not close backup: " + path.string() + ": " +
+                    std::strerror(error));
+    }
+    fd = -1;
+
+    if (::rename(temp_path.c_str(), path.c_str()) != 0) {
+        const int error = errno;
+        ::unlink(temp_path.c_str());
+        throw Error("could not replace backup: " + path.string() + ": " +
+                    std::strerror(error));
+    }
 }
 
 }  // namespace

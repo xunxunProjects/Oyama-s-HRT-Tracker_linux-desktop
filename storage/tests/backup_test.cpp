@@ -66,6 +66,12 @@ void write_file(const std::filesystem::path& path, std::string_view contents) {
     out.write(contents.data(), static_cast<std::streamsize>(contents.size()));
 }
 
+std::string read_file(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(input)),
+                       std::istreambuf_iterator<char>());
+}
+
 json read_json(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
     return json::parse(input);
@@ -145,6 +151,24 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
         std::istreambuf_iterator<char>());
     check(exported_text == json_text,
           "vault export file matches export_backup_json");
+
+    const auto symlink_target = dir / "symlink-target.txt";
+    write_file(symlink_target, "must not be overwritten");
+    const auto symlink_path = dir / "vault-symlink.json";
+    std::error_code symlink_error;
+    std::filesystem::create_symlink(symlink_target, symlink_path, symlink_error);
+    check(!symlink_error, "symlink fixture is created");
+    if (!symlink_error) {
+        bool refused = false;
+        try {
+            export_backup(vault, symlink_path, now);
+        } catch (const Error&) {
+            refused = true;
+        }
+        check(refused, "vault export refuses a symlink destination");
+        check(read_file(symlink_target) == "must not be overwritten",
+              "vault export does not follow a symlink destination");
+    }
 
     const auto exported_root = json::parse(json_text);
     const auto& exported_template =
