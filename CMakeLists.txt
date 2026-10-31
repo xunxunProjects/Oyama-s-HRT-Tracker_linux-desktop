@@ -54,6 +54,7 @@ add_library(oyama_storage STATIC
     storage/src/json_record_repository.cpp
     storage/src/lab_result_repository.cpp
     storage/src/legacy_migration.cpp
+    storage/src/legacy_promotion.cpp
     storage/src/local_cluster.cpp
     storage/src/migration.cpp
     storage/src/passphrase.cpp
@@ -83,7 +84,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_executable(oyama-hrt-cli cli/main.cpp)
-target_link_libraries(oyama-hrt-cli PRIVATE oyama_storage)
+target_link_libraries(oyama-hrt-cli PRIVATE oyama_storage PkgConfig::SODIUM)
 target_compile_definitions(oyama-hrt-cli PRIVATE
     OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
     OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
@@ -223,6 +224,19 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:legacy_migration_test>)
     set_tests_properties(legacy_migration_integration PROPERTIES SKIP_RETURN_CODE 77)
 
+    add_executable(legacy_promotion_test storage/tests/legacy_promotion_test.cpp)
+    target_include_directories(legacy_promotion_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(legacy_promotion_test PRIVATE oyama_storage)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(legacy_promotion_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME legacy_promotion_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_legacy_promotion_test.sh
+                $<TARGET_FILE:legacy_promotion_test>)
+    set_tests_properties(legacy_promotion_integration PROPERTIES SKIP_RETURN_CODE 77)
+
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
     target_compile_definitions(storage_test PRIVATE
@@ -283,6 +297,13 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:oyama-hrt-cli>
                 ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
     set_tests_properties(cli_backup_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_test(
+        NAME cli_migration_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/cli/tests/run_cli_migration.sh
+                $<TARGET_FILE:oyama-hrt-cli>
+                ${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations)
+    set_tests_properties(cli_migration_integration PROPERTIES SKIP_RETURN_CODE 77)
 
 
     if(TARGET oyama-hrt-app)
