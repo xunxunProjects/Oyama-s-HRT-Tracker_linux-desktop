@@ -14,7 +14,21 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(PostgreSQL 14 REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 include(GNUInstallDirs)
+
+add_library(oyama_vault STATIC
+    vault/src/vault_crypto.c)
+target_include_directories(oyama_vault
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(oyama_vault
+    PUBLIC PkgConfig::SODIUM PostgreSQL::PostgreSQL)
+
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(oyama_vault PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 add_library(oyama_pk STATIC
     core/src/pk.c)
@@ -115,6 +129,14 @@ if(BUILD_TESTING)
         target_compile_options(pk_smoke_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME pk_smoke_test COMMAND pk_smoke_test)
+
+    add_executable(vault_crypto_test vault/tests/vault_crypto_test.c)
+    target_include_directories(vault_crypto_test PRIVATE vault/src)
+    target_link_libraries(vault_crypto_test PRIVATE oyama_vault)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vault_crypto_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME vault_crypto_test COMMAND vault_crypto_test)
 
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)

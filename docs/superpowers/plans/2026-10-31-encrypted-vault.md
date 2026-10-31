@@ -47,7 +47,7 @@
 **Interfaces:**
 - Consumes: libsodium via `pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)`, CMake 3.21.
 - Produces:
-  - `include/oyama/vault.h` with the complete C99 declarations from spec §7: `oyama_vault`, `oyama_error`, `oyama_vault_status`, `oyama_vault_state`, `oyama_vault_kdf_params`, `oyama_buf`, `oyama_record`, `oyama_vault_scan_cb`; functions `oyama_vault_open`, `oyama_vault_close`, `oyama_vault_state`, `oyama_vault_setup`, `oyama_vault_setup_with_params`, `oyama_vault_unlock`, `oyama_vault_change_phrase`, `oyama_vault_lock`, `oyama_vault_put`, `oyama_vault_get`, `oyama_vault_remove`, `oyama_vault_scan`, `oyama_vault_clear`, `oyama_vault_begin`, `oyama_vault_commit`, `oyama_vault_rollback`, `oyama_buf_free`, `oyama_record_free`, `oyama_vault_status_name`.
+  - `include/oyama/vault.h` with the complete C99 declarations from spec §7: `oyama_vault`, `oyama_error`, `oyama_vault_status`, `oyama_vault_state`, `oyama_vault_kdf_params`, `oyama_buf`, `oyama_record`, `oyama_vault_scan_cb`; functions `oyama_vault_open`, `oyama_vault_close`, `oyama_vault_get_state`, `oyama_vault_setup`, `oyama_vault_setup_with_params`, `oyama_vault_unlock`, `oyama_vault_change_phrase`, `oyama_vault_lock`, `oyama_vault_put`, `oyama_vault_get`, `oyama_vault_remove`, `oyama_vault_scan`, `oyama_vault_clear`, `oyama_vault_begin`, `oyama_vault_commit`, `oyama_vault_rollback`, `oyama_buf_free`, `oyama_record_free`, `oyama_vault_status_name`.
   - Internal `vault/src/vault_crypto.h`:
     ```c
     #define OYAMA_VAULT_META_VERSION 1
@@ -151,14 +151,14 @@ Create `vault/tests/vault_meta_test.c` that reads the four `OYAMA_TEST_PG_*` var
 oyama_vault *v = NULL;
 check(oyama_vault_open(conninfo, &v, &err) == OYAMA_VAULT_OK, "open");
 oyama_vault_state st;
-check(oyama_vault_state(v, &st, &err) == OYAMA_VAULT_OK && st == OYAMA_VAULT_UNINITIALIZED, "fresh");
+check(oyama_vault_get_state(v, &st, &err) == OYAMA_VAULT_OK && st == OYAMA_VAULT_UNINITIALIZED, "fresh");
 oyama_vault_kdf_params low = {1, 8388608};
 check(oyama_vault_setup_with_params(v, "correct horse battery staple", 28, &low, &err) == OYAMA_VAULT_OK, "setup");
-check(oyama_vault_state(v, &st, &err) == OYAMA_VAULT_OK && st == OYAMA_VAULT_LOCKED, "setup locks");
+check(oyama_vault_get_state(v, &st, &err) == OYAMA_VAULT_OK && st == OYAMA_VAULT_LOCKED, "setup locks");
 check(oyama_vault_setup(v, "again", 5, &err) == OYAMA_VAULT_ERR_ALREADY_INITIALIZED, "duplicate setup");
 check(oyama_vault_unlock(v, "wrong", 5, &err) == OYAMA_VAULT_ERR_BAD_PASSPHRASE, "wrong phrase");
 check(oyama_vault_unlock(v, "correct horse battery staple", 28, &err) == OYAMA_VAULT_OK, "unlock");
-check(oyama_vault_state(v, &st, &err) == OYAMA_VAULT_OK && st == OYAMA_VAULT_UNLOCKED, "unlocked");
+check(oyama_vault_get_state(v, &st, &err) == OYAMA_VAULT_OK && st == OYAMA_VAULT_UNLOCKED, "unlocked");
 ```
 
 Add checks for: `lock` returns to locked; reopen returns locked; `change_phrase` while unlocked with `"new phrase"` makes the old phrase fail and the new one succeed; updating `wrapped_dek` or `kdf_salt` in SQL makes unlock fail; `oyama_vault_close(NULL)` and `oyama_vault_lock(NULL)` are no-ops.

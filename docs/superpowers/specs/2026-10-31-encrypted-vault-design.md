@@ -420,8 +420,8 @@ int oyama_vault_open(const char *conninfo, oyama_vault **out,
                      oyama_error *err);
 void oyama_vault_close(oyama_vault *vault);
 
-int oyama_vault_state(const oyama_vault *vault, oyama_vault_state *out,
-                      oyama_error *err);
+int oyama_vault_get_state(const oyama_vault *vault, oyama_vault_state *out,
+                          oyama_error *err);
 
 int oyama_vault_setup(oyama_vault *vault, const char *phrase,
                       size_t phrase_len, oyama_error *err);
@@ -468,7 +468,7 @@ const char *oyama_vault_status_name(int status);
   boolean; `err` may be `NULL`. `err->message` is always NUL-terminated
   when `err` is non-NULL.
 - `oyama_vault_open` connects but does not require an initialized vault;
-  `state` reports `UNINITIALIZED` when `vault_meta` has no row.
+  `oyama_vault_get_state` reports `UNINITIALIZED` when `vault_meta` has no row.
 - `setup` fails with `ALREADY_INITIALIZED` if a meta row exists. It uses
   production KDF parameters; `setup_with_params` exists for tests and
   advanced provisioning and stores the supplied parameters.
