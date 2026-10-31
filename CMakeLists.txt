@@ -53,6 +53,7 @@ add_library(oyama_storage STATIC
     storage/src/error.cpp
     storage/src/json_record_repository.cpp
     storage/src/lab_result_repository.cpp
+    storage/src/legacy_migration.cpp
     storage/src/local_cluster.cpp
     storage/src/migration.cpp
     storage/src/passphrase.cpp
@@ -206,6 +207,21 @@ if(BUILD_TESTING)
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_vault_repository_test.sh
                 $<TARGET_FILE:vault_repository_test>)
     set_tests_properties(vault_repository_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(legacy_migration_test storage/tests/legacy_migration_test.cpp)
+    target_include_directories(legacy_migration_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(legacy_migration_test PRIVATE
+        oyama_storage
+        nlohmann_json::nlohmann_json)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(legacy_migration_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME legacy_migration_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_legacy_migration_test.sh
+                $<TARGET_FILE:legacy_migration_test>)
+    set_tests_properties(legacy_migration_integration PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
