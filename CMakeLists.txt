@@ -65,6 +65,7 @@ add_library(oyama_storage STATIC
     storage/src/vault_codec.cpp
     storage/src/vault_store.cpp
     storage/src/vault_dose_event_repository.cpp
+    storage/src/vault_json_record_repository.cpp
     storage/src/vault_lab_result_repository.cpp
     storage/src/vault_preferences_repository.cpp
     storage/src/vault_settings_repository.cpp

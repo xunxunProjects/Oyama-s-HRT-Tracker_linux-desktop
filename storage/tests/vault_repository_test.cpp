@@ -1,13 +1,16 @@
+#include "oyama/storage/vault_codec.h"
 #include "oyama/storage/vault_preferences_repository.h"
 #include "oyama/storage/vault_settings_repository.h"
 #include "oyama/storage/vault_store.h"
 #include "oyama/storage/vault_tombstone_repository.h"
 #include "oyama/storage/vault_dose_event_repository.h"
+#include "oyama/storage/vault_json_record_repository.h"
 #include "oyama/storage/vault_lab_result_repository.h"
 
 #include "oyama/vault.h"
 
 #include <libpq-fe.h>
+#include <nlohmann/json.hpp>
 
 #include <cstdlib>
 #include <cstring>
@@ -206,6 +209,67 @@ int main() {
     check(loaded_lab.has_value() && loaded_lab->value == 90.0, "lab get");
     check(labs.remove(lab_a.id), "lab remove");
     (void)labs.remove(lab_b.id);
+
+    VaultJsonRecordRepository templates(vault, JsonRecordKind::DoseTemplate);
+    JsonRecord template_rec{
+        "00000000-0000-0000-0000-000000000040", Mode::Transmasc,
+        R"({"id":"00000000-0000-0000-0000-000000000040","mode":"transmasc","name":"weekly","route":"injection","ester":"EN","doseMG":5.0,"extras":{},"createdAt":1})",
+        std::nullopt};
+    templates.upsert(template_rec);
+    const auto template_list = templates.list(Mode::Transmasc);
+    check(template_list.size() == 1 && template_list[0].id == template_rec.id,
+          "template list");
+    const auto loaded_template = templates.get(template_rec.id);
+    check(loaded_template.has_value() && loaded_template->id == template_rec.id,
+          "template id");
+    check(loaded_template.has_value() &&
+              nlohmann::json::parse(loaded_template->payload_json) ==
+                  nlohmann::json::parse(template_rec.payload_json),
+          "template payload");
+    VaultJsonRecordRepository quick(vault, JsonRecordKind::QuickDose);
+    check(quick.list(Mode::Transmasc).empty(), "kind isolation");
+    check(templates.remove(template_rec.id), "template remove");
+
+    JsonRecord quick_rec{
+        "00000000-0000-0000-0000-000000000041", Mode::Transfem,
+        R"({"id":"00000000-0000-0000-0000-000000000041","route":"oral","ester":"E2","value":1.0,"createdAt":1})",
+        std::nullopt};
+    quick.upsert(quick_rec);
+    check(quick.list(Mode::Transfem).size() == 1, "quick list");
+    const auto loaded_quick = quick.get(quick_rec.id);
+    check(loaded_quick.has_value() && loaded_quick->id == quick_rec.id,
+          "quick id");
+    check(quick.remove(quick_rec.id), "quick remove");
+
+    VaultJsonRecordRepository supplies(vault, JsonRecordKind::Supply);
+    JsonRecord supply_rec{
+        "00000000-0000-0000-0000-000000000042", Mode::Transfem,
+        R"({"id":"00000000-0000-0000-0000-000000000042","route":"injection","ester":"EV","pack":{"kind":"vial","ml":10.0,"mgPerMl":40.0},"count":1.0,"startedAt":1})",
+        std::nullopt};
+    supplies.upsert(supply_rec);
+    check(supplies.list(Mode::Transfem).size() == 1, "supply list");
+    check(supplies.remove(supply_rec.id), "supply remove");
+
+    VaultJsonRecordRepository plan(vault, JsonRecordKind::PlanItem);
+    JsonRecord plan_rec{
+        "00000000-0000-0000-0000-000000000043", Mode::Transfem,
+        R"({"id":"00000000-0000-0000-0000-000000000043","route":"injection","ester":"EV","doseMG":2.0,"extras":{},"everyDays":7,"timesPerDay":1})",
+        std::nullopt};
+    plan.upsert(plan_rec);
+    check(plan.list(Mode::Transfem).size() == 1, "plan list");
+    check(plan.remove(plan_rec.id), "plan remove");
+
+    JsonRecord invalid_quick{
+        "00000000-0000-0000-0000-000000000044", Mode::Transfem,
+        R"({"id":"00000000-0000-0000-0000-000000000044","route":"teleport","ester":"E2","value":1.0,"createdAt":1})",
+        std::nullopt};
+    bool invalid_route_threw = false;
+    try {
+        quick.upsert(invalid_quick);
+    } catch (const VaultCodecError&) {
+        invalid_route_threw = true;
+    }
+    check(invalid_route_threw, "invalid JSON record route rejected");
 
     PGresult* blobs = PQexec(admin, "SELECT blob FROM vault_records");
     check(blobs != nullptr && PQresultStatus(blobs) == PGRES_TUPLES_OK,
