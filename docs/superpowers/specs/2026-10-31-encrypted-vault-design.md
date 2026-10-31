@@ -579,26 +579,27 @@ checked in; building does not require Python.
 
 ### 8.3 Repositories
 
-The following keep their existing public methods and value types but
-replace `Connection&` with `VaultStore&`:
+The vault-backed repositories keep the existing public methods and value
+types but replace `Connection&` with `VaultStore&` and carry a `Vault`
+prefix:
 
-- `DoseEventRepository`
-- `LabResultRepository`
-- `SettingsRepository`
-- `PreferencesRepository`
-- `TombstoneRepository`
-- `JsonRecordRepository`
+- `VaultDoseEventRepository`
+- `VaultLabResultRepository`
+- `VaultSettingsRepository`
+- `VaultPreferencesRepository`
+- `VaultTombstoneRepository`
+- `VaultJsonRecordRepository`
 
 They use shared JSON codecs in
 `storage/include/oyama/storage/vault_codec.h` /
 `storage/src/vault_codec.cpp`. The codecs are strict: malformed or
-out-of-range payloads throw `VaultError`/`std::runtime_error`, never
-silently drop records. `DoseEventRepository::list(mode)` scans all
+out-of-range payloads throw `VaultCodecError`/`std::runtime_error`, never
+silently drop records. `VaultDoseEventRepository::list(mode)` scans all
 `dose_event` rows, decodes, filters by mode, and sorts by `(time_h, id)`
-in memory. `count(mode)` uses the same path. `SettingsRepository::get()`
+in memory. `count(mode)` uses the same path. `VaultSettingsRepository::get()`
 returns defaults if the singleton is missing and creates it on the next
-save. `PreferencesRepository` loads/saves one JSON object and preserves
-per-key stamps. `TombstoneRepository` scans `tombstone` records and
+save. `VaultPreferencesRepository` loads/saves one JSON object and preserves
+per-key stamps. `VaultTombstoneRepository` scans `tombstone` records and
 applies the same prune rules.
 
 ### 8.4 Backup changes

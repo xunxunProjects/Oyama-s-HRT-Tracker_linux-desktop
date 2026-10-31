@@ -776,16 +776,6 @@ ParsedBundle parse_bundle(const json& root, std::int64_t now_ms) {
     return parsed;
 }
 
-struct SqlRepositories {
-    using Store = Connection;
-    using Settings = SettingsRepository;
-    using Preferences = PreferencesRepository;
-    using Tombstones = TombstoneRepository;
-    using Events = DoseEventRepository;
-    using Labs = LabResultRepository;
-    using JsonRecords = JsonRecordRepository;
-};
-
 struct VaultRepositories {
     using Store = VaultStore;
     using Settings = VaultSettingsRepository;
@@ -1478,24 +1468,6 @@ void write_backup_file(const std::filesystem::path& path,
 
 }  // namespace
 
-BackupPreview preview_backup(Connection& connection,
-                             const std::filesystem::path& path,
-                             std::int64_t now_ms) {
-    const auto root = parse_backup_file(path, {});
-    const auto parsed = parse_bundle(root, now_ms);
-    if (!parsed.valid) {
-        BackupPreview preview;
-        preview.ok = false;
-        preview.errors = parsed.errors;
-        preview.issues = parsed.issues;
-        preview.missing = parsed.missing;
-        return preview;
-    }
-    auto merged = merge_bundle<SqlRepositories>(connection, parsed, now_ms);
-    fill_counts(merged.preview, parsed);
-    return merged.preview;
-}
-
 BackupPreview preview_backup(VaultStore& vault,
                              const std::filesystem::path& path,
                              std::int64_t now_ms,
@@ -1513,26 +1485,6 @@ BackupPreview preview_backup(VaultStore& vault,
     auto merged = merge_bundle<VaultRepositories>(vault, parsed, now_ms);
     fill_counts(merged.preview, parsed);
     return merged.preview;
-}
-
-BackupImportResult import_backup(Connection& connection,
-                                 const std::filesystem::path& path,
-                                 std::int64_t now_ms) {
-    const auto root = parse_backup_file(path, {});
-    const auto parsed = parse_bundle(root, now_ms);
-    if (!parsed.valid) {
-        throw Error("backup envelope is invalid: " + parsed.errors.front());
-    }
-    Transaction transaction(connection);
-    auto merged = merge_bundle<SqlRepositories>(connection, parsed, now_ms);
-    fill_counts(merged.preview, parsed);
-    (void)connection.exec(
-        "DELETE FROM dose_events; DELETE FROM lab_results; "
-        "DELETE FROM dose_templates; DELETE FROM quick_doses; "
-        "DELETE FROM supplies; DELETE FROM plan_items; DELETE FROM tombstones;");
-    write_merged_state<SqlRepositories>(connection, merged);
-    transaction.commit();
-    return BackupImportResult{merged.preview, true};
 }
 
 BackupImportResult import_backup(VaultStore& vault,
@@ -1564,13 +1516,6 @@ BackupImportResult import_backup(VaultStore& vault,
 
 std::string export_backup_json(VaultStore& vault, std::int64_t now_ms) {
     return build_export(load_local<VaultRepositories>(vault), now_ms).dump();
-}
-
-void export_backup(Connection& connection,
-                   const std::filesystem::path& path, std::int64_t now_ms) {
-    const auto root = build_export(load_local<SqlRepositories>(connection),
-                                   now_ms);
-    write_backup_file(path, root.dump(2) + "\n");
 }
 
 void export_backup(VaultStore& vault, const std::filesystem::path& path,

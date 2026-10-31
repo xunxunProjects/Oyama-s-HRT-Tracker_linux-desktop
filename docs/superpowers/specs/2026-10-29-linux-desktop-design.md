@@ -6,6 +6,13 @@
 - **上游仓库**：`xunxunProjects/Oyama-s-HRT-Tracker`（v1.5.1）
 - **许可证**：MIT
 
+> **Superseded:** §10.3 (plaintext backup export) and §11 (security model)
+> are superseded by
+> [`2026-10-31-encrypted-vault-design.md`](2026-10-31-encrypted-vault-design.md).
+> The vault design adds application-layer encryption, a paper recovery phrase,
+> encrypted backups by default, legacy plaintext migration, and the revised
+> threat model. The rest of this document remains the baseline desktop design.
+
 ---
 
 ## 0. 一句话

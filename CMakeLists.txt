@@ -50,19 +50,13 @@ add_library(oyama_storage STATIC
     storage/src/backup_crypto.cpp
     storage/src/connection.cpp
     storage/src/database.cpp
-    storage/src/dose_event_repository.cpp
     storage/src/error.cpp
-    storage/src/json_record_repository.cpp
-    storage/src/lab_result_repository.cpp
     storage/src/legacy_migration.cpp
     storage/src/legacy_promotion.cpp
     storage/src/local_cluster.cpp
     storage/src/migration.cpp
     storage/src/passphrase.cpp
     storage/src/passphrase_wordlist.cpp
-    storage/src/preferences_repository.cpp
-    storage/src/settings_repository.cpp
-    storage/src/tombstone_repository.cpp
     storage/src/types.cpp
     storage/src/uuid.cpp
     storage/src/vault_codec.cpp

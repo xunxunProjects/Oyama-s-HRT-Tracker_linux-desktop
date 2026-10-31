@@ -19,8 +19,14 @@ pharmacokinetic model.  It currently provides:
 - **Settings** — body weight, birth year, calibration method/history, and PK
   parameter overrides as JSON.  These values are shared by both modes.
 - **Mode switch** — `transfem` / `transmasc` in the header.
+- **Vault gate** — first run generates a seven-word recovery phrase, asks you to
+  write it down and re-enter three positions, then unlocks the vault. Later
+  launches show an unlock screen. A header button locks immediately; the app
+  also locks after 15 minutes of inactivity and on quit.
 - **Managed cluster lifecycle** — if the saved configuration selects a managed
   cluster, the app starts it at launch through `LocalCluster::ensure_running()`.
+  If that cluster still contains legacy plaintext data, setup hands the phrase
+  to a background migration worker instead of writing partial vault data.
 
 The app reads the same configuration as the CLI
 (`$XDG_CONFIG_HOME/oyama-hrt/config`; `OYAMA_CONFIG_FILE` overrides it).  If no
@@ -34,7 +40,7 @@ oyama-hrt-cli db setup
 ## Build and run
 
 Requirements: CMake 3.21+, a C++20 compiler, Qt 6.4+ with Core, Qml, Quick and
-Quick Controls 2, libpq, and nlohmann/json.
+Quick Controls 2, libpq, libsodium, and nlohmann/json.
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -61,28 +67,36 @@ The same check is registered as CTest test `qt_shell_smoke`.
 ### Controller integration test
 
 `app_controller_test` starts a throwaway PostgreSQL cluster, writes an
-`existing` backend config, then verifies settings round-trip, adding a dose
-with extras, in-place editing, curve generation, and deletion. It is
-registered as CTest test `app_controller_test` and skips with exit code 77
-when `initdb`/`pg_ctl` are unavailable.
+`existing` backend config, then verifies vault setup/unlock/lock, settings
+round-trip, adding a dose with extras, in-place editing, curve generation, and
+deletion. Additional scenarios cover a managed legacy cluster that has not been
+migrated, a successful worker migration, and a retry after a bad row is
+repaired. It is registered as CTest test `app_controller_test` and skips with
+exit code 77 when `initdb`/`pg_ctl` are unavailable.
 
 ## Architecture
 
 ```text
-app/src/main.cpp             QGuiApplication + QQmlApplicationEngine
-app/src/app_controller.*     QObject exposed to QML as `app`
-app/qml/Main.qml             window, sidebar, mode switch, status bar
-app/qml/OverviewPage.qml      stat cards, Canvas curve, recent doses
-app/qml/AddDosePage.qml       dose form, route extras, add/edit
-app/qml/HistoryPage.qml       dose list, edit and delete
-app/qml/SettingsPage.qml      shared body/model settings
+app/src/main.cpp                    QGuiApplication + QQmlApplicationEngine
+app/src/app_controller.*            QObject exposed to QML as `app`
+app/src/legacy_migration_worker.*   QThread worker for managed-cluster import
+app/qml/Main.qml                    window, shell, mode switch, status bar
+app/qml/VaultGate.qml               full-window setup/unlock/migrating gate
+app/qml/SetupVaultPage.qml          phrase display, challenge, acknowledgement
+app/qml/UnlockVaultPage.qml         phrase entry and unlock
+app/qml/OverviewPage.qml             stat cards, Canvas curve, recent doses
+app/qml/AddDosePage.qml              dose form, route extras, add/edit
+app/qml/HistoryPage.qml              dose list, edit and delete
+app/qml/SettingsPage.qml             shared body/model settings
 ```
 
-`AppController` loads `AppConfig`, starts a managed cluster when needed, applies
-migrations, opens repositories, reads the current mode's doses, converts them to
-`oyama_pk_dose`, and calls `oyama_pk_simulate`.  The curve is exposed as a
-`QVariantList` of `{t, e2, cpa, tLevel}` points and drawn with a QML `Canvas`.
-The display is downsampled to roughly 700 points.
+`AppController` loads `AppConfig`, starts a managed cluster when needed, checks
+for legacy plaintext data before applying migrations, and shows the vault gate.
+Only after unlock does it open repositories through `VaultStore`, read the
+current mode's doses, convert them to `oyama_pk_dose`, and call
+`oyama_pk_simulate`. The curve is exposed as a `QVariantList` of
+`{t, e2, cpa, tLevel}` points and drawn with a QML `Canvas`. The display is
+downsampled to roughly 700 points.
 
 ## Known gaps
 
@@ -98,6 +112,14 @@ The display is downsampled to roughly 700 points.
 
 ## Privacy
 
-The database is local and uses a Unix-domain socket only.  The shell performs no
-network requests.  The database and backups are plaintext health data; the
-existing CLI export warning applies.
+The database is local and uses a Unix-domain socket only. The shell performs no
+network requests. Health records are encrypted at the application layer before
+they reach PostgreSQL; the vault phrase is never logged, placed in argv, or
+offered through a clipboard. Backups are encrypted by default.
+
+There is no phrase recovery. The app locks after 15 minutes of inactivity and on
+quit, zeroing the in-memory DEK. This does not protect against a malicious
+process running as your local account while the vault is unlocked, nor against
+memory-freezing or a compromised kernel. Use full-disk encryption and a trusted
+operating system. The old plaintext cluster from a migrated install remains a
+separate exposure until removed or protected by full-disk encryption.

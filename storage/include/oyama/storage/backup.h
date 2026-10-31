@@ -1,7 +1,5 @@
 #pragma once
 
-#include "connection.h"
-
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -47,26 +45,7 @@ struct BackupImportResult {
     bool applied{false};
 };
 
-/// Parses and validates a backup and computes the LWW merge without writing.
-/// Root-envelope errors are returned in `errors` with `ok == false`; category
-/// validation errors block only that category and are returned in `blocked`.
-[[nodiscard]] BackupPreview preview_backup(Connection& connection,
-                                           const std::filesystem::path& path,
-                                           std::int64_t now_ms);
-
-/// Applies the same merge in one transaction.  If the envelope is invalid this
-/// throws; blocked categories are left untouched and the rest is applied.
-[[nodiscard]] BackupImportResult import_backup(Connection& connection,
-                                               const std::filesystem::path& path,
-                                               std::int64_t now_ms);
-
-/// Exports a complete upstream-compatible bundle.  The file is written with
-/// mode 0600.  Invalid rows are omitted and reported through the thrown error
-/// only when the bundle cannot be represented at all.
-void export_backup(Connection& connection, const std::filesystem::path& path,
-                   std::int64_t now_ms);
-
-/// Vault-backed variants.  They read and write the exact same upstream
+/// Vault-backed backup operations.  They read and write the exact same upstream
 /// `oyama-hrt-complete-backup` v1 JSON through the encrypted vault.
 /// Encrypted files are detected by the magic and opened with `backup_phrase`.
 [[nodiscard]] std::string export_backup_json(VaultStore& vault,
