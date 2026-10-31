@@ -540,8 +540,8 @@ git commit -m "feat(storage): add vault settings, preferences, and tombstone rep
 
 ```cpp
 VaultDoseEventRepository doses(vault);
-DoseEvent b{"00000000-0000-0000-0000-000000000020", Mode::Transfem, "oral", "estradiol", 20.0, 2.0, "{}", 3, 1};
-DoseEvent a{"00000000-0000-0000-0000-000000000021", Mode::Transfem, "oral", "estradiol", 10.0, 1.0, "{}", 2, 1};
+DoseEvent b{"00000000-0000-0000-0000-000000000020", Mode::Transfem, "oral", "E2", 20.0, 2.0, "{}", 3, 1};
+DoseEvent a{"00000000-0000-0000-0000-000000000021", Mode::Transfem, "oral", "E2", 10.0, 1.0, "{}", 2, 1};
 doses.upsert(b);
 doses.upsert(a);
 auto list = doses.list(Mode::Transfem);
@@ -930,9 +930,9 @@ git commit -m "feat(storage): encrypt backups with Argon2id and AEAD"
 
 ```bash
 "$cli" --socket-dir "$socket" --dbname "$db" vault status
-printf 'correct horse battery staple\n' | "$cli" --socket-dir "$socket" --dbname "$db" --phrase-stdin doses add --mode transfem --route oral --ester estradiol --dose 2 --time 10
+printf 'correct horse battery staple\n' | "$cli" --socket-dir "$socket" --dbname "$db" --phrase-stdin doses add --mode transfem --route oral --ester E2 --dose 2 --time 10
 printf 'wrong\n' | "$cli" ... --phrase-stdin doses list; test $? -ne 0
-printf 'correct horse battery staple\n' | "$cli" ... --phrase-stdin doses list | grep -q 'estradiol'
+printf 'correct horse battery staple\n' | "$cli" ... --phrase-stdin doses list | grep -q 'E2'
 ```
 
 Add checks for: `vault status` before setup prints `uninitialized`; after setup prints `locked`; `unlock-check` accepts the phrase; `change-phrase` makes the old phrase fail; `backup export` creates a file starting with `OYAMAEBK` while reading the phrase only once; `backup import` with the wrong backup phrase fails before changing the DB; `backup import` with a separate `--backup-phrase-stdin` succeeds; `--plaintext` export prints the warning; data commands without `--phrase-stdin` fail with a clear locked/usage error.
@@ -1003,7 +1003,7 @@ for (const auto& position : app.setupChallenge()) {
 check(!app.confirmVaultSetup(answers, false), "acknowledgement required");
 check(app.confirmVaultSetup(answers, true), "setup completes");
 check(app.vaultState() == "unlocked", "unlocked after setup");
-check(app.addDose("oral", "estradiol", 2.0, 10.0), "add dose");
+check(app.addDose("oral", "E2", 2.0, 10.0), "add dose");
 app.lockVault();
 check(app.vaultState() == "locked" && app.doses().isEmpty(), "lock clears models");
 check(!app.unlockVault("wrong"), "wrong phrase rejected");

@@ -2,6 +2,8 @@
 #include "oyama/storage/vault_settings_repository.h"
 #include "oyama/storage/vault_store.h"
 #include "oyama/storage/vault_tombstone_repository.h"
+#include "oyama/storage/vault_dose_event_repository.h"
+#include "oyama/storage/vault_lab_result_repository.h"
 
 #include "oyama/vault.h"
 
@@ -160,6 +162,50 @@ int main() {
     tombs.record(Tombstone{"lab_result", "dddddddd-dddd-4ddd-8ddd-dddddddddddd", 101});
     check(tombs.prune_before(100) == 1, "prune removes one tombstone");
     check(tombs.list().size() == 2, "prune leaves newer tombstones");
+
+    VaultDoseEventRepository doses(vault);
+    DoseEvent dose_b{"00000000-0000-0000-0000-000000000020", Mode::Transfem,
+                     "oral", "E2", 20.0, 2.0, "{}", 3, 1};
+    DoseEvent dose_a{"00000000-0000-0000-0000-000000000021", Mode::Transfem,
+                     "oral", "E2", 10.0, 1.0, "{}", 2, 1};
+    doses.upsert(dose_b);
+    doses.upsert(dose_a);
+    const auto dose_list = doses.list(Mode::Transfem);
+    check(dose_list.size() == 2 && dose_list[0].id == dose_a.id &&
+              dose_list[1].id == dose_b.id,
+          "doses sort by time then id");
+    check(doses.list(Mode::Transmasc).empty(), "dose mode isolation");
+    const auto loaded_dose = doses.get(dose_a.id);
+    check(loaded_dose.has_value() && loaded_dose->dose_mg == 1.0,
+          "dose get");
+    check(doses.remove(dose_a.id), "dose remove");
+    check(doses.count(Mode::Transfem) == 1, "dose count");
+    DoseEvent no_stamp{"00000000-0000-0000-0000-000000000022",
+                       Mode::Transfem, "oral", "E2", 5.0, 1.0, "{}",
+                       std::nullopt, 1};
+    doses.upsert(no_stamp);
+    const auto loaded_no_stamp = doses.get(no_stamp.id);
+    check(loaded_no_stamp.has_value() &&
+              !loaded_no_stamp->updated_at.has_value(),
+          "null updatedAt round-trip");
+    (void)doses.remove(no_stamp.id);
+
+    VaultLabResultRepository labs(vault);
+    LabResult lab_b{"00000000-0000-0000-0000-000000000030", Mode::Transfem,
+                    30.0, 100.0, "pg/ml", "immuno", 5, 1};
+    LabResult lab_a{"00000000-0000-0000-0000-000000000031", Mode::Transfem,
+                    10.0, 90.0, "pg/ml", "immuno", 4, 1};
+    labs.upsert(lab_b);
+    labs.upsert(lab_a);
+    const auto lab_list = labs.list(Mode::Transfem);
+    check(lab_list.size() == 2 && lab_list[0].id == lab_a.id &&
+              lab_list[1].id == lab_b.id,
+          "labs sort by time then id");
+    check(labs.list(Mode::Transmasc).empty(), "lab mode isolation");
+    const auto loaded_lab = labs.get(lab_a.id);
+    check(loaded_lab.has_value() && loaded_lab->value == 90.0, "lab get");
+    check(labs.remove(lab_a.id), "lab remove");
+    (void)labs.remove(lab_b.id);
 
     PGresult* blobs = PQexec(admin, "SELECT blob FROM vault_records");
     check(blobs != nullptr && PQresultStatus(blobs) == PGRES_TUPLES_OK,
