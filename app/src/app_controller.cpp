@@ -15,12 +15,15 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
 
+#include <oyama/bip39.h>
+#include <oyama/bip39.h>
 #include <oyama/pk.h>
 #include <oyama/storage/legacy_migration.h>
 #include <oyama/storage/legacy_promotion.h>
@@ -545,12 +548,18 @@ bool AppController::beginVaultSetup() {
         return false;
     }
     try {
-        auto words = Passphrase::generate(7);
-        std::string joined = Passphrase::join(words);
-        for (auto& word : words) {
-            sodium_memzero(word.data(), word.size());
+        char phrase_buf[OYAMA_BIP39_MAX_LEN];
+        oyama_error gen_err{};
+        std::memset(&gen_err, 0, sizeof(gen_err));
+        if (oyama_bip39_generate(phrase_buf, sizeof(phrase_buf), &gen_err) !=
+            OYAMA_VAULT_OK) {
+            throw std::runtime_error(std::string("could not generate recovery "
+                                                 "phrase: ") +
+                                     gen_err.message);
         }
-        const auto positions = Passphrase::challenge(words.size(), 3);
+        std::string joined(phrase_buf);
+        sodium_memzero(phrase_buf, sizeof(phrase_buf));
+        const auto positions = Passphrase::challenge(24, 3);
         clear_setup();
         setup_phrase_ = QString::fromStdString(joined);
         sodium_memzero(joined.data(), joined.size());
