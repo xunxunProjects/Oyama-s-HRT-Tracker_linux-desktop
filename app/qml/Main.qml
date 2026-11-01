@@ -145,14 +145,4 @@ ApplicationWindow {
         visible: app.vaultState === "panic"
         z: 10000
     }
-
-    Rectangle {
-        id: captureOverlay
-        objectName: "captureOverlay"
-        anchors.fill: parent
-        color: "#000000"
-        visible: captureGuard ? captureGuard.active : false
-        z: 10000
-        enabled: false
-    }
 }
