@@ -27,6 +27,7 @@ parity are still ahead.
 - Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
 - AI contributors: [`AI-CONTRIBUTORS.md`](AI-CONTRIBUTORS.md)
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)
+- Donations: [`DONATIONS.md`](DONATIONS.md)
 - Documentation index: [`docs/README.md`](docs/README.md)
 - Wiki: <https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki>
 
