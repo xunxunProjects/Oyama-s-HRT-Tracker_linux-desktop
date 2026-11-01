@@ -25,6 +25,16 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 include(GNUInstallDirs)
 
+if(OYAMA_SECURITY_MODE)
+    add_compile_definitions(OYAMA_SECURITY_MODE=1)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        add_compile_options(-fstack-protector-strong -D_FORTIFY_SOURCE=2)
+        add_link_options(-Wl,-z,relro -Wl,-z,now)
+    endif()
+else()
+    add_compile_definitions(OYAMA_SECURITY_MODE=0 OYAMA_INSECURE_BUILD=1)
+endif()
+
 add_library(oyama_vault STATIC
     vault/src/vault.c
     vault/src/vault_crypto.c)
@@ -95,6 +105,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 option(OYAMA_BUILD_QT_SHELL "Build the Qt/QML desktop shell" ON)
+option(OYAMA_SECURITY_MODE "Enable security hardening (default ON)" ON)
 
 if(OYAMA_BUILD_QT_SHELL)
     find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)

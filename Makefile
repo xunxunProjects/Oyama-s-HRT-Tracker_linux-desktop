@@ -4,8 +4,10 @@
 # required. The real build configuration remains CMake; this is the short path
 # documented in docs/dependencies.md.
 #
-#   make                 configure + Release build
+#   make                 configure + Release build (security mode ON)
+#   make SECURITY=0      configure + Release build (security mode OFF)
 #   make test            build, then run CTest
+#   make test-both       build and test both security variants
 #   sudo make install    install to PREFIX (default /usr/local)
 #   make package         stage the install and create PACKAGE tarball
 #   make clean           remove BUILD_DIR
@@ -18,14 +20,18 @@ PG_BINDIR ?=
 JOBS ?= 2
 STAGE_DIR ?= dist/stage
 PACKAGE ?= dist/oyama-hrt.tar.gz
+SECURITY ?= 1
 
-.PHONY: all configure build test install package clean
+SECURITY_FLAG = $(if $(filter 1,$(SECURITY)),-DOYAMA_SECURITY_MODE=ON,-DOYAMA_SECURITY_MODE=OFF)
+
+.PHONY: all configure build test test-both test-security-off install package clean
 
 all: build
 
 configure:
 	$(CMAKE) -S . -B $(BUILD_DIR) -G Ninja \
 		-DCMAKE_BUILD_TYPE=$(BUILD_TYPE) \
+		$(SECURITY_FLAG) \
 		-DOYAMA_BUILD_QT_SHELL=ON \
 		-DCMAKE_INSTALL_PREFIX=$(PREFIX)
 
@@ -34,6 +40,14 @@ build: configure
 
 test: build
 	PG_BINDIR="$(PG_BINDIR)" ctest --test-dir $(BUILD_DIR) --output-on-failure
+
+test-security-off:
+	$(MAKE) SECURITY=0 BUILD_DIR=build-insecure clean
+	$(MAKE) SECURITY=0 BUILD_DIR=build-insecure configure
+	$(MAKE) SECURITY=0 BUILD_DIR=build-insecure build
+	PG_BINDIR="$(PG_BINDIR)" ctest --test-dir build-insecure --output-on-failure
+
+test-both: test test-security-off
 
 install: build
 	$(CMAKE) --install $(BUILD_DIR)
@@ -45,4 +59,4 @@ package: build
 	tar -C "$(STAGE_DIR)" -czf "$(PACKAGE)" .
 
 clean:
-	rm -rf "$(BUILD_DIR)"
+	rm -rf "$(BUILD_DIR)" build-insecure
