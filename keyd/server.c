@@ -1,4 +1,4 @@
-#include "keyd/server.h"
+#include "server.h"
 
 #include "oyama/vault.h"
 #include "oyama/security/keyproto.h"
