@@ -89,7 +89,8 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_library(oyama_security STATIC
-    security/src/mem.c)
+    security/src/mem.c
+    security/src/panic.c)
 target_include_directories(oyama_security
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -493,6 +494,15 @@ if(BUILD_TESTING)
         target_compile_options(mem_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME mem_test COMMAND mem_test)
+
+    add_executable(panic_test security/tests/panic_test.c)
+    target_include_directories(panic_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(panic_test PRIVATE oyama_security)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(panic_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME panic_test COMMAND panic_test)
 
     add_executable(bip39_test vault/tests/bip39_test.c)
     target_include_directories(bip39_test PRIVATE vault/src include)
