@@ -8,11 +8,11 @@
 #include <map>
 #include <utility>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
-bool matches(const Tombstone& tombstone, std::string_view kind,
-             std::string_view record_id) {
+bool matches(const Tombstone& tombstone, oyama::string_view kind,
+             oyama::string_view record_id) {
     return tombstone.kind == kind && tombstone.record_id == record_id;
 }
 
@@ -49,14 +49,14 @@ void VaultTombstoneRepository::record_many(
     }
 
     std::map<Key, std::int64_t> merged;
-    for (const auto& [kind, records] : tombstones) {
-        for (const auto& [record_id, deleted_at] : records) {
+    for (const auto& _entry : tombstones) { const auto& kind = _entry.first; const auto& records = _entry.second;
+        for (const auto& _entry : records) { const auto& record_id = _entry.first; const auto& deleted_at = _entry.second;
             auto& stamp = merged[Key{kind, record_id}];
             stamp = std::max(stamp, deleted_at);
         }
     }
 
-    for (const auto& [key, deleted_at] : merged) {
+    for (const auto& _entry : merged) { const auto& key = _entry.first; const auto& deleted_at = _entry.second;
         std::string record_id;
         std::int64_t stamp = deleted_at;
         const auto found = existing.find(key);
@@ -73,8 +73,8 @@ void VaultTombstoneRepository::record_many(
     }
 }
 
-bool VaultTombstoneRepository::remove(std::string_view kind,
-                                      std::string_view record_id) {
+bool VaultTombstoneRepository::remove(oyama::string_view kind,
+                                      oyama::string_view record_id) {
     bool removed = false;
     const auto records = vault_.scan("tombstone");
     for (const auto& record : records) {
@@ -101,7 +101,7 @@ std::vector<Tombstone> VaultTombstoneRepository::list() {
     }
     std::vector<Tombstone> tombstones;
     tombstones.reserve(unique.size());
-    for (const auto& [key, tombstone] : unique) {
+    for (const auto& _entry : unique) { const auto& key = _entry.first; const auto& tombstone = _entry.second;
         (void)key;
         tombstones.push_back(tombstone);
     }
@@ -122,4 +122,4 @@ std::size_t VaultTombstoneRepository::prune_before(std::int64_t cutoff) {
     return removed;
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

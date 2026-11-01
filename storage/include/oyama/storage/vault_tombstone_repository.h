@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include "types.h"
 
@@ -8,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 class VaultStore;
 
@@ -24,13 +25,13 @@ public:
     void record_many(const std::map<std::string,
                                     std::map<std::string, std::int64_t>>&
                          tombstones);
-    [[nodiscard]] bool remove(std::string_view kind,
-                              std::string_view record_id);
-    [[nodiscard]] std::vector<Tombstone> list();
-    [[nodiscard]] std::size_t prune_before(std::int64_t cutoff);
+    OYAMA_NODISCARD bool remove(oyama::string_view kind,
+                              oyama::string_view record_id);
+    OYAMA_NODISCARD std::vector<Tombstone> list();
+    OYAMA_NODISCARD std::size_t prune_before(std::int64_t cutoff);
 
 private:
     VaultStore& vault_;
 };
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

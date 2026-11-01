@@ -5,9 +5,9 @@
 #include <array>
 #include <string_view>
 
-namespace oyama::storage::detail {
+namespace oyama { namespace storage { namespace detail {
 
-extern const std::array<std::string_view, 7776> kWordlist = {{
+extern const std::array<oyama::string_view, 7776> kWordlist = {{
     "abacus",
     "abdomen",
     "abdominal",
@@ -7786,4 +7786,4 @@ extern const std::array<std::string_view, 7776> kWordlist = {{
     "zoom",
 }};
 
-}  // namespace oyama::storage::detail
+} } }  // namespace oyama::storage::detail

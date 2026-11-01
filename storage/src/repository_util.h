@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include <oyama/storage/connection.h>
 #include <oyama/storage/error.h>
@@ -13,33 +14,33 @@
 #include <string>
 #include <string_view>
 
-namespace oyama::storage::detail {
+namespace oyama { namespace storage { namespace detail {
 
-inline std::optional<std::int64_t> nullable_integer(const Result& result,
+inline oyama::optional<std::int64_t> nullable_integer(const Result& result,
                                                     int row, int column) {
     if (result.is_null(row, column)) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     return result.integer(row, column);
 }
 
-inline std::optional<double> nullable_number(const Result& result, int row,
+inline oyama::optional<double> nullable_number(const Result& result, int row,
                                              int column) {
     if (result.is_null(row, column)) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     return result.number(row, column);
 }
 
-inline std::optional<std::string> nullable_text(const Result& result, int row,
+inline oyama::optional<std::string> nullable_text(const Result& result, int row,
                                                 int column) {
     if (result.is_null(row, column)) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     return result.text(row, column);
 }
 
-inline void require_text(std::string_view value, const char* field) {
+inline void require_text(oyama::string_view value, const char* field) {
     if (value.empty()) {
         throw Error(std::string(field) + " must not be empty");
     }
@@ -66,4 +67,4 @@ inline std::string number_to_string(double value) {
     return output.str();
 }
 
-}  // namespace oyama::storage::detail
+} } }  // namespace oyama::storage::detail

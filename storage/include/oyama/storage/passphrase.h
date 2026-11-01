@@ -1,25 +1,26 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include <cstddef>
 #include <string>
 #include <string_view>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 /// Diceware-style paper recovery phrases built from the EFF long wordlist.
 class Passphrase {
 public:
-    [[nodiscard]] static std::vector<std::string> generate(
+    OYAMA_NODISCARD static std::vector<std::string> generate(
         std::size_t words = 7);
-    [[nodiscard]] static std::string join(
+    OYAMA_NODISCARD static std::string join(
         const std::vector<std::string>& words);
-    [[nodiscard]] static std::string normalize(std::string_view phrase);
-    [[nodiscard]] static std::vector<std::size_t> challenge(
+    OYAMA_NODISCARD static std::string normalize(oyama::string_view phrase);
+    OYAMA_NODISCARD static std::vector<std::size_t> challenge(
         std::size_t word_count, std::size_t count = 3);
-    [[nodiscard]] static bool verify_challenge(
-        std::string_view phrase, const std::vector<std::size_t>& positions,
+    OYAMA_NODISCARD static bool verify_challenge(
+        oyama::string_view phrase, const std::vector<std::size_t>& positions,
         const std::vector<std::string>& answers);
 };
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage
