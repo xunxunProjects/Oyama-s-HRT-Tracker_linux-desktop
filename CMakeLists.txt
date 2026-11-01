@@ -835,6 +835,7 @@ if(OYAMA_BUILD_COMPARE_TOOLS)
             ${CMAKE_CURRENT_SOURCE_DIR}/keyd)
         target_link_libraries(oyama-keyd PRIVATE
             oyama_vault
+            oyama_security_full
             PostgreSQL::PostgreSQL
             PkgConfig::SODIUM)
         if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
