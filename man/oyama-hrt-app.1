@@ -1,0 +1,34 @@
+.TH OYAMA-HRT-APP 1 "2026-11-01" "Oyama's HRT Tracker 0.5.0" "User Commands"
+.SH NAME
+oyama-hrt-app \- desktop application for tracking hormone replacement therapy
+.SH SYNOPSIS
+.B oyama-hrt-app
+.SH DESCRIPTION
+.B oyama-hrt-app
+is a native Qt 6 desktop application for tracking hormone replacement therapy
+doses, lab results, and pharmacokinetic curves. All data is stored locally in
+an encrypted PostgreSQL database managed by the application.
+.PP
+The application provides a graphical interface for:
+.IP \(bu 2
+Recording and editing dose events (injections, patches, gels, oral, etc.)
+.IP \(bu 2
+Viewing pharmacokinetic curves (E2, CPA, T) over time
+.IP \(bu 2
+Importing and exporting encrypted backups
+.IP \(bu 2
+Managing settings, preferences, and calibration data
+.PP
+On first run, the application guides the user through vault setup, including
+recovery phrase generation and PostgreSQL cluster initialization.
+.SH FILES
+.TP
+.I ~/.config/oyama-hrt/
+Application configuration and UI preferences.
+.TP
+.I $XDG_DATA_HOME/oyama-hrt/
+Application data directory.
+.SH SEE ALSO
+.BR oyama-hrt-cli (1)
+.SH AUTHOR
+Oyama's HRT Tracker contributors.
