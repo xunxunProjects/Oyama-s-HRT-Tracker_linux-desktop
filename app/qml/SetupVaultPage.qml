@@ -62,7 +62,7 @@ Item {
                 Layout.maximumWidth: 760
                 horizontalAlignment: Text.AlignHCenter
                 text: qsTr("Create your vault")
-                color: "#f4f6f8"
+                color: Theme.text
                 font.pixelSize: 26
                 font.weight: Font.DemiBold
             }
@@ -75,7 +75,7 @@ Item {
                 text: qsTr("Your data is encrypted with a seven-word recovery " +
                            "phrase. Write it down on paper. There is no " +
                            "recovery if you lose it.")
-                color: "#8a98a8"
+                color: Theme.textMuted
                 font.pixelSize: 13
                 wrapMode: Text.WordWrap
             }
@@ -98,7 +98,7 @@ Item {
 
                     Label {
                         text: qsTr("Recovery phrase")
-                        color: "#8a98a8"
+                        color: Theme.textMuted
                         font.pixelSize: 11
                         font.letterSpacing: 1.0
                     }
@@ -124,7 +124,7 @@ Item {
                             Text {
                                 text: modelData
                                 Layout.fillWidth: true
-                                color: "#f4f6f8"
+                                color: Theme.text
                                 font.pixelSize: 18
                                 font.family: "monospace"
                                 font.letterSpacing: 1.0
@@ -143,7 +143,7 @@ Item {
                     horizontalAlignment: Text.AlignHCenter
                     text: qsTr("No recovery phrase is ready. Generate one to " +
                                "continue.")
-                    color: "#8a98a8"
+                    color: Theme.textMuted
                     font.pixelSize: 13
                 }
 
@@ -189,7 +189,7 @@ Item {
 
                             Label {
                                 text: qsTr("Word %1").arg(modelData + 1)
-                                color: "#8a98a8"
+                                color: Theme.textMuted
                                 font.pixelSize: 12
                             }
 
@@ -257,7 +257,7 @@ Item {
                     Layout.fillWidth: true
                     horizontalAlignment: Text.AlignHCenter
                     text: app.status
-                    color: "#8a98a8"
+                    color: Theme.textMuted
                     font.pixelSize: 12
                     wrapMode: Text.WordWrap
                 }

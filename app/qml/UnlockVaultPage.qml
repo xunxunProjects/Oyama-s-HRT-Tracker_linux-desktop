@@ -27,8 +27,8 @@ Item {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("Vault locked")
-            color: "#f4f6f8"
-            font.pixelSize: 26
+            color: Theme.text
+            font.pixelSize: Theme.title
             font.weight: Font.DemiBold
         }
 
@@ -37,8 +37,8 @@ Item {
             horizontalAlignment: Text.AlignHCenter
             text: qsTr("Enter the seven-word recovery phrase to unlock " +
                        "your data.")
-            color: "#8a98a8"
-            font.pixelSize: 13
+            color: Theme.textMuted
+            font.pixelSize: Theme.body
             wrapMode: Text.WordWrap
         }
 
@@ -81,8 +81,8 @@ Item {
             Layout.fillWidth: true
             visible: page.errorText.length > 0
             text: page.errorText
-            color: "#e8a0b4"
-            font.pixelSize: 13
+            color: Theme.danger
+            font.pixelSize: Theme.body
             wrapMode: Text.WordWrap
         }
     }
