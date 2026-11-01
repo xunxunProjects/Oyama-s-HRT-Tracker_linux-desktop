@@ -27,6 +27,37 @@ find_package(PkgConfig REQUIRED)
 pkg_check_modules(SODIUM REQUIRED IMPORTED_TARGET libsodium)
 include(GNUInstallDirs)
 
+set(OYAMA_SECURITY_PROFILE "standard" CACHE STRING
+    "Security profile: off, standard, or full")
+set_property(CACHE OYAMA_SECURITY_PROFILE PROPERTY STRINGS off standard full)
+
+if(NOT OYAMA_SECURITY_PROFILE MATCHES "^(off|standard|full)$")
+    message(FATAL_ERROR
+        "OYAMA_SECURITY_PROFILE must be off, standard, or full")
+endif()
+
+set(OYAMA_SECURITY_PROFILE_OFF 0)
+set(OYAMA_SECURITY_PROFILE_STANDARD 0)
+set(OYAMA_SECURITY_PROFILE_FULL 0)
+
+if(OYAMA_SECURITY_PROFILE STREQUAL "off")
+    set(OYAMA_SECURITY_PROFILE_OFF 1)
+    set(OYAMA_SECURITY_MODE OFF)
+elseif(OYAMA_SECURITY_PROFILE STREQUAL "full")
+    set(OYAMA_SECURITY_PROFILE_FULL 1)
+    set(OYAMA_SECURITY_MODE ON)
+else()
+    set(OYAMA_SECURITY_PROFILE_STANDARD 1)
+    set(OYAMA_SECURITY_MODE ON)
+endif()
+
+add_compile_definitions(
+    OYAMA_SECURITY_PROFILE_OFF=${OYAMA_SECURITY_PROFILE_OFF}
+    OYAMA_SECURITY_PROFILE_STANDARD=${OYAMA_SECURITY_PROFILE_STANDARD}
+    OYAMA_SECURITY_PROFILE_FULL=${OYAMA_SECURITY_PROFILE_FULL})
+
+message(STATUS "Security profile: ${OYAMA_SECURITY_PROFILE}")
+
 if(OYAMA_SECURITY_MODE)
     add_compile_definitions(OYAMA_SECURITY_MODE=1)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
@@ -98,6 +129,8 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_executable(oyama-hrt-cli cli/main.cpp cli/process_hardening.cpp)
+target_include_directories(oyama-hrt-cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(oyama-hrt-cli PRIVATE oyama_storage PkgConfig::SODIUM)
 target_compile_definitions(oyama-hrt-cli PRIVATE
     OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
@@ -107,7 +140,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 option(OYAMA_BUILD_QT_SHELL "Build the Qt/QML desktop shell" ON)
-option(OYAMA_SECURITY_MODE "Enable security hardening (default ON)" ON)
 
 if(OYAMA_BUILD_QT_SHELL)
     find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
@@ -438,6 +470,10 @@ if(BUILD_TESTING)
     add_test(NAME cli_version COMMAND oyama-hrt-cli version)
     set_tests_properties(cli_version PROPERTIES
         PASS_REGULAR_EXPRESSION "oyama-hrt-cli ${PROJECT_VERSION}")
+
+    add_test(NAME cli_version_profile COMMAND oyama-hrt-cli version --verbose)
+    set_tests_properties(cli_version_profile PROPERTIES
+        PASS_REGULAR_EXPRESSION "security-profile: standard")
 
     add_test(
         NAME cli_integration

@@ -4,8 +4,8 @@
 # required. The real build configuration remains CMake; this is the short path
 # documented in docs/dependencies.md.
 #
-#   make                 configure + Release build (security mode ON)
-#   make SECURITY=0      configure + Release build (security mode OFF)
+#   make                 configure + Release build (standard profile)
+#   make SECURITY=0      configure + Release build (security profile off)
 #   make test            build, then run CTest
 #   make test-both       build and test both security variants
 #   sudo make install    install to PREFIX (default /usr/local)
@@ -22,7 +22,7 @@ STAGE_DIR ?= dist/stage
 PACKAGE ?= dist/oyama-hrt.tar.gz
 SECURITY ?= 1
 
-SECURITY_FLAG = $(if $(filter 1,$(SECURITY)),-DOYAMA_SECURITY_MODE=ON,-DOYAMA_SECURITY_MODE=OFF)
+SECURITY_FLAG = -DOYAMA_SECURITY_PROFILE=$(if $(filter 1,$(SECURITY)),standard,off)
 
 .PHONY: all configure build test test-both test-security-off install package clean
 

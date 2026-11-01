@@ -128,7 +128,7 @@ The top-level `Makefile` wraps the normal CMake workflow:
 make                 # configure and build the default target
 make JOBS=2          # limit parallel compilation
 make test            # run CTest
-make SECURITY=0      # build without security hardening (debug only)
+make SECURITY=0      # security profile off (debug only)
 make test-both       # build and test both security variants
 sudo make install    # install under /usr/local by default
 make PREFIX=/opt/oyama-hrt
@@ -140,12 +140,17 @@ make clean
 `DESTDIR`, then writes a gzip tarball. Set `PACKAGE` to a platform-specific
 artifact name; the default is `dist/oyama-hrt.tar.gz`.
 
-### Security mode
+### Security profiles
 
-The Makefile defaults to security mode ON (`SECURITY=1`). In this mode the
-build enables stack protection, `_FORTIFY_SOURCE=2`, and linker hardening
-(`-Wl,-z,relro,-z,now`). Set `SECURITY=0` to disable these for debugging.
-Both variants must pass the full test suite before release.
+`OYAMA_SECURITY_PROFILE` selects `off`, `standard`, or `full`; the default is
+`standard`. `standard` and `full` enable stack protection,
+`_FORTIFY_SOURCE=2`, and linker hardening (`-Wl,-z,relro,-z,now`). `off`
+disables those extra modules for a debug build but still uses the vault. See
+`docs/security/profiles.md` for the full feature table.
+
+The Makefile defaults to `SECURITY=1`, which selects `standard`. Set
+`SECURITY=0` to select `off`. `OYAMA_SECURITY_MODE` is derived from the profile
+and no longer needs to be passed directly.
 
 The equivalent direct CMake commands are:
 
@@ -161,7 +166,7 @@ Use `su` instead of `sudo` on a base NetBSD system where `sudo` is not
 installed. `-j2` is deliberately portable; raise it only when the host has
 enough memory, because each integration test can start a PostgreSQL cluster.
 
-The current release suite has 32 tests. Integration tests return `77` (skip) when
+The current release suite has 34 tests. Integration tests return `77` (skip) when
 the PostgreSQL server tools are unavailable. OpenBSD and NetBSD must be rebuilt
 and tested on their native hosts or VMs; a Linux result is not evidence for
 either binary.
