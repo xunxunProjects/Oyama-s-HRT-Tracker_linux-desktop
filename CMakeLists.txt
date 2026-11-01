@@ -89,8 +89,7 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_library(oyama_security STATIC
-    security/src/mem.c
-    security/src/panic.c)
+    security/src/mem.c)
 target_include_directories(oyama_security
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -98,6 +97,23 @@ target_link_libraries(oyama_security
     PUBLIC PkgConfig::SODIUM)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_security PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+add_library(oyama_security_full STATIC
+    security/src/panic.c
+    security/src/panic_null.c
+    security/src/panic_x11.c
+    security/src/capture.c
+    security/src/capture_null.c
+    security/src/capture_dbus.c
+    security/src/capture_x11.c)
+target_include_directories(oyama_security_full
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(oyama_security_full
+    PUBLIC oyama_security PkgConfig::SODIUM)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(oyama_security_full PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 add_library(oyama_pk STATIC
@@ -232,7 +248,8 @@ if(OYAMA_BUILD_QT_SHELL)
             app/src/legacy_migration_worker.cpp
             app/src/legacy_migration_worker.h
             app/src/ui_preferences.cpp
-            app/src/ui_preferences.h)
+            app/src/ui_preferences.h
+            ${OYAMA_CAPTURE_GUARD_SOURCES})
         add_dependencies(oyama-hrt-app qml5_transform)
         target_include_directories(oyama-hrt-app PRIVATE
             app/src
@@ -248,6 +265,9 @@ if(OYAMA_BUILD_QT_SHELL)
             Qt5::Qml
             Qt5::Quick
             Qt5::QuickControls2)
+        if(OYAMA_SECURITY_PROFILE STREQUAL "full")
+            target_link_libraries(oyama-hrt-app PRIVATE oyama_security_full)
+        endif()
         target_compile_definitions(oyama-hrt-app PRIVATE
             OYAMA_APP_VERSION="${PROJECT_VERSION}"
             OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
@@ -498,11 +518,20 @@ if(BUILD_TESTING)
     add_executable(panic_test security/tests/panic_test.c)
     target_include_directories(panic_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_link_libraries(panic_test PRIVATE oyama_security)
+    target_link_libraries(panic_test PRIVATE oyama_security oyama_security_full)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(panic_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME panic_test COMMAND panic_test)
+
+    add_executable(capture_test security/tests/capture_test.c)
+    target_include_directories(capture_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(capture_test PRIVATE oyama_security oyama_security_full pthread)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(capture_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME capture_test COMMAND capture_test)
 
     add_executable(bip39_test vault/tests/bip39_test.c)
     target_include_directories(bip39_test PRIVATE vault/src include)
