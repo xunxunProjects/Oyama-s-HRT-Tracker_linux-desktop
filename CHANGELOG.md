@@ -7,9 +7,7 @@
 - Add `off`, `standard`, and `full` security profiles. `standard` is the
   default; `oyama-hrt-cli version --verbose` reports the active profile.
 - Generate new vault recovery phrases as 24-word BIP39 mnemonics (256 bits of
-  entropy); existing vaults keep their original phrase.  Add memory hygiene
-  primitives and a panic lock (full profile) that wipes phrase buffers and
-  shows a solid gray screen.
+  entropy); existing vaults keep their original phrase.
 
 ## 0.5.1 — 2026-11-01
 
