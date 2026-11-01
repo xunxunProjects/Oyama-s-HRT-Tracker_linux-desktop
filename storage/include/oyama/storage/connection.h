@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include "error.h"
 
@@ -11,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 /// Connection settings for a local PostgreSQL server.  Only Unix-domain
 /// sockets are supported: an empty socket_dir is resolved by searching the
@@ -26,16 +27,16 @@ struct ConnectionConfig {
 
     /// Returns a libpq keyword/value connection string.  Values are quoted
     /// and escaped so socket paths containing spaces or quotes are safe.
-    [[nodiscard]] std::string to_conninfo() const;
+    OYAMA_NODISCARD std::string to_conninfo() const;
 
     /// Reads OYAMA_PG_* first, then the corresponding libpq PG* variables.
     /// PG* values are never used to enable a TCP host.
-    [[nodiscard]] static ConnectionConfig from_environment();
+    OYAMA_NODISCARD static ConnectionConfig from_environment();
 
-    [[nodiscard]] static std::vector<std::string> candidate_socket_dirs(int port);
+    OYAMA_NODISCARD static std::vector<std::string> candidate_socket_dirs(int port);
 
     /// Returns the first candidate directory containing the server socket.
-    [[nodiscard]] static std::optional<std::string> find_socket_dir(int port);
+    OYAMA_NODISCARD static oyama::optional<std::string> find_socket_dir(int port);
 };
 
 /// Owning wrapper around a libpq result.  Server errors are thrown by
@@ -52,16 +53,16 @@ public:
     Result(const Result&) = delete;
     Result& operator=(const Result&) = delete;
 
-    [[nodiscard]] int rows() const noexcept;
-    [[nodiscard]] int columns() const noexcept;
-    [[nodiscard]] bool is_null(int row, int column) const;
-    [[nodiscard]] std::optional<std::string> value(int row, int column) const;
-    [[nodiscard]] std::string text(int row, int column) const;
-    [[nodiscard]] std::int64_t integer(int row, int column) const;
-    [[nodiscard]] double number(int row, int column) const;
-    [[nodiscard]] bool boolean(int row, int column) const;
-    [[nodiscard]] std::string command_tag() const;
-    [[nodiscard]] int affected_rows() const;
+    OYAMA_NODISCARD int rows() const noexcept;
+    OYAMA_NODISCARD int columns() const noexcept;
+    OYAMA_NODISCARD bool is_null(int row, int column) const;
+    OYAMA_NODISCARD oyama::optional<std::string> value(int row, int column) const;
+    OYAMA_NODISCARD std::string text(int row, int column) const;
+    OYAMA_NODISCARD std::int64_t integer(int row, int column) const;
+    OYAMA_NODISCARD double number(int row, int column) const;
+    OYAMA_NODISCARD bool boolean(int row, int column) const;
+    OYAMA_NODISCARD std::string command_tag() const;
+    OYAMA_NODISCARD int affected_rows() const;
 
 private:
     struct Deleter {
@@ -83,20 +84,20 @@ public:
     Connection(const Connection&) = delete;
     Connection& operator=(const Connection&) = delete;
 
-    [[nodiscard]] Result exec(const std::string& sql);
-    [[nodiscard]] Result exec_params(
+    OYAMA_NODISCARD Result exec(const std::string& sql);
+    OYAMA_NODISCARD Result exec_params(
         const std::string& sql,
-        const std::vector<std::optional<std::string>>& params);
+        const std::vector<oyama::optional<std::string>>& params);
 
     void begin();
     void commit();
     void rollback();
 
-    [[nodiscard]] int server_version() const noexcept;
-    [[nodiscard]] bool is_open() const noexcept;
+    OYAMA_NODISCARD int server_version() const noexcept;
+    OYAMA_NODISCARD bool is_open() const noexcept;
 
     /// Quotes an SQL identifier using the server connection's encoding rules.
-    [[nodiscard]] std::string quote_identifier(const std::string& identifier);
+    OYAMA_NODISCARD std::string quote_identifier(const std::string& identifier);
 
 private:
     PGconn* connection_{nullptr};
@@ -119,4 +120,4 @@ private:
     bool active_{false};
 };
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

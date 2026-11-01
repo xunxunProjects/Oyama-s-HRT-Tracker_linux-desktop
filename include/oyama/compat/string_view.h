@@ -26,6 +26,8 @@ public:
     string_view(const std::string& s) : data_(s.data()), size_(s.size()) {}
 
     const char* data() const { return data_; }
+    const char* begin() const { return data_; }
+    const char* end() const { return data_ + size_; }
     std::size_t size() const { return size_; }
     bool empty() const { return size_ == 0; }
     char operator[](std::size_t i) const { return data_[i]; }

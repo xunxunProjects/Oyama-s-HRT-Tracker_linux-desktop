@@ -4,7 +4,7 @@
 #include <cstdint>
 #include <random>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 bool is_hex(char value) {
@@ -42,7 +42,7 @@ std::string generate_uuid_v4() {
     return result;
 }
 
-bool is_uuid(std::string_view text) {
+bool is_uuid(oyama::string_view text) {
     if (text.size() != 36) {
         return false;
     }
@@ -58,4 +58,4 @@ bool is_uuid(std::string_view text) {
     return true;
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

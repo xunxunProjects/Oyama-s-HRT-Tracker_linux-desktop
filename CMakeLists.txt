@@ -119,6 +119,7 @@ add_library(oyama_storage STATIC
     storage/src/vault_tombstone_repository.cpp)
 target_include_directories(oyama_storage
     PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
 target_link_libraries(oyama_storage
     PUBLIC PostgreSQL::PostgreSQL
@@ -126,7 +127,42 @@ target_link_libraries(oyama_storage
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_storage PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(oyama_storage PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 endif()
+
+add_library(storage_cxx11_compile OBJECT
+    storage/src/app_config.cpp
+    storage/src/backup.cpp
+    storage/src/backup_crypto.cpp
+    storage/src/connection.cpp
+    storage/src/database.cpp
+    storage/src/error.cpp
+    storage/src/legacy_migration.cpp
+    storage/src/legacy_promotion.cpp
+    storage/src/local_cluster.cpp
+    storage/src/migration.cpp
+    storage/src/passphrase.cpp
+    storage/src/passphrase_wordlist.cpp
+    storage/src/types.cpp
+    storage/src/uuid.cpp
+    storage/src/vault_codec.cpp
+    storage/src/vault_store.cpp
+    storage/src/vault_dose_event_repository.cpp
+    storage/src/vault_json_record_repository.cpp
+    storage/src/vault_lab_result_repository.cpp
+    storage/src/vault_preferences_repository.cpp
+    storage/src/vault_settings_repository.cpp
+    storage/src/vault_tombstone_repository.cpp)
+target_include_directories(storage_cxx11_compile PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
+target_link_libraries(storage_cxx11_compile PRIVATE
+    nlohmann_json::nlohmann_json
+    PkgConfig::SODIUM
+    PostgreSQL::PostgreSQL)
+target_compile_options(storage_cxx11_compile PRIVATE
+    -std=c++11 -pedantic-errors -Wall -Wextra -Wpedantic
+    -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 
 add_executable(oyama-hrt-cli cli/main.cpp cli/process_hardening.cpp)
 target_include_directories(oyama-hrt-cli PRIVATE

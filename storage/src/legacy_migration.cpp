@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 using json = nlohmann::json;
@@ -26,7 +26,7 @@ constexpr const char* kPreferencesId =
     "00000000-0000-0000-0000-000000000002";
 
 struct SourceSnapshot {
-    std::optional<Settings> settings;
+    oyama::optional<Settings> settings;
     std::vector<Preference> preferences;
     std::vector<DoseEvent> dose_events;
     std::vector<LabResult> lab_results;
@@ -42,6 +42,10 @@ struct Projection {
     std::string logical_id;
     std::uint64_t updated_at{0};
     std::string payload;
+    Projection() = default;
+    Projection(std::string k, std::string l, std::uint64_t t, std::string p)
+        : kind(std::move(k)), logical_id(std::move(l)), updated_at(t),
+          payload(std::move(p)) {}
 };
 
 [[noreturn]] void fail(const std::string& kind, const std::string& id,
@@ -76,7 +80,7 @@ std::uint64_t required_stamp(const std::string& kind, const std::string& id,
 }
 
 std::uint64_t optional_stamp(const std::string& kind, const std::string& id,
-                             const std::optional<std::int64_t>& value) {
+                             const oyama::optional<std::int64_t>& value) {
     if (!value.has_value()) {
         return 0;
     }
@@ -125,7 +129,7 @@ Mode read_mode(const Result& result, int row, const std::string& kind,
     return *mode;
 }
 
-std::optional<Settings> read_settings(Connection& source) {
+oyama::optional<Settings> read_settings(Connection& source) {
     const bool has_weight_stamp =
         column_exists(source, "settings", "weight_updated_at");
     const bool has_birth_stamp =
@@ -140,7 +144,7 @@ std::optional<Settings> read_settings(Connection& source) {
         ", pk_params::text, pk_params_updated_at, calibration_method, "
         "calibration_history_mode, updated_at FROM settings WHERE id = true");
     if (result.rows() == 0) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     Settings settings;
     settings.body_weight_kg = detail::nullable_number(result, 0, 0);
@@ -276,7 +280,7 @@ LegacyCounts counts_of(const SourceSnapshot& snapshot) {
     return counts;
 }
 
-void report(const LegacyMigrator::Progress& progress, std::string_view kind,
+void report(const LegacyMigrator::Progress& progress, oyama::string_view kind,
             std::size_t done, std::size_t total) {
     if (progress) {
         progress(kind, done, total);
@@ -713,4 +717,4 @@ LegacyImportResult LegacyMigrator::import_all() {
     return result;
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

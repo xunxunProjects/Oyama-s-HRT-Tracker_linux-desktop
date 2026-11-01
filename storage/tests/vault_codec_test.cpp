@@ -22,7 +22,7 @@ void check(bool condition, const std::string& what) {
 }
 
 template <typename Fn>
-bool throws_field(Fn&& fn, std::string_view field) {
+bool throws_field(Fn&& fn, oyama::string_view field) {
     try {
         fn();
     } catch (const oyama::storage::VaultCodecError& error) {
@@ -111,7 +111,7 @@ void test_dose() {
                oyama::storage::encode_dose_event(
                    DoseEvent{dose.id, dose.mode, dose.route, dose.ester,
                              dose.time_h, dose.dose_mg, dose.extras_json,
-                             std::nullopt, dose.created_at}))
+                             oyama::nullopt, dose.created_at}))
                .updated_at.has_value(),
           "missing dose stamp stays missing");
 

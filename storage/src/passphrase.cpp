@@ -9,14 +9,14 @@
 #include <stdexcept>
 #include <string_view>
 
-namespace oyama::storage::detail {
-extern const std::array<std::string_view, 7776> kWordlist;
-}
+namespace oyama { namespace storage { namespace detail {
+extern const std::array<oyama::string_view, 7776> kWordlist;
+} } }
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
-std::vector<std::string> split_words(std::string_view phrase) {
+std::vector<std::string> split_words(oyama::string_view phrase) {
     std::vector<std::string> words;
     std::string current;
     for (char ch : phrase) {
@@ -63,7 +63,7 @@ std::string Passphrase::join(const std::vector<std::string>& words) {
     return normalize(joined);
 }
 
-std::string Passphrase::normalize(std::string_view phrase) {
+std::string Passphrase::normalize(oyama::string_view phrase) {
     const auto words = split_words(phrase);
     std::string normalized;
     for (const auto& word : words) {
@@ -99,7 +99,7 @@ std::vector<std::size_t> Passphrase::challenge(std::size_t word_count,
 }
 
 bool Passphrase::verify_challenge(
-    std::string_view phrase, const std::vector<std::size_t>& positions,
+    oyama::string_view phrase, const std::vector<std::size_t>& positions,
     const std::vector<std::string>& answers) {
     if (positions.empty() || positions.size() != answers.size()) {
         return false;
@@ -116,4 +116,4 @@ bool Passphrase::verify_challenge(
     return true;
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

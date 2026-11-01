@@ -30,8 +30,6 @@ public:
     optional() : has_(false) {}
     optional(nullopt_t) : has_(false) {}
 
-    template <typename U = T,
-              typename = typename std::enable_if<std::is_copy_constructible<U>::value>::type>
     optional(const optional& o) : has_(o.has_) {
         if (has_) new (ptr()) T(*o.ptr());
     }
@@ -40,16 +38,11 @@ public:
         if (has_) new (ptr()) T(std::move(*o.ptr()));
     }
 
-    template <typename U = T,
-              typename = typename std::enable_if<std::is_copy_constructible<U>::value>::type>
     optional(const T& v) : has_(true) { new (ptr()) T(v); }
-
     optional(T&& v) : has_(true) { new (ptr()) T(std::move(v)); }
 
     ~optional() { if (has_) ptr()->~T(); }
 
-    template <typename U = T,
-              typename = typename std::enable_if<std::is_copy_constructible<U>::value>::type>
     optional& operator=(const optional& o) {
         if (o.has_) {
             if (has_) *ptr() = *o.ptr();
@@ -68,9 +61,6 @@ public:
 
     optional& operator=(nullopt_t) { reset(); return *this; }
 
-    template <typename U = T,
-              typename = typename std::enable_if<std::is_copy_assignable<U>::value ||
-                                                std::is_copy_constructible<U>::value>::type>
     optional& operator=(const T& v) {
         if (has_) *ptr() = v;
         else { new (ptr()) T(v); has_ = true; }

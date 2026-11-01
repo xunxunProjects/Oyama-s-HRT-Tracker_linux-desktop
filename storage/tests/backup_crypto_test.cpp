@@ -41,7 +41,7 @@ void check_throws(Fn&& fn, const std::string& message) {
     ++failures;
 }
 
-std::uint32_t read_u32(std::string_view bytes, std::size_t offset) {
+std::uint32_t read_u32(oyama::string_view bytes, std::size_t offset) {
     return (static_cast<std::uint32_t>(
                 static_cast<unsigned char>(bytes[offset]))
             << 24U) |
@@ -72,7 +72,7 @@ std::size_t nonce_length(std::uint8_t algorithm) {
     return 0;
 }
 
-std::size_t header_length(std::string_view sealed) {
+std::size_t header_length(oyama::string_view sealed) {
     constexpr std::size_t fixed = 8 + 1 + 1 + 2 + 4 + 4 + 16;
     return fixed + nonce_length(
                        static_cast<std::uint8_t>(

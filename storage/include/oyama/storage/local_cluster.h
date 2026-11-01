@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include "connection.h"
 
@@ -6,7 +7,7 @@
 #include <optional>
 #include <string>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 /// State of an application-managed cluster.  Missing server tools are reported
 /// separately by find_binaries(); state() never invents a running state when
@@ -17,13 +18,13 @@ enum class LocalClusterState {
     Running,
 };
 
-[[nodiscard]] std::string to_string(LocalClusterState state);
+OYAMA_NODISCARD std::string to_string(LocalClusterState state);
 
 struct LocalClusterConfig {
-    std::filesystem::path data_dir;
-    std::filesystem::path socket_dir;
+    oyama::fs::path data_dir;
+    oyama::fs::path socket_dir;
     /// Empty means <data_dir>/../postgres.log.
-    std::filesystem::path log_file;
+    oyama::fs::path log_file;
     /// Empty means search PG_BINDIR, then PATH.
     std::string server_bin_dir;
     int port{5432};
@@ -42,23 +43,23 @@ class LocalCluster {
 public:
     explicit LocalCluster(LocalClusterConfig config);
 
-    [[nodiscard]] const LocalClusterConfig& config() const noexcept;
+    OYAMA_NODISCARD const LocalClusterConfig& config() const noexcept;
 
     /// True when <data_dir>/PG_VERSION exists.  Does not require pg_ctl.
-    [[nodiscard]] bool is_initialized() const;
+    OYAMA_NODISCARD bool is_initialized() const;
 
     /// Runs `pg_ctl status`.  Returns false when the cluster is initialized but
     /// stopped.  Throws if the server tools cannot be found.
-    [[nodiscard]] bool is_running() const;
+    OYAMA_NODISCARD bool is_running() const;
 
-    [[nodiscard]] LocalClusterState state() const;
+    OYAMA_NODISCARD LocalClusterState state() const;
 
     /// Returns the directory containing initdb, pg_ctl, and postgres.
-    [[nodiscard]] std::optional<std::filesystem::path> find_binaries() const;
+    OYAMA_NODISCARD oyama::optional<oyama::fs::path> find_binaries() const;
 
     /// Connection settings for libpq.  The caller supplies the database name
     /// and user through AppConfig; this method only fills socket/port.
-    [[nodiscard]] ConnectionConfig connection_config() const;
+    OYAMA_NODISCARD ConnectionConfig connection_config() const;
 
     /// Creates the data directory and runs initdb.  No-op if already
     /// initialized.
@@ -79,6 +80,6 @@ private:
 };
 
 /// Human-readable installation guidance for a missing PostgreSQL server.
-[[nodiscard]] std::string postgres_install_hint();
+OYAMA_NODISCARD std::string postgres_install_hint();
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

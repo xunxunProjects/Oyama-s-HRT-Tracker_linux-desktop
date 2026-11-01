@@ -27,6 +27,14 @@ namespace oyama { namespace fs = std::filesystem; }
 #else
 namespace oyama { namespace fs {
 
+enum class file_type { not_found, none, regular, directory, symlink, block, character, fifo, socket, unknown };
+struct file_status {
+    file_type type_ = file_type::none;
+    file_status() {}
+    file_status(file_type t) : type_(t) {}
+    file_type type() const { return type_; }
+};
+
 class path {
     std::string s_;
 public:
@@ -41,6 +49,7 @@ public:
     const std::string& string() const { return s_; }
     const char* c_str() const { return s_.c_str(); }
     bool empty() const { return s_.empty(); }
+    bool is_absolute() const { return !s_.empty() && s_[0] == '/'; }
 
     path& operator/=(const path& o) {
         if (s_.empty()) s_ = o.s_;
@@ -63,6 +72,41 @@ public:
         if (pos == 0) return path("/");
         return path(s_.substr(0, pos));
     }
+    path root_path() const {
+        if (s_.empty()) return path();
+        if (s_[0] == '/') return path("/");
+        return path();
+    }
+    path lexically_normal() const {
+        std::vector<std::string> tokens;
+        bool absolute = (!s_.empty() && s_[0] == '/');
+        if (absolute) tokens.push_back("/");
+        std::string rest = absolute ? s_.substr(1) : s_;
+        std::size_t p = 0;
+        while (true) {
+            std::size_t slash = rest.find('/', p);
+            std::string seg = (slash == std::string::npos) ? rest.substr(p) : rest.substr(p, slash - p);
+            if (!seg.empty() && seg != ".") {
+                if (seg == "..") {
+                    if (!tokens.empty() && tokens.back() != ".." && tokens.back() != "/") tokens.pop_back();
+                    else tokens.push_back(seg);
+                } else {
+                    tokens.push_back(seg);
+                }
+            }
+            if (slash == std::string::npos) break;
+            p = slash + 1;
+            if (p >= rest.size()) break;
+        }
+        std::string out;
+        for (std::size_t k = 0; k < tokens.size(); ++k) {
+            if (tokens[k] == "/") { out = "/"; continue; }
+            if (!out.empty() && out.back() != '/') out += "/";
+            out += tokens[k];
+        }
+        if (out.empty()) out = ".";
+        return path(out);
+    }
     path extension() const {
         std::string f = filename().string();
         std::size_t pos = f.find_last_of('.');
@@ -72,6 +116,7 @@ public:
 
     bool operator==(const path& o) const { return s_ == o.s_; }
     bool operator!=(const path& o) const { return s_ != o.s_; }
+    bool operator<(const path& o) const { return s_ < o.s_; }
     friend std::ostream& operator<<(std::ostream& os, const path& p) { return os << p.s_; }
 };
 
@@ -176,6 +221,88 @@ inline void rename(const path& from, const path& to) {
     rename(from, to, ec);
 }
 
+inline file_status symlink_status(const path& p, std::error_code& ec) {
+    struct stat st;
+    if (::lstat(p.c_str(), &st) == 0) {
+        ec.clear();
+        if (S_ISREG(st.st_mode)) return file_status(file_type::regular);
+        if (S_ISDIR(st.st_mode)) return file_status(file_type::directory);
+        if (S_ISLNK(st.st_mode)) return file_status(file_type::symlink);
+        if (S_ISBLK(st.st_mode)) return file_status(file_type::block);
+        if (S_ISCHR(st.st_mode)) return file_status(file_type::character);
+        if (S_ISFIFO(st.st_mode)) return file_status(file_type::fifo);
+        if (S_ISSOCK(st.st_mode)) return file_status(file_type::socket);
+        return file_status(file_type::unknown);
+    }
+    if (errno == ENOENT) { ec.clear(); return file_status(file_type::not_found); }
+    ec = std::error_code(errno, std::generic_category());
+    return file_status(file_type::none);
+}
+inline file_status symlink_status(const path& p) {
+    std::error_code ec;
+    return symlink_status(p, ec);
+}
+inline bool is_symlink(const file_status& s) { return s.type() == file_type::symlink; }
+inline bool is_symlink(const path& p, std::error_code& ec) {
+    return is_symlink(symlink_status(p, ec));
+}
+inline bool is_symlink(const path& p) {
+    std::error_code ec;
+    return is_symlink(p, ec);
+}
+inline bool is_directory(const file_status& s) { return s.type() == file_type::directory; }
+inline bool is_regular_file(const path& p, std::error_code& ec) {
+    return symlink_status(p, ec).type() == file_type::regular;
+}
+inline bool is_regular_file(const path& p) {
+    std::error_code ec;
+    return is_regular_file(p, ec);
+}
+inline bool is_regular_file(const file_status& s) { return s.type() == file_type::regular; }
+inline bool is_empty(const path& p) {
+    std::error_code ec;
+    if (is_directory(p, ec)) {
+        DIR* d = ::opendir(p.c_str());
+        if (!d) return false;
+        struct ::dirent* e;
+        bool empty = true;
+        while ((e = ::readdir(d)) != nullptr) {
+            if (std::strcmp(e->d_name, ".") == 0 || std::strcmp(e->d_name, "..") == 0) continue;
+            empty = false;
+            break;
+        }
+        ::closedir(d);
+        return empty;
+    }
+    struct stat st;
+    if (::stat(p.c_str(), &st) == 0) {
+        return st.st_size == 0;
+    }
+    return false;
+}
+
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wchanges-meaning"
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wchanges-meaning"
+#endif
+
+struct directory_entry {
+    path p_;
+    directory_entry() {}
+    directory_entry(const path& p) : p_(p) {}
+    const ::oyama::fs::path& path() const { return p_; }
+    bool is_regular_file() const { return oyama::fs::is_regular_file(p_); }
+    bool is_directory() const { return oyama::fs::is_directory(p_); }
+    bool is_symlink() const { return oyama::fs::is_symlink(p_); }
+};
+
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+#pragma GCC diagnostic pop
+
 class directory_iterator {
     DIR* dir_;
     std::string base_;
@@ -186,6 +313,16 @@ public:
     directory_iterator(const path& p)
         : dir_(::opendir(p.c_str())), base_(p.string()), current_(nullptr), end_(false) {
         if (!dir_) { end_ = true; return; }
+        advance();
+    }
+    directory_iterator(const path& p, std::error_code& ec)
+        : dir_(::opendir(p.c_str())), base_(p.string()), current_(nullptr), end_(false) {
+        if (!dir_) {
+            ec = std::error_code(errno, std::generic_category());
+            end_ = true;
+            return;
+        }
+        ec.clear();
         advance();
     }
     ~directory_iterator() { if (dir_) ::closedir(dir_); }
@@ -202,12 +339,23 @@ public:
         }
         return *this;
     }
-    path operator*() const {
-        if (!current_) return path();
-        if (base_.empty() || base_.back() == '/') return path(base_ + current_->d_name);
-        return path(base_ + "/" + current_->d_name);
+    directory_entry operator*() const {
+        if (!current_) return directory_entry();
+        if (base_.empty() || base_.back() == '/') return directory_entry(path(base_ + current_->d_name));
+        return directory_entry(path(base_ + "/" + current_->d_name));
     }
     directory_iterator& operator++() { advance(); return *this; }
+    void increment(std::error_code& ec) {
+        if (dir_) {
+            advance();
+            if (end_ && current_ == nullptr && dir_) {
+                // could be error? readdir returns null on end or error
+            }
+            ec.clear();
+        } else {
+            ec = std::error_code(errno, std::generic_category());
+        }
+    }
     directory_iterator begin() { return std::move(*this); }
     directory_iterator end() { return directory_iterator(); }
     bool operator!=(const directory_iterator& o) const {
@@ -242,6 +390,15 @@ inline path current_path(std::error_code& ec) {
 inline path current_path() {
     std::error_code ec;
     return current_path(ec);
+}
+
+inline path absolute(const path& p, std::error_code& ec) {
+    if (p.is_absolute()) { ec.clear(); return p; }
+    return current_path(ec) / p;
+}
+inline path absolute(const path& p) {
+    std::error_code ec;
+    return absolute(p, ec);
 }
 
 } } // namespace oyama::fs
