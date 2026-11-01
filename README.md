@@ -104,6 +104,20 @@ table, the compiler-hardening differences, and the
 offline bootstrap workflow are in
 [`docs/dependencies.md`](docs/dependencies.md#vendored-build).
 
+## Build profiles
+
+The build supports three security profiles selected with
+`-DOYAMA_SECURITY_PROFILE=off|standard|full` (default `standard`):
+
+- `off` — debug profile; disables the extra security modules but still uses the
+  vault.
+- `standard` — default for ordinary users.
+- `full` — secure release; enables capture guard, panic lock, and key isolation.
+
+See [`docs/security/profiles.md`](docs/security/profiles.md) for the full feature
+table. The Makefile wrapper maps `SECURITY=1` (default) to `standard` and
+`SECURITY=0` to `off`.
+
 ## Local database
 
 The application talks to PostgreSQL through a local Unix socket only; it does
