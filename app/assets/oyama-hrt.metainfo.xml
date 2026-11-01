@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.oyama.hrt-tracker</id>
+  <name>Oyama's HRT Tracker</name>
+  <summary>Track hormone replacement therapy doses, labs, and pharmacokinetics locally</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      A native Qt 6 desktop application for tracking hormone replacement therapy
+      doses, lab results, and pharmacokinetic curves. All data is stored locally
+      in an encrypted PostgreSQL database.
+    </p>
+  </description>
+  <developer id="com.oyama">
+    <name>Oyama's HRT Tracker contributors</name>
+  </developer>
+  <launchable type="desktop-id">oyama-hrt.desktop</launchable>
+  <url type="homepage">https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop</url>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="0.5.0" date="2026-10-31" />
+  </releases>
+</component>
