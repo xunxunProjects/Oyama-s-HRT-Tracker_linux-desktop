@@ -99,23 +99,6 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_security PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-add_library(oyama_security_full STATIC
-    security/src/panic.c
-    security/src/panic_null.c
-    security/src/panic_x11.c
-    security/src/capture.c
-    security/src/capture_null.c
-    security/src/capture_dbus.c
-    security/src/capture_x11.c)
-target_include_directories(oyama_security_full
-    PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(oyama_security_full
-    PUBLIC oyama_security PkgConfig::SODIUM)
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(oyama_security_full PRIVATE -Wall -Wextra -Wpedantic)
-endif()
-
 add_library(oyama_pk STATIC
     core/src/pk.c)
 target_include_directories(oyama_pk
@@ -501,6 +484,15 @@ if(BUILD_TESTING)
         target_compile_options(vault_crypto_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME vault_crypto_test COMMAND vault_crypto_test)
+
+    add_executable(mem_test security/tests/mem_test.c)
+    target_include_directories(mem_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(mem_test PRIVATE oyama_security)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(mem_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME mem_test COMMAND mem_test)
 
     add_executable(bip39_test vault/tests/bip39_test.c)
     target_include_directories(bip39_test PRIVATE vault/src include)
