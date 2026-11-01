@@ -19,20 +19,20 @@ namespace {
 
 int failures = 0;
 
-void check(bool condition, std::string_view what) {
+void check(bool condition, oyama::string_view what) {
     if (!condition) {
         std::cerr << "FAIL: " << what << '\n';
         ++failures;
     }
 }
 
-std::string env_value(std::string_view name) {
+std::string env_value(oyama::string_view name) {
     const std::string key(name);
     const char* value = std::getenv(key.c_str());
     return value != nullptr ? value : "";
 }
 
-ConnectionConfig config_from_env(std::string_view prefix) {
+ConnectionConfig config_from_env(oyama::string_view prefix) {
     const std::string base(prefix);
     ConnectionConfig config;
     config.socket_dir = env_value(base + "_SOCKET");
@@ -44,7 +44,7 @@ ConnectionConfig config_from_env(std::string_view prefix) {
     return config;
 }
 
-bool env_available(std::string_view prefix) {
+bool env_available(oyama::string_view prefix) {
     const std::string base(prefix);
     return !env_value(base + "_SOCKET").empty() &&
            !env_value(base + "_DB").empty() &&

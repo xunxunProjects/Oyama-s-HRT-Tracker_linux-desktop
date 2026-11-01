@@ -12,7 +12,7 @@
 #include <system_error>
 #include <utility>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 constexpr std::int64_t kMigrationLockKey = INT64_C(0x4F59414D41485254);
@@ -22,9 +22,13 @@ struct AppliedMigration {
     std::string name;
     std::string checksum;
     std::string applied_at;
+    AppliedMigration() = default;
+    AppliedMigration(int v, std::string n, std::string c, std::string a)
+        : version(v), name(std::move(n)), checksum(std::move(c)),
+          applied_at(std::move(a)) {}
 };
 
-std::string checksum_of(std::string_view data) {
+std::string checksum_of(oyama::string_view data) {
     std::uint64_t hash = UINT64_C(14695981039346656037);
     for (const unsigned char byte : data) {
         hash ^= byte;
@@ -35,14 +39,14 @@ std::string checksum_of(std::string_view data) {
     return output.str();
 }
 
-bool is_blank(std::string_view data) {
+bool is_blank(oyama::string_view data) {
     return std::all_of(data.begin(), data.end(), [](unsigned char value) {
         return std::isspace(value) != 0;
     });
 }
 
-std::string read_file(const std::filesystem::path& path) {
-    std::ifstream input(path, std::ios::binary);
+std::string read_file(const oyama::fs::path& path) {
+    std::ifstream input(path.c_str(), std::ios::binary);
     if (!input) {
         throw Error("could not open migration: " + path.string());
     }
@@ -103,19 +107,19 @@ const Migration* find_migration(const std::vector<Migration>& migrations,
 
 }  // namespace
 
-MigrationRunner::MigrationRunner(std::filesystem::path directory)
+MigrationRunner::MigrationRunner(oyama::fs::path directory)
     : directory_(std::move(directory)) {}
 
-const std::filesystem::path& MigrationRunner::directory() const noexcept {
+const oyama::fs::path& MigrationRunner::directory() const noexcept {
     return directory_;
 }
 
 std::vector<Migration> MigrationRunner::load() const {
     std::error_code error;
-    if (!std::filesystem::exists(directory_, error) || error) {
+    if (!oyama::fs::exists(directory_, error) || error) {
         throw Error("migration directory does not exist: " + directory_.string());
     }
-    if (!std::filesystem::is_directory(directory_, error) || error) {
+    if (!oyama::fs::is_directory(directory_, error) || error) {
         throw Error("migration path is not a directory: " + directory_.string());
     }
 
@@ -123,12 +127,12 @@ std::vector<Migration> MigrationRunner::load() const {
         R"(^([0-9]{4})_([A-Za-z0-9_]+)\.sql$)");
 
     std::vector<Migration> migrations;
-    std::filesystem::directory_iterator iterator(directory_, error);
+    oyama::fs::directory_iterator iterator(directory_, error);
     if (error) {
         throw Error("could not list migration directory: " + directory_.string());
     }
     for (const auto& entry : iterator) {
-        if (!entry.is_regular_file()) {
+        if (!oyama::fs::is_regular_file(entry.path())) {
             continue;
         }
         const std::string filename = entry.path().filename().string();
@@ -204,7 +208,7 @@ std::vector<Migration> MigrationRunner::apply(Connection& connection) const {
 
     std::vector<Migration> newly_applied;
     for (const auto& migration : migrations) {
-        if (applied_by_version.contains(migration.version)) {
+        if (applied_by_version.find(migration.version) != applied_by_version.end()) {
             continue;
         }
         try {
@@ -282,4 +286,4 @@ int MigrationRunner::current_version(Connection& connection) const {
     return static_cast<int>(result.integer(0, 0));
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

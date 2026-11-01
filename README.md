@@ -91,6 +91,19 @@ The CLI looks for migrations in `OYAMA_MIGRATIONS_DIR`, then in the source
 tree, then in `<prefix>/share/oyama-hrt/migrations`. Override the location with
 `--migrations DIR` when running from a relocated install.
 
+## Build profiles
+
+`OYAMA_SECURITY_PROFILE` selects `off`, `standard`, or `full`; the default is
+`standard`. Qt 6.4+ is the default for every profile; the optional
+`-DOYAMA_QT_MAJOR=5` selects the Qt 5.15.2 compatibility build. With the
+Makefile wrapper, `make` builds `standard` and `make SECURITY=0` builds `off`.
+
+See [`docs/security/profiles.md`](docs/security/profiles.md) for the feature
+table, the compiler-hardening differences, and the
+`oyama-hrt-cli version --verbose` report. The pinned dependency sources and the
+offline bootstrap workflow are in
+[`docs/dependencies.md`](docs/dependencies.md#vendored-build).
+
 ## Local database
 
 The application talks to PostgreSQL through a local Unix socket only; it does

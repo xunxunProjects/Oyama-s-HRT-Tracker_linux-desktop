@@ -1,3 +1,4 @@
+#include <oyama/security/profile.h>
 #include <oyama/storage/storage.h>
 #include <oyama/storage/backup_crypto.h>
 #include <oyama/storage/legacy_migration.h>
@@ -61,9 +62,9 @@ constexpr const char* kVersion = "0.5.0";
 
 struct GlobalOptions {
     ConnectionConfig config;
-    std::filesystem::path migrations;
-    std::optional<AppConfig> app_config;
-    std::filesystem::path data_dir;
+    oyama::fs::path migrations;
+    oyama::optional<AppConfig> app_config;
+    oyama::fs::path data_dir;
     std::string pg_bin_dir;
     bool socket_set{false};
     bool dbname_set{false};
@@ -75,19 +76,19 @@ struct GlobalOptions {
     bool backup_phrase_stdin{false};
 };
 
-std::filesystem::path default_migrations_dir() {
+oyama::fs::path default_migrations_dir() {
     if (const char* value = std::getenv("OYAMA_MIGRATIONS_DIR");
         value != nullptr && *value != '\0') {
         return value;
     }
     std::error_code error;
 #ifdef OYAMA_DEFAULT_MIGRATIONS_DIR
-    if (std::filesystem::is_directory(OYAMA_DEFAULT_MIGRATIONS_DIR, error)) {
+    if (oyama::fs::is_directory(OYAMA_DEFAULT_MIGRATIONS_DIR, error)) {
         return OYAMA_DEFAULT_MIGRATIONS_DIR;
     }
 #endif
 #ifdef OYAMA_INSTALL_MIGRATIONS_DIR
-    if (std::filesystem::is_directory(OYAMA_INSTALL_MIGRATIONS_DIR, error)) {
+    if (oyama::fs::is_directory(OYAMA_INSTALL_MIGRATIONS_DIR, error)) {
         return OYAMA_INSTALL_MIGRATIONS_DIR;
     }
 #endif
@@ -114,7 +115,7 @@ void print_usage(std::ostream& output) {
         << "  --backup-phrase-stdin\n"
         << "                     read a separate backup phrase from one stdin line\n\n"
         << "Commands:\n"
-        << "  version\n"
+        << "  version [--verbose]\n"
         << "  vault status      show uninitialized, locked, or unlocked\n"
         << "  vault setup [--phrase-stdin] [--kdf-ops N --kdf-mem BYTES]\n"
         << "  vault unlock-check --phrase-stdin\n"
@@ -147,7 +148,7 @@ void print_usage(std::ostream& output) {
 }
 
 std::string require_value(const std::vector<std::string>& args, std::size_t& index,
-                          std::string_view option) {
+                          oyama::string_view option) {
     if (index + 1 >= args.size()) {
         throw Error("missing value for " + std::string(option));
     }
@@ -155,7 +156,7 @@ std::string require_value(const std::vector<std::string>& args, std::size_t& ind
     return args[index];
 }
 
-int parse_int(const std::string& value, std::string_view option) {
+int parse_int(const std::string& value, oyama::string_view option) {
     try {
         std::size_t consumed = 0;
         const int result = std::stoi(value, &consumed);
@@ -168,7 +169,7 @@ int parse_int(const std::string& value, std::string_view option) {
     }
 }
 
-double parse_double(const std::string& value, std::string_view option) {
+double parse_double(const std::string& value, oyama::string_view option) {
     try {
         std::size_t consumed = 0;
         const double result = std::stod(value, &consumed);
@@ -181,7 +182,7 @@ double parse_double(const std::string& value, std::string_view option) {
     }
 }
 
-std::int64_t parse_i64(const std::string& value, std::string_view option) {
+std::int64_t parse_i64(const std::string& value, oyama::string_view option) {
     try {
         std::size_t consumed = 0;
         const auto result = std::stoll(value, &consumed);
@@ -194,7 +195,7 @@ std::int64_t parse_i64(const std::string& value, std::string_view option) {
     }
 }
 
-std::uint64_t parse_u64(const std::string& value, std::string_view option) {
+std::uint64_t parse_u64(const std::string& value, oyama::string_view option) {
     try {
         std::size_t consumed = 0;
         const auto result = std::stoull(value, &consumed);
@@ -211,7 +212,7 @@ std::string read_json_argument(const std::string& value) {
     if (value.empty() || value.front() != '@') {
         return value;
     }
-    const std::filesystem::path path(value.substr(1));
+    const oyama::fs::path path(value.substr(1));
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         throw Error("could not open JSON file: " + path.string());
@@ -344,7 +345,7 @@ public:
         value_ = std::move(value);
     }
 
-    [[nodiscard]] const std::string& value() const noexcept { return value_; }
+    OYAMA_NODISCARD const std::string& value() const noexcept { return value_; }
 
     void clear() noexcept {
         if (!value_.empty()) {
@@ -412,9 +413,9 @@ void print_plaintext_warning() {
     std::cout << "warning\t" << kPlaintextWarning << '\n';
 }
 
-bool path_exists(const std::filesystem::path& path) {
+bool path_exists(const oyama::fs::path& path) {
     std::error_code error;
-    const bool exists = std::filesystem::exists(path, error);
+    const bool exists = oyama::fs::exists(path, error);
     if (error) {
         throw Error("could not inspect " + path.string() + ": " +
                     error.message());
@@ -465,7 +466,7 @@ void print_promotion_plaintext(const LegacyPaths& paths) {
 }
 
 void purge_plaintext(const LegacyPaths& paths,
-                     const std::filesystem::path& requested, bool yes) {
+                     const oyama::fs::path& requested, bool yes) {
     if (!yes) {
         throw Error("deleting the plaintext directory requires --yes");
     }
@@ -473,7 +474,7 @@ void purge_plaintext(const LegacyPaths& paths,
         throw Error("--purge-old requires a path");
     }
     std::error_code error;
-    std::filesystem::path target = std::filesystem::absolute(requested, error);
+    oyama::fs::path target = oyama::fs::absolute(requested, error);
     if (error) {
         throw Error("could not resolve --purge-old path: " + error.message());
     }
@@ -490,22 +491,22 @@ void purge_plaintext(const LegacyPaths& paths,
                     plaintext.front().string());
     }
 
-    const std::filesystem::file_status status =
-        std::filesystem::symlink_status(plaintext.front(), error);
+    const oyama::fs::file_status status =
+        oyama::fs::symlink_status(plaintext.front(), error);
     if (error) {
         throw Error("could not inspect " + plaintext.front().string() + ": " +
                     error.message());
     }
-    if (std::filesystem::is_symlink(status)) {
+    if (oyama::fs::is_symlink(status)) {
         throw Error("refusing to delete a symlinked plaintext path: " +
                     plaintext.front().string());
     }
-    if (!std::filesystem::is_directory(status)) {
+    if (!oyama::fs::is_directory(status)) {
         throw Error("plaintext path is not a directory: " +
                     plaintext.front().string());
     }
 
-    std::filesystem::remove_all(plaintext.front(), error);
+    oyama::fs::remove_all(plaintext.front(), error);
     if (error) {
         throw Error("could not remove " + plaintext.front().string() + ": " +
                     error.message());
@@ -578,13 +579,13 @@ Mode parse_mode_or_throw(const std::string& value) {
 }
 
 void print_settings(const Settings& settings) {
-    const auto optional_double = [](const std::optional<double>& value) {
+    const auto optional_double = [](const oyama::optional<double>& value) {
         return value.has_value() ? std::to_string(*value) : std::string("not set");
     };
-    const auto optional_int = [](const std::optional<int>& value) {
+    const auto optional_int = [](const oyama::optional<int>& value) {
         return value.has_value() ? std::to_string(*value) : std::string("not set");
     };
-    const auto optional_i64 = [](const std::optional<std::int64_t>& value) {
+    const auto optional_i64 = [](const oyama::optional<std::int64_t>& value) {
         return value.has_value() ? std::to_string(*value) : std::string("not set");
     };
 
@@ -610,7 +611,7 @@ struct DatabaseInitResult {
 };
 
 DatabaseInitResult initialize_database(const ConnectionConfig& config,
-                                       const std::filesystem::path& migrations) {
+                                       const oyama::fs::path& migrations) {
     ConnectionConfig admin_config = config;
     admin_config.dbname = "postgres";
     Connection admin(admin_config);
@@ -637,11 +638,11 @@ DatabaseInitResult initialize_database(const ConnectionConfig& config,
     return result;
 }
 
-std::filesystem::path default_managed_data_dir() {
+oyama::fs::path default_managed_data_dir() {
     return oyama::storage::default_data_dir();
 }
 
-std::filesystem::path default_managed_socket_dir() {
+oyama::fs::path default_managed_socket_dir() {
     return oyama::storage::default_socket_dir();
 }
 
@@ -852,7 +853,7 @@ int command_db_setup(const GlobalOptions& global,
                                     ? global.data_dir
                                     : default_managed_data_dir();
         probe_config.socket_dir = global.socket_set
-                                      ? std::filesystem::path(
+                                      ? oyama::fs::path(
                                             global.config.socket_dir)
                                       : default_managed_socket_dir();
         probe_config.server_bin_dir = global.pg_bin_dir;
@@ -955,7 +956,7 @@ int command_db_migrate_vault(const GlobalOptions& global,
                              std::size_t index) {
     bool yes = false;
     bool phrase_stdin = global.phrase_stdin;
-    std::optional<std::filesystem::path> purge_old;
+    oyama::optional<oyama::fs::path> purge_old;
     while (index < args.size()) {
         const std::string option = args[index];
         if (option == "--yes" || option == "-y") {
@@ -1103,7 +1104,7 @@ int command_db_migrate_vault(const GlobalOptions& global,
 
                 LegacyMigrator migrator(
                     old_connection, vault,
-                    [](std::string_view kind, std::size_t done,
+                    [](oyama::string_view kind, std::size_t done,
                        std::size_t total) {
                         std::cout << "progress\t" << kind << '\t' << done
                                   << '/' << total << '\n';
@@ -1523,7 +1524,7 @@ int command_backup(const GlobalOptions& global,
     bool dry_run = false;
     bool plaintext = false;
     bool backup_phrase_stdin = global.backup_phrase_stdin;
-    std::filesystem::path file;
+    oyama::fs::path file;
     while (index < args.size()) {
         const std::string option = args[index];
         if (option == "--dry-run") {
@@ -1573,7 +1574,7 @@ int command_backup(const GlobalOptions& global,
             return 0;
         }
         SecretString backup_phrase;
-        std::string_view phrase = unlocked.phrase.value();
+        oyama::string_view phrase = unlocked.phrase.value();
         if (backup_phrase_stdin) {
             backup_phrase.assign(read_secret_from_stdin());
             phrase = backup_phrase.value();
@@ -1584,7 +1585,7 @@ int command_backup(const GlobalOptions& global,
     }
 
     SecretString backup_phrase;
-    std::string_view file_phrase;
+    oyama::string_view file_phrase;
     if (encrypted) {
         if (backup_phrase_stdin) {
             backup_phrase.assign(read_secret_from_stdin());
@@ -1754,6 +1755,10 @@ int main(int argc, char** argv) {
         const std::string command = args[index++];
         if (command == "version") {
             std::cout << "oyama-hrt-cli " << kVersion << '\n';
+            if (index < args.size() && args[index] == "--verbose") {
+                std::cout << "security-profile: "
+                          << oyama_security_profile_name() << '\n';
+            }
             return 0;
         }
         if (command == "db") {

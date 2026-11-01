@@ -1,19 +1,20 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include "types.h"
 #include "vault_store.h"
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 class VaultSettingsRepository {
 public:
     explicit VaultSettingsRepository(VaultStore& vault);
 
-    [[nodiscard]] Settings get();
+    OYAMA_NODISCARD Settings get();
     void save(const Settings& settings);
 
 private:
     VaultStore& vault_;
 };
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

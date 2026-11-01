@@ -52,35 +52,35 @@ void check_equal(const T& actual, const T& expected, const std::string& message)
     }
 }
 
-std::filesystem::path migrations_dir() {
+oyama::fs::path migrations_dir() {
 #ifdef OYAMA_TEST_MIGRATIONS_DIR
-    return std::filesystem::path(OYAMA_TEST_MIGRATIONS_DIR);
+    return oyama::fs::path(OYAMA_TEST_MIGRATIONS_DIR);
 #else
-    return std::filesystem::path("storage/migrations");
+    return oyama::fs::path("storage/migrations");
 #endif
 }
 
-std::filesystem::path make_temp_dir() {
+oyama::fs::path make_temp_dir() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    auto path = std::filesystem::temp_directory_path() /
+    auto path = oyama::fs::temp_directory_path() /
                 ("oyama-backup-test-" + std::to_string(::getpid()) + "-" +
                  std::to_string(stamp));
-    std::filesystem::create_directories(path);
+    oyama::fs::create_directories(path);
     return path;
 }
 
-void write_file(const std::filesystem::path& path, std::string_view contents) {
+void write_file(const oyama::fs::path& path, oyama::string_view contents) {
     std::ofstream out(path, std::ios::binary);
     out.write(contents.data(), static_cast<std::streamsize>(contents.size()));
 }
 
-std::string read_file(const std::filesystem::path& path) {
+std::string read_file(const oyama::fs::path& path) {
     std::ifstream input(path, std::ios::binary);
     return std::string((std::istreambuf_iterator<char>(input)),
                        std::istreambuf_iterator<char>());
 }
 
-json read_json(const std::filesystem::path& path) {
+json read_json(const oyama::fs::path& path) {
     std::ifstream input(path, std::ios::binary);
     return json::parse(input);
 }
@@ -254,7 +254,7 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
     write_file(symlink_target, "must not be overwritten");
     const auto symlink_path = dir / "vault-symlink.json";
     std::error_code symlink_error;
-    std::filesystem::create_symlink(symlink_target, symlink_path, symlink_error);
+    oyama::fs::create_symlink(symlink_target, symlink_path, symlink_error);
     check(!symlink_error, "symlink fixture is created");
     if (!symlink_error) {
         bool refused = false;
@@ -597,7 +597,7 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
     check(shared_lab_kept,
           "tombstone batch import keeps equal ids in different kinds");
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_input_limits() {
@@ -621,7 +621,7 @@ void test_input_limits() {
 
     const auto device_link = dir / "device-link.json";
     std::error_code link_error;
-    std::filesystem::create_symlink("/dev/zero", device_link, link_error);
+    oyama::fs::create_symlink("/dev/zero", device_link, link_error);
     check(!link_error, "device symlink fixture is created");
     if (!link_error) {
         const bool link_rejected = run_probe(
@@ -637,7 +637,7 @@ void test_input_limits() {
     constexpr std::uintmax_t kOversize =
         static_cast<std::uintmax_t>(kMaxBackupFileBytes) + 1U;
     std::error_code resize_error;
-    std::filesystem::resize_file(oversize, kOversize, resize_error);
+    oyama::fs::resize_file(oversize, kOversize, resize_error);
     check(!resize_error, "oversize sparse fixture is created");
     if (!resize_error) {
         const bool oversize_rejected = run_probe(
@@ -659,7 +659,7 @@ void test_input_limits() {
     check(message.find("nested too deeply") != std::string::npos,
           "deep JSON rejection names the nesting limit");
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_integration() {

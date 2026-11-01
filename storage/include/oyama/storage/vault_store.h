@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include "connection.h"
 
@@ -10,7 +11,7 @@
 #include <string_view>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 enum class VaultState {
     Uninitialized,
@@ -28,12 +29,16 @@ struct VaultRecord {
     std::string kind;
     std::uint64_t updated_at_ms{0};
     std::string payload;
+    VaultRecord() = default;
+    VaultRecord(std::string i, std::string k, std::uint64_t t, std::string p)
+        : id(std::move(i)), kind(std::move(k)), updated_at_ms(t),
+          payload(std::move(p)) {}
 };
 
 class VaultError : public std::runtime_error {
 public:
     VaultError(int code, const std::string& message);
-    [[nodiscard]] int code() const noexcept;
+    OYAMA_NODISCARD int code() const noexcept;
 
 private:
     int code_;
@@ -51,17 +56,17 @@ public:
     VaultStore& operator=(VaultStore&&) noexcept;
 
     void open();
-    [[nodiscard]] VaultState state() const;
-    void setup(std::string_view phrase, const VaultKdfParams& params = {});
-    void unlock(std::string_view phrase);
-    void change_phrase(std::string_view new_phrase);
+    OYAMA_NODISCARD VaultState state() const;
+    void setup(oyama::string_view phrase, const VaultKdfParams& params = {});
+    void unlock(oyama::string_view phrase);
+    void change_phrase(oyama::string_view new_phrase);
     void lock() noexcept;
-    [[nodiscard]] bool is_unlocked() const;
+    OYAMA_NODISCARD bool is_unlocked() const;
 
     void put(const VaultRecord& record);
-    [[nodiscard]] std::optional<VaultRecord> get(std::string_view id);
-    [[nodiscard]] bool remove(std::string_view id);
-    [[nodiscard]] std::vector<VaultRecord> scan(std::string_view kind = {});
+    OYAMA_NODISCARD oyama::optional<VaultRecord> get(oyama::string_view id);
+    OYAMA_NODISCARD bool remove(oyama::string_view id);
+    OYAMA_NODISCARD std::vector<VaultRecord> scan(oyama::string_view kind = {});
     void clear();
 
     void begin();
@@ -73,4 +78,4 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

@@ -12,7 +12,7 @@
 #include <string>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 constexpr std::array<char, 8> kMagic = {'O', 'Y', 'A', 'M', 'A',
@@ -47,7 +47,7 @@ struct SensitiveString {
     std::string value;
     ~SensitiveString() {
         if (!value.empty()) {
-            sodium_memzero(value.data(), value.size());
+            sodium_memzero(value.empty() ? nullptr : &value[0], value.size());
         }
     }
 };
@@ -63,7 +63,7 @@ struct SensitiveBytes {
     std::vector<unsigned char> value;
     ~SensitiveBytes() {
         if (!value.empty()) {
-            sodium_memzero(value.data(), value.size());
+            sodium_memzero(value.empty() ? nullptr : &value[0], value.size());
         }
     }
 };
@@ -86,7 +86,7 @@ void write_u32(std::string& out, std::size_t offset, std::uint32_t value) {
     out[offset + 3] = static_cast<char>(value & 0xffU);
 }
 
-std::uint32_t read_u32(std::string_view bytes, std::size_t offset) {
+std::uint32_t read_u32(oyama::string_view bytes, std::size_t offset) {
     return (static_cast<std::uint32_t>(
                 static_cast<unsigned char>(bytes[offset]))
             << 24U) |
@@ -116,13 +116,13 @@ unsigned char* as_bytes(char* data) {
 
 }  // namespace
 
-bool is_encrypted_backup(std::string_view bytes) {
+bool is_encrypted_backup(oyama::string_view bytes) {
     return bytes.size() >= kMagic.size() &&
            std::memcmp(bytes.data(), kMagic.data(), kMagic.size()) == 0;
 }
 
-std::string encrypt_backup_json(std::string_view json,
-                                std::string_view phrase) {
+std::string encrypt_backup_json(oyama::string_view json,
+                                oyama::string_view phrase) {
     ensure_sodium();
     SensitiveString normalized{Passphrase::normalize(phrase)};
     if (normalized.value.empty()) {
@@ -136,20 +136,20 @@ std::string encrypt_backup_json(std::string_view json,
     const auto header_bytes = kFixedHeaderBytes + nonce_bytes;
 
     std::string sealed(header_bytes + json.size() + kTagBytes, '\0');
-    std::memcpy(sealed.data(), kMagic.data(), kMagic.size());
+    std::memcpy(&sealed[0], kMagic.data(), kMagic.size());
     sealed[kVersionOffset] = static_cast<char>(kFormatVersion);
     sealed[kAlgorithmOffset] = static_cast<char>(algorithm);
     sealed[kReservedOffset] = '\0';
     sealed[kReservedOffset + 1] = '\0';
     write_u32(sealed, kOpsLimitOffset, kDefaultOpsLimit);
     write_u32(sealed, kMemLimitOffset, kDefaultMemLimit);
-    randombytes_buf(as_bytes(sealed.data() + kSaltOffset), kSaltBytes);
-    randombytes_buf(as_bytes(sealed.data() + kNonceOffset), nonce_bytes);
+    randombytes_buf(as_bytes(&sealed[kSaltOffset]), kSaltBytes);
+    randombytes_buf(as_bytes(&sealed[kNonceOffset]), nonce_bytes);
 
     SensitiveKey key;
     if (crypto_pwhash(
             key.bytes.data(), key.bytes.size(), normalized.value.data(),
-            normalized.value.size(), as_bytes(sealed.data() + kSaltOffset),
+            normalized.value.size(), as_bytes(&sealed[kSaltOffset]),
             kDefaultOpsLimit, kDefaultMemLimit,
             crypto_pwhash_ALG_ARGON2ID13) != 0) {
         throw Error("could not derive the backup key");
@@ -159,16 +159,16 @@ std::string encrypt_backup_json(std::string_view json,
     int status = 0;
     if (algorithm == kAlgorithmAes256Gcm) {
         status = crypto_aead_aes256gcm_encrypt(
-            as_bytes(sealed.data() + header_bytes), &cipher_length,
-            as_bytes(json.data()), json.size(), as_bytes(sealed.data()),
+            as_bytes(&sealed[header_bytes]), &cipher_length,
+            as_bytes(json.data()), json.size(), as_bytes(&sealed[0]),
             header_bytes, nullptr,
-            as_bytes(sealed.data() + kNonceOffset), key.bytes.data());
+            as_bytes(&sealed[kNonceOffset]), key.bytes.data());
     } else {
         status = crypto_aead_xchacha20poly1305_ietf_encrypt(
-            as_bytes(sealed.data() + header_bytes), &cipher_length,
-            as_bytes(json.data()), json.size(), as_bytes(sealed.data()),
+            as_bytes(&sealed[header_bytes]), &cipher_length,
+            as_bytes(json.data()), json.size(), as_bytes(&sealed[0]),
             header_bytes, nullptr,
-            as_bytes(sealed.data() + kNonceOffset), key.bytes.data());
+            as_bytes(&sealed[kNonceOffset]), key.bytes.data());
     }
     if (status != 0 || cipher_length != json.size() + kTagBytes) {
         throw Error("could not encrypt the backup");
@@ -176,8 +176,8 @@ std::string encrypt_backup_json(std::string_view json,
     return sealed;
 }
 
-std::string decrypt_backup_json(std::string_view bytes,
-                                std::string_view phrase) {
+std::string decrypt_backup_json(oyama::string_view bytes,
+                                oyama::string_view phrase) {
     if (!is_encrypted_backup(bytes)) {
         throw Error("not an encrypted backup");
     }
@@ -277,4 +277,4 @@ std::string decrypt_backup_json(std::string_view bytes,
                        expected_plain_bytes);
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

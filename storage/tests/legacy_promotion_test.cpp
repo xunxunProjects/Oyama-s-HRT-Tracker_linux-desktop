@@ -12,14 +12,14 @@
 #include <string_view>
 #include <vector>
 
-namespace fs = std::filesystem;
+namespace fs = oyama::fs;
 using namespace oyama::storage;
 
 namespace {
 
 int failures = 0;
 
-void check(bool condition, std::string_view what) {
+void check(bool condition, oyama::string_view what) {
     if (!condition) {
         std::cerr << "FAIL: " << what << '\n';
         ++failures;
@@ -27,7 +27,7 @@ void check(bool condition, std::string_view what) {
 }
 
 template <typename Function>
-void check_throws(Function&& function, std::string_view what) {
+void check_throws(Function&& function, oyama::string_view what) {
     try {
         function();
     } catch (const std::exception&) {
@@ -58,13 +58,13 @@ public:
     TempDir(const TempDir&) = delete;
     TempDir& operator=(const TempDir&) = delete;
 
-    [[nodiscard]] const fs::path& path() const noexcept { return path_; }
+    OYAMA_NODISCARD const fs::path& path() const noexcept { return path_; }
 
 private:
     fs::path path_;
 };
 
-void write_file(const fs::path& path, std::string_view contents) {
+void write_file(const fs::path& path, oyama::string_view contents) {
     std::ofstream output(path, std::ios::binary | std::ios::trunc);
     if (!output) {
         throw std::runtime_error("could not open " + path.string());
@@ -76,7 +76,7 @@ void write_file(const fs::path& path, std::string_view contents) {
     }
 }
 
-[[nodiscard]] std::string read_file(const fs::path& path) {
+OYAMA_NODISCARD std::string read_file(const fs::path& path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) {
         throw std::runtime_error("could not open " + path.string());
@@ -85,7 +85,7 @@ void write_file(const fs::path& path, std::string_view contents) {
                        std::istreambuf_iterator<char>());
 }
 
-[[nodiscard]] LocalCluster make_cluster(const fs::path& data_dir,
+OYAMA_NODISCARD LocalCluster make_cluster(const fs::path& data_dir,
                                         const fs::path& socket_dir) {
     LocalClusterConfig config;
     config.data_dir = data_dir;
@@ -94,8 +94,8 @@ void write_file(const fs::path& path, std::string_view contents) {
     return LocalCluster(config);
 }
 
-[[nodiscard]] fs::path plaintext_path(const fs::path& data_dir,
-                                      std::string_view suffix) {
+OYAMA_NODISCARD fs::path plaintext_path(const fs::path& data_dir,
+                                      oyama::string_view suffix) {
     return fs::path(data_dir.string() + "-plaintext-" + std::string(suffix));
 }
 

@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include "types.h"
 
@@ -7,7 +8,7 @@
 #include <string_view>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 class VaultStore;
 
@@ -15,14 +16,14 @@ class VaultDoseEventRepository {
 public:
     explicit VaultDoseEventRepository(VaultStore& vault);
 
-    [[nodiscard]] std::vector<DoseEvent> list(Mode mode);
-    [[nodiscard]] std::optional<DoseEvent> get(std::string_view id);
+    OYAMA_NODISCARD std::vector<DoseEvent> list(Mode mode);
+    OYAMA_NODISCARD oyama::optional<DoseEvent> get(oyama::string_view id);
     void upsert(const DoseEvent& event);
-    [[nodiscard]] bool remove(std::string_view id);
-    [[nodiscard]] std::size_t count(Mode mode);
+    OYAMA_NODISCARD bool remove(oyama::string_view id);
+    OYAMA_NODISCARD std::size_t count(Mode mode);
 
 private:
     VaultStore& vault_;
 };
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

@@ -75,10 +75,17 @@ int main(int argc, char* argv[]) {
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
         []() { QCoreApplication::exit(1); }, Qt::QueuedConnection);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
     engine.loadFromModule("OyamaHrt", "Main");
     if (engine.rootObjects().isEmpty()) {
         return 1;
     }
+#else
+    engine.load(QUrl(QStringLiteral("qrc:/qml/Main.qml")));
+    if (engine.rootObjects().isEmpty()) {
+        return 1;
+    }
+#endif
     if (app.arguments().contains("--self-test")) {
         // The smoke check boots the offscreen shell and verifies that the
         // vault gate covers and disables the application shell whenever the
@@ -126,8 +133,15 @@ int main(int argc, char* argv[]) {
             // sidebar, which opens while it is pointed at. Move it away.
             if (window != nullptr) {
                 const QPointF away(window->width() / 2.0, window->height() - 4);
-                QMouseEvent move(QEvent::MouseMove, away, window->mapToGlobal(away),
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+                const QPointF global = window->mapToGlobal(away);
+                QMouseEvent move(QEvent::MouseMove, away, global,
                                  Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+#else
+                const QPoint global = window->mapToGlobal(away.toPoint());
+                QMouseEvent move(QEvent::MouseMove, away, global,
+                                 Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+#endif
                 QCoreApplication::sendEvent(window, &move);
             }
             QTimer::singleShot(1400, &app, [window, screenshotPath]() {

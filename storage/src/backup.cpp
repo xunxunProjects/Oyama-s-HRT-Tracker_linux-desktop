@@ -33,7 +33,7 @@
 #include <utility>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 using json = nlohmann::json;
@@ -54,27 +54,27 @@ constexpr double kWeightMin = 20.0;
 constexpr double kWeightMax = 400.0;
 
 template <std::size_t N>
-bool contains(const std::array<std::string_view, N>& values,
+bool contains(const std::array<oyama::string_view, N>& values,
               const std::string& value) {
     return std::find(values.begin(), values.end(), value) != values.end();
 }
 
-constexpr std::array<std::string_view, 6> kRoutes = {
+const std::array<oyama::string_view, 6> kRoutes = {
     "oral", "sublingual", "injection", "patchApply", "patchRemove", "gel"};
-constexpr std::array<std::string_view, 17> kEsters = {
+const std::array<oyama::string_view, 17> kEsters = {
     "E2",  "EB",   "EV",  "EC",   "EN",   "EU",  "CPA", "T",   "TC",
     "TE",  "TU",   "SPIRO", "BICA", "MPA", "LEUP", "TRIP", "RLX"};
-constexpr std::array<std::string_view, 4> kUnits = {"pg/ml", "pmol/l", "ng/dl",
+const std::array<oyama::string_view, 4> kUnits = {"pg/ml", "pmol/l", "ng/dl",
                                                     "nmol/l"};
-constexpr std::array<std::string_view, 2> kAssays = {"immuno", "lcms"};
-constexpr std::array<std::string_view, 4> kCalibrationMethods = {
+const std::array<oyama::string_view, 2> kAssays = {"immuno", "lcms"};
+const std::array<oyama::string_view, 4> kCalibrationMethods = {
     "off", "ekf", "ou_kalman", "mipd"};
-constexpr std::array<std::string_view, 2> kHistoryModes = {"forward",
+const std::array<oyama::string_view, 2> kHistoryModes = {"forward",
                                                            "retrospective"};
-constexpr std::array<std::string_view, 5> kPreferences = {
+const std::array<oyama::string_view, 5> kPreferences = {
     "app-theme", "hrt-lang", "app-show-prediction", "app-hide-site-label",
     "hrt-supply-lead-days"};
-constexpr std::array<std::string_view, 3> kForbiddenIds = {
+const std::array<oyama::string_view, 3> kForbiddenIds = {
     "__proto__", "prototype", "constructor"};
 
 std::string mode_key(Mode mode) {
@@ -109,7 +109,7 @@ std::string canonical(const json& value) {
 
 // Iterative, string/escape-aware scan.  It does not validate JSON; it only
 // bounds nesting before nlohmann's recursive parser sees the text.
-bool depth_within(std::string_view text, std::size_t max_depth) {
+bool depth_within(oyama::string_view text, std::size_t max_depth) {
     std::size_t depth = 0;
     bool in_string = false;
     bool escaped = false;
@@ -143,7 +143,9 @@ bool json_depth_exceeds(const json& value, std::size_t max_depth) {
     std::vector<std::pair<const json*, std::size_t>> stack;
     stack.emplace_back(&value, 1);
     while (!stack.empty()) {
-        const auto [node, depth] = stack.back();
+        const std::pair<const json*, std::size_t>& _entry = stack.back();
+        const json* node = _entry.first;
+        std::size_t depth = _entry.second;
         stack.pop_back();
         if (depth > max_depth) {
             return true;
@@ -180,7 +182,7 @@ bool checked_dump(const json& value, std::size_t max_bytes,
     return true;
 }
 
-json parse_stored_json(std::string_view text) {
+json parse_stored_json(oyama::string_view text) {
     if (text.size() > kMaxBackupFileBytes) {
         throw Error("stored JSON is too large");
     }
@@ -188,7 +190,7 @@ json parse_stored_json(std::string_view text) {
         throw Error("stored JSON is nested too deeply");
     }
     try {
-        return json::parse(text);
+        return json::parse(text.begin(), text.end());
     } catch (const std::exception& error) {
         throw Error("could not parse stored JSON: " +
                     std::string(error.what()));
@@ -204,7 +206,7 @@ bool id_ok(const json& value, std::string& id) {
 }
 
 bool read_stamp(const json& object, const char* key, std::int64_t now_ms,
-                std::optional<std::int64_t>& out, std::string& error,
+                oyama::optional<std::int64_t>& out, std::string& error,
                 bool allow_missing = true) {
     if (!object.contains(key)) {
         if (allow_missing) {
@@ -311,18 +313,68 @@ struct ParsedBundle {
     std::map<std::string, ParsedMode> modes;
     bool weight_present{false};
     double weight{0};
-    std::optional<std::int64_t> weight_stamp;
+    oyama::optional<std::int64_t> weight_stamp;
     bool birth_present{false};
     int birth_year{0};
-    std::optional<std::int64_t> birth_stamp;
+    oyama::optional<std::int64_t> birth_stamp;
     bool pk_present{false};
     bool pk_null{false};
     std::string pk_json{"{}"};
-    std::optional<std::int64_t> pk_stamp;
+    oyama::optional<std::int64_t> pk_stamp;
     bool calibration_present{false};
     std::string calibration_method;
     std::string calibration_history;
     std::map<std::string, std::string> preferences;
+};
+
+struct ParseArrayFn {
+    const json& block;
+    const Mode mode;
+    const std::int64_t now_ms;
+    ParsedBundle& parsed;
+    const std::string& key;
+    template <typename ParseOne, typename Target>
+    void operator()(const char* name, ParseOne parse_one, Target& target,
+                    bool& present, std::set<std::string>& blocked) const {
+        present = block.contains(name);
+        if (!present) {
+            parsed.missing.push_back(key + "." + name);
+            return;
+        }
+        if (!block.at(name).is_array()) {
+            blocked.insert(key + "." + name);
+            parsed.issues.push_back(key + "." + name +
+                                    ": category must be an array");
+            return;
+        }
+        if (block.at(name).size() > kMaxEntries) {
+            blocked.insert(key + "." + name);
+            parsed.issues.push_back(key + "." + name +
+                                    ": more than 20000 entries");
+            return;
+        }
+        std::set<std::string> ids;
+        for (std::size_t i = 0; i < block.at(name).size(); ++i) {
+            typename std::remove_reference<decltype(target)>::type::value_type
+                record;
+            std::string error;
+            if (!parse_one(block.at(name).at(i), mode, now_ms, record,
+                           parsed.issues, error,
+                           key + "." + name + "[" +
+                               std::to_string(i) + "]") ||
+                !ids.insert(record.id).second) {
+                blocked.insert(key + "." + name);
+                if (!error.empty()) {
+                    parsed.issues.push_back(error);
+                } else {
+                    parsed.issues.push_back(
+                        key + "." + name + ": duplicate id");
+                }
+                return;
+            }
+            target.push_back(std::move(record));
+        }
+    }
 };
 
 struct LocalState {
@@ -633,7 +685,9 @@ std::map<std::string, std::int64_t> parse_deletions(
         error = where + ": deletions must be an object";
         return result;
     }
-    for (const auto& [id, stamp_value] : value.items()) {
+    for (const auto& _entry : value.items()) {
+        const auto& id = _entry.key();
+        const auto& stamp_value = _entry.value();
         if (id.empty() || contains(kForbiddenIds, id) || !is_uuid(id)) {
             error = where + ": deletion id must be a UUID";
             return {};
@@ -657,11 +711,12 @@ std::map<std::string, std::int64_t> parse_deletions(
     if (result.size() > kTombstoneMaxPerKind) {
         std::vector<std::pair<std::int64_t, std::string>> ordered;
         ordered.reserve(result.size());
-        for (const auto& [id, stamp] : result) {
-            ordered.emplace_back(stamp, id);
+        for (const auto& entry : result) {
+            ordered.emplace_back(entry.second, entry.first);
         }
         std::sort(ordered.begin(), ordered.end(),
-                  [](const auto& left, const auto& right) {
+                  [](const std::pair<std::int64_t, std::string>& left,
+                     const std::pair<std::int64_t, std::string>& right) {
                       return left.first > right.first;
                   });
         result.clear();
@@ -710,48 +765,8 @@ ParsedBundle parse_bundle(const json& root, std::int64_t now_ms) {
             continue;
         }
         const auto& block = modes.at(data.key);
-        const auto parse_array = [&](const char* name, auto&& parse_one,
-                                     auto& target, bool& present,
-                                     std::set<std::string>& blocked) {
-            present = block.contains(name);
-            if (!present) {
-                parsed.missing.push_back(data.key + "." + name);
-                return;
-            }
-            if (!block.at(name).is_array()) {
-                blocked.insert(data.key + "." + name);
-                parsed.issues.push_back(data.key + "." + name +
-                                        ": category must be an array");
-                return;
-            }
-            if (block.at(name).size() > kMaxEntries) {
-                blocked.insert(data.key + "." + name);
-                parsed.issues.push_back(data.key + "." + name +
-                                        ": more than 20000 entries");
-                return;
-            }
-            std::set<std::string> ids;
-            for (std::size_t i = 0; i < block.at(name).size(); ++i) {
-                typename std::remove_reference_t<decltype(target)>::value_type
-                    record;
-                std::string error;
-                if (!parse_one(block.at(name).at(i), mode, now_ms, record,
-                               parsed.issues, error,
-                               data.key + "." + name + "[" +
-                                   std::to_string(i) + "]") ||
-                    !ids.insert(record.id).second) {
-                    blocked.insert(data.key + "." + name);
-                    if (!error.empty()) {
-                        parsed.issues.push_back(error);
-                    } else {
-                        parsed.issues.push_back(
-                            data.key + "." + name + ": duplicate id");
-                    }
-                    return;
-                }
-                target.push_back(std::move(record));
-            }
-        };
+        ParseArrayFn parse_array{block, mode, now_ms, parsed, data.key};
+
 
         parse_array("events", parse_event, data.events, data.events_present,
                     data.blocked);
@@ -892,7 +907,9 @@ ParsedBundle parse_bundle(const json& root, std::int64_t now_ms) {
         }
     }
     if (root.contains("preferences") && root.at("preferences").is_object()) {
-        for (const auto& [key, value] : root.at("preferences").items()) {
+        for (const auto& _entry : root.at("preferences").items()) {
+            const auto& key = _entry.key();
+            const auto& value = _entry.value();
             if (!contains(kPreferences, key)) {
                 parsed.issues.push_back("ignoring unknown preference " + key);
                 continue;
@@ -1028,7 +1045,7 @@ void merge_stamped(std::vector<T>& local, const std::vector<T>& incoming,
     }
     local.clear();
     local.reserve(by_id.size());
-    for (const auto& [id, record] : by_id) {
+    for (const auto& _entry : by_id) { const auto& id = _entry.first; const auto& record = _entry.second;
         (void)id;
         local.push_back(record);
     }
@@ -1193,14 +1210,17 @@ MergedState merge_bundle(typename Repositories::Store& store,
         const auto local_template_stamps = newest_stamps(state.templates[key]);
         const auto incoming_template_stamps =
             newest_stamps(incoming.templates);
-        const auto protected_by = [](const auto& stamps, const std::string& id,
+        const auto protected_by = [](const std::map<std::string, std::int64_t>& stamps,
+                                     const std::string& id,
                                      std::int64_t stamp) {
             const auto found = stamps.find(id);
             return found != stamps.end() && found->second > stamp;
         };
 
         auto& event_tomb = state.tombstones["events"];
-        for (const auto& [id, stamp] : incoming.deletion_events) {
+        for (const auto& entry : incoming.deletion_events) {
+            const std::string& id = entry.first;
+            std::int64_t stamp = entry.second;
             if (!protected_by(local_event_stamps, id, stamp) &&
                 !protected_by(incoming_event_stamps, id, stamp)) {
                 event_tomb[id] = std::max(event_tomb[id], stamp);
@@ -1214,7 +1234,7 @@ MergedState merge_bundle(typename Repositories::Store& store,
                      removed_ids, blocked);
         if (blocked) {
             state.events[key] = std::vector<DoseEvent>{};
-            for (const auto& [id, record] : event_by_id) {
+            for (const auto& _entry : event_by_id) { const auto& id = _entry.first; const auto& record = _entry.second;
                 (void)id;
                 state.events[key].push_back(record);
             }
@@ -1222,7 +1242,7 @@ MergedState merge_bundle(typename Repositories::Store& store,
         }
 
         auto& lab_tomb = state.tombstones["labResults"];
-        for (const auto& [id, stamp] : incoming.deletion_labs) {
+        for (const auto& _entry : incoming.deletion_labs) { const auto& id = _entry.first; const auto& stamp = _entry.second;
             if (!protected_by(local_lab_stamps, id, stamp) &&
                 !protected_by(incoming_lab_stamps, id, stamp)) {
                 lab_tomb[id] = std::max(lab_tomb[id], stamp);
@@ -1236,7 +1256,7 @@ MergedState merge_bundle(typename Repositories::Store& store,
                    removed_ids, blocked);
         if (blocked) {
             state.labs[key] = std::vector<LabResult>{};
-            for (const auto& [id, record] : lab_by_id) {
+            for (const auto& _entry : lab_by_id) { const auto& id = _entry.first; const auto& record = _entry.second;
                 (void)id;
                 state.labs[key].push_back(record);
             }
@@ -1244,7 +1264,7 @@ MergedState merge_bundle(typename Repositories::Store& store,
         }
 
         auto& template_tomb = state.tombstones["doseTemplates"];
-        for (const auto& [id, stamp] : incoming.deletion_templates) {
+        for (const auto& _entry : incoming.deletion_templates) { const auto& id = _entry.first; const auto& stamp = _entry.second;
             if (!protected_by(local_template_stamps, id, stamp) &&
                 !protected_by(incoming_template_stamps, id, stamp)) {
                 template_tomb[id] = std::max(template_tomb[id], stamp);
@@ -1258,7 +1278,7 @@ MergedState merge_bundle(typename Repositories::Store& store,
                         state.preview.stats, removed_ids, blocked);
         if (blocked) {
             state.templates[key] = std::vector<JsonRecord>{};
-            for (const auto& [id, record] : template_by_id) {
+            for (const auto& _entry : template_by_id) { const auto& id = _entry.first; const auto& record = _entry.second;
                 (void)id;
                 state.templates[key].push_back(record);
             }
@@ -1348,7 +1368,7 @@ MergedState merge_bundle(typename Repositories::Store& store,
         state.settings.calibration_history_mode = parsed.calibration_history;
     }
     state.settings.updated_at = now_ms;
-    for (const auto& [key, value] : parsed.preferences) {
+    for (const auto& _entry : parsed.preferences) { const auto& key = _entry.first; const auto& value = _entry.second;
         const auto existing = state.preferences.find(key);
         if (existing == state.preferences.end() ||
             existing->second.value_json != value) {
@@ -1402,14 +1422,14 @@ void write_merged_state(typename Repositories::Store& store,
 
     SettingsRepo(store).save(merged.settings);
     EventRepo events(store);
-    for (const auto& [key, records] : merged.events) {
+    for (const auto& _entry : merged.events) { const auto& key = _entry.first; const auto& records = _entry.second;
         (void)key;
         for (const auto& record : records) {
             events.upsert(record);
         }
     }
     LabRepo labs(store);
-    for (const auto& [key, records] : merged.labs) {
+    for (const auto& _entry : merged.labs) { const auto& key = _entry.first; const auto& records = _entry.second;
         (void)key;
         for (const auto& record : records) {
             labs.upsert(record);
@@ -1419,7 +1439,7 @@ void write_merged_state(typename Repositories::Store& store,
                                                std::vector<JsonRecord>>& table,
                                 JsonRecordKind kind) {
         JsonRepo repository(store, kind);
-        for (const auto& [key, records] : table) {
+        for (const auto& _entry : table) { const auto& key = _entry.first; const auto& records = _entry.second;
             (void)key;
             for (const auto& record : records) {
                 repository.upsert(record);
@@ -1432,7 +1452,7 @@ void write_merged_state(typename Repositories::Store& store,
     apply_json(merged.plan, JsonRecordKind::PlanItem);
     TombstoneRepo(store).record_many(merged.tombstones);
     PreferencesRepo preferences(store);
-    for (const auto& [key, preference] : merged.preferences) {
+    for (const auto& _entry : merged.preferences) { const auto& key = _entry.first; const auto& preference = _entry.second;
         (void)key;
         preferences.set(preference);
     }
@@ -1521,9 +1541,9 @@ json build_export(const LocalState& state, std::int64_t now_ms) {
             plan.push_back(record_json(record));
         }
         block["deletions"] = json::object();
-        for (const auto& [kind, records] : tombstones) {
+        for (const auto& _entry : tombstones) { const auto& kind = _entry.first; const auto& records = _entry.second;
             json map = json::object();
-            for (const auto& [id, stamp] : records) {
+            for (const auto& _entry : records) { const auto& id = _entry.first; const auto& stamp = _entry.second;
                 map[id] = stamp;
             }
             block["deletions"][kind] = std::move(map);
@@ -1534,12 +1554,14 @@ json build_export(const LocalState& state, std::int64_t now_ms) {
 }
 
 struct BackupInput {
-    int fd{-1};
-    std::size_t size{0};
+    int fd;
+    std::size_t size;
+    BackupInput(int f = -1, std::size_t s = 0) : fd(f), size(s) {}
 };
 
 struct CloseFd {
-    int fd{-1};
+    int fd = -1;
+    CloseFd(int f = -1) : fd(f) {}
     ~CloseFd() {
         if (fd >= 0) {
             (void)::close(fd);
@@ -1547,7 +1569,7 @@ struct CloseFd {
     }
 };
 
-BackupInput open_backup_input(const std::filesystem::path& path) {
+BackupInput open_backup_input(const oyama::fs::path& path) {
     int flags = O_RDONLY | O_CLOEXEC | O_NONBLOCK;
 #ifdef O_NOFOLLOW
     flags |= O_NOFOLLOW;
@@ -1583,7 +1605,7 @@ BackupInput open_backup_input(const std::filesystem::path& path) {
     return BackupInput{fd, size};
 }
 
-std::string read_backup_file(const std::filesystem::path& path) {
+std::string read_backup_file(const oyama::fs::path& path) {
     const auto input = open_backup_input(path);
     CloseFd guard{input.fd};
 
@@ -1614,8 +1636,8 @@ std::string read_backup_file(const std::filesystem::path& path) {
     return bytes;
 }
 
-json parse_backup_file(const std::filesystem::path& path,
-                       std::string_view backup_phrase) {
+json parse_backup_file(const oyama::fs::path& path,
+                       oyama::string_view backup_phrase) {
     const auto bytes = read_backup_file(path);
     std::string plaintext;
     if (is_encrypted_backup(bytes)) {
@@ -1640,7 +1662,7 @@ json parse_backup_file(const std::filesystem::path& path,
 }
 
 void fill_counts(BackupPreview& preview, const ParsedBundle& parsed) {
-    for (const auto& [key, mode] : parsed.modes) {
+    for (const auto& _entry : parsed.modes) { const auto& key = _entry.first; const auto& mode = _entry.second;
         auto& counts = preview.counts[key];
         counts.events = mode.events.size();
         counts.lab_results = mode.labs.size();
@@ -1654,15 +1676,15 @@ void fill_counts(BackupPreview& preview, const ParsedBundle& parsed) {
     }
 }
 
-void write_backup_file(const std::filesystem::path& path,
-                       std::string_view contents) {
+void write_backup_file(const oyama::fs::path& path,
+                       oyama::string_view contents) {
     if (path.filename().empty()) {
         throw Error("could not write backup: destination has no file name: " +
                     path.string());
     }
 
     const auto parent =
-        path.parent_path().empty() ? std::filesystem::path(".")
+        path.parent_path().empty() ? oyama::fs::path(".")
                                    : path.parent_path();
 
     struct stat existing {};
@@ -1755,7 +1777,7 @@ void write_backup_file(const std::filesystem::path& path,
 
 }  // namespace
 
-bool backup_file_is_encrypted(const std::filesystem::path& path) {
+bool backup_file_is_encrypted(const oyama::fs::path& path) {
     const auto input = open_backup_input(path);
     CloseFd guard{input.fd};
     char magic[8];
@@ -1768,13 +1790,13 @@ bool backup_file_is_encrypted(const std::filesystem::path& path) {
                     std::strerror(errno));
     }
     return is_encrypted_backup(
-        std::string_view(magic, static_cast<std::size_t>(count)));
+        oyama::string_view(magic, static_cast<std::size_t>(count)));
 }
 
 BackupPreview preview_backup(VaultStore& vault,
-                             const std::filesystem::path& path,
+                             const oyama::fs::path& path,
                              std::int64_t now_ms,
-                             std::string_view backup_phrase) {
+                             oyama::string_view backup_phrase) {
     const auto root = parse_backup_file(path, backup_phrase);
     const auto parsed = parse_bundle(root, now_ms);
     if (!parsed.valid) {
@@ -1791,9 +1813,9 @@ BackupPreview preview_backup(VaultStore& vault,
 }
 
 BackupImportResult import_backup(VaultStore& vault,
-                                 const std::filesystem::path& path,
+                                 const oyama::fs::path& path,
                                  std::int64_t now_ms,
-                                 std::string_view backup_phrase) {
+                                 oyama::string_view backup_phrase) {
     const auto root = parse_backup_file(path, backup_phrase);
     const auto parsed = parse_bundle(root, now_ms);
     if (!parsed.valid) {
@@ -1821,18 +1843,18 @@ std::string export_backup_json(VaultStore& vault, std::int64_t now_ms) {
     return build_export(load_local<VaultRepositories>(vault), now_ms).dump();
 }
 
-void export_backup(VaultStore& vault, const std::filesystem::path& path,
+void export_backup(VaultStore& vault, const oyama::fs::path& path,
                    std::int64_t now_ms) {
     write_backup_file(path, export_backup_json(vault, now_ms));
 }
 
 void export_encrypted_backup(VaultStore& vault,
-                             const std::filesystem::path& path,
+                             const oyama::fs::path& path,
                              std::int64_t now_ms,
-                             std::string_view backup_phrase) {
+                             oyama::string_view backup_phrase) {
     const auto sealed =
         encrypt_backup_json(export_backup_json(vault, now_ms), backup_phrase);
     write_backup_file(path, sealed);
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

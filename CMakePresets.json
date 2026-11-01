@@ -35,6 +35,72 @@
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
+    },
+    {
+      "name": "linux-qt6-release",
+      "displayName": "Linux Qt 6.4 release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-qt6-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "OYAMA_QT_MAJOR": "6"
+      }
+    },
+    {
+      "name": "linux-qt5-release",
+      "displayName": "Linux Qt 5.15.2 compatibility",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-qt5-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "OYAMA_QT_MAJOR": "5"
+      }
+    },
+    {
+      "name": "linux-cxx11",
+      "displayName": "Linux C++11",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-cxx11",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_STANDARD": "11"
+      }
+    },
+    {
+      "name": "linux-cxx20",
+      "displayName": "Linux C++20",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/linux-cxx20",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_STANDARD": "20"
+      }
+    },
+    {
+      "name": "freebsd-qt6-release",
+      "displayName": "FreeBSD Qt 6.4 release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/freebsd-qt6-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "OYAMA_QT_MAJOR": "6"
+      }
+    },
+    {
+      "name": "freebsd-qt5-release",
+      "displayName": "FreeBSD Qt 5.15.2 compatibility",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/freebsd-qt5-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "OYAMA_QT_MAJOR": "5"
+      }
     }
   ],
   "buildPresets": [
@@ -49,6 +115,30 @@
     {
       "name": "freebsd-release",
       "configurePreset": "freebsd-release"
+    },
+    {
+      "name": "linux-qt6-release",
+      "configurePreset": "linux-qt6-release"
+    },
+    {
+      "name": "linux-qt5-release",
+      "configurePreset": "linux-qt5-release"
+    },
+    {
+      "name": "linux-cxx11",
+      "configurePreset": "linux-cxx11"
+    },
+    {
+      "name": "linux-cxx20",
+      "configurePreset": "linux-cxx20"
+    },
+    {
+      "name": "freebsd-qt6-release",
+      "configurePreset": "freebsd-qt6-release"
+    },
+    {
+      "name": "freebsd-qt5-release",
+      "configurePreset": "freebsd-qt5-release"
     }
   ],
   "testPresets": [
@@ -62,6 +152,34 @@
     {
       "name": "linux-release",
       "configurePreset": "linux-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-qt6-release",
+      "configurePreset": "linux-qt6-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-qt5-release",
+      "configurePreset": "linux-qt5-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-cxx11",
+      "configurePreset": "linux-cxx11",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "linux-cxx20",
+      "configurePreset": "linux-cxx20",
       "output": {
         "outputOnFailure": true
       }

@@ -201,7 +201,7 @@ int main() {
     check(doses.count(Mode::Transfem) == 1, "dose count");
     DoseEvent no_stamp{"00000000-0000-0000-0000-000000000022",
                        Mode::Transfem, "oral", "E2", 5.0, 1.0, "{}",
-                       std::nullopt, 1};
+                       oyama::nullopt, 1};
     doses.upsert(no_stamp);
     const auto loaded_no_stamp = doses.get(no_stamp.id);
     check(loaded_no_stamp.has_value() &&
@@ -230,7 +230,7 @@ int main() {
     JsonRecord template_rec{
         "00000000-0000-0000-0000-000000000040", Mode::Transmasc,
         R"({"id":"00000000-0000-0000-0000-000000000040","mode":"transmasc","name":"weekly","route":"injection","ester":"EN","doseMG":5.0,"extras":{},"createdAt":1})",
-        std::nullopt};
+        oyama::nullopt};
     templates.upsert(template_rec);
     const auto template_list = templates.list(Mode::Transmasc);
     check(template_list.size() == 1 && template_list[0].id == template_rec.id,
@@ -249,7 +249,7 @@ int main() {
     JsonRecord quick_rec{
         "00000000-0000-0000-0000-000000000041", Mode::Transfem,
         R"({"id":"00000000-0000-0000-0000-000000000041","route":"oral","ester":"E2","value":1.0,"createdAt":1})",
-        std::nullopt};
+        oyama::nullopt};
     quick.upsert(quick_rec);
     check(quick.list(Mode::Transfem).size() == 1, "quick list");
     const auto loaded_quick = quick.get(quick_rec.id);
@@ -261,7 +261,7 @@ int main() {
     JsonRecord supply_rec{
         "00000000-0000-0000-0000-000000000042", Mode::Transfem,
         R"({"id":"00000000-0000-0000-0000-000000000042","route":"injection","ester":"EV","pack":{"kind":"vial","ml":10.0,"mgPerMl":40.0},"count":1.0,"startedAt":1})",
-        std::nullopt};
+        oyama::nullopt};
     supplies.upsert(supply_rec);
     check(supplies.list(Mode::Transfem).size() == 1, "supply list");
     check(supplies.remove(supply_rec.id), "supply remove");
@@ -270,7 +270,7 @@ int main() {
     JsonRecord plan_rec{
         "00000000-0000-0000-0000-000000000043", Mode::Transfem,
         R"({"id":"00000000-0000-0000-0000-000000000043","route":"injection","ester":"EV","doseMG":2.0,"extras":{},"everyDays":7,"timesPerDay":1})",
-        std::nullopt};
+        oyama::nullopt};
     plan.upsert(plan_rec);
     check(plan.list(Mode::Transfem).size() == 1, "plan list");
     check(plan.remove(plan_rec.id), "plan remove");
@@ -278,7 +278,7 @@ int main() {
     JsonRecord invalid_quick{
         "00000000-0000-0000-0000-000000000044", Mode::Transfem,
         R"({"id":"00000000-0000-0000-0000-000000000044","route":"teleport","ester":"E2","value":1.0,"createdAt":1})",
-        std::nullopt};
+        oyama::nullopt};
     bool invalid_route_threw = false;
     try {
         quick.upsert(invalid_quick);

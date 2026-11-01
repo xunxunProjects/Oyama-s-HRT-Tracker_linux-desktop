@@ -8,18 +8,26 @@
 #include <string>
 #include <utility>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
+
+namespace {
+PGconn* exchange_ptr(PGconn*& p) {
+    PGconn* old = p;
+    p = nullptr;
+    return old;
+}
+}
 namespace {
 
-std::optional<std::string> env_value(const char* name) {
+oyama::optional<std::string> env_value(const char* name) {
     const char* value = std::getenv(name);
     if (value == nullptr || *value == '\0') {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     return std::string(value);
 }
 
-int parse_port(const std::optional<std::string>& value, int fallback) {
+int parse_port(const oyama::optional<std::string>& value, int fallback) {
     if (!value.has_value()) {
         return fallback;
     }
@@ -77,11 +85,11 @@ ConnectionConfig ConnectionConfig::from_environment() {
                                  : env_value("PGPORT"),
                              5432);
 
+    const auto pg_value = env_value("PGHOST");
     if (const auto value = env_value("OYAMA_PG_SOCKET")) {
         config.socket_dir = *value;
-    } else if (const auto value = env_value("PGHOST");
-               value.has_value() && value->front() == '/') {
-        config.socket_dir = *value;
+    } else if (pg_value.has_value() && pg_value->front() == '/') {
+        config.socket_dir = *pg_value;
     }
 
     return config;
@@ -94,9 +102,9 @@ std::vector<std::string> ConnectionConfig::candidate_socket_dirs(int port) {
     if (const auto value = env_value("OYAMA_PG_SOCKET")) {
         append_unique(dirs, *value);
     }
-    if (const auto value = env_value("PGHOST");
-        value.has_value() && value->front() == '/') {
-        append_unique(dirs, *value);
+    const auto pg_value2 = env_value("PGHOST");
+    if (pg_value2.has_value() && pg_value2->front() == '/') {
+        append_unique(dirs, *pg_value2);
     }
     if (const auto value = env_value("XDG_RUNTIME_DIR")) {
         append_unique(dirs, *value);
@@ -108,16 +116,16 @@ std::vector<std::string> ConnectionConfig::candidate_socket_dirs(int port) {
     return dirs;
 }
 
-std::optional<std::string> ConnectionConfig::find_socket_dir(int port) {
+oyama::optional<std::string> ConnectionConfig::find_socket_dir(int port) {
     for (const auto& directory : candidate_socket_dirs(port)) {
-        const auto socket = std::filesystem::path(directory) /
+        const auto socket = oyama::fs::path(directory) /
                             (".s.PGSQL." + std::to_string(port));
         std::error_code error;
-        if (std::filesystem::exists(socket, error) && !error) {
+        if (oyama::fs::exists(socket, error) && !error) {
             return directory;
         }
     }
-    return std::nullopt;
+    return oyama::nullopt;
 }
 
 std::string ConnectionConfig::to_conninfo() const {
@@ -137,7 +145,7 @@ std::string ConnectionConfig::to_conninfo() const {
         }
         socket = *found;
     }
-    if (!std::filesystem::path(socket).is_absolute()) {
+    if (!oyama::fs::path(socket).is_absolute()) {
         throw Error("PostgreSQL socket directory must be an absolute path");
     }
 
@@ -209,9 +217,9 @@ bool Result::is_null(int row, int column) const {
     return PQgetisnull(result_.get(), row, column) != 0;
 }
 
-std::optional<std::string> Result::value(int row, int column) const {
+oyama::optional<std::string> Result::value(int row, int column) const {
     if (is_null(row, column)) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     return std::string(PQgetvalue(result_.get(), row, column),
                        static_cast<std::size_t>(PQgetlength(result_.get(), row, column)));
@@ -350,14 +358,14 @@ Connection::~Connection() {
 }
 
 Connection::Connection(Connection&& other) noexcept
-    : connection_(std::exchange(other.connection_, nullptr)) {}
+    : connection_(exchange_ptr(other.connection_)) {}
 
 Connection& Connection::operator=(Connection&& other) noexcept {
     if (this != &other) {
         if (connection_ != nullptr) {
             PQfinish(connection_);
         }
-        connection_ = std::exchange(other.connection_, nullptr);
+        connection_ = exchange_ptr(other.connection_);
     }
     return *this;
 }
@@ -371,7 +379,7 @@ Result Connection::exec(const std::string& sql) {
 
 Result Connection::exec_params(
     const std::string& sql,
-    const std::vector<std::optional<std::string>>& params) {
+    const std::vector<oyama::optional<std::string>>& params) {
     if (connection_ == nullptr) {
         throw Error("PostgreSQL connection is closed");
     }
@@ -462,4 +470,4 @@ void Transaction::rollback() {
     active_ = false;
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

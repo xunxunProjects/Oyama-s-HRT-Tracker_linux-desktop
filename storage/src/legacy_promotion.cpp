@@ -11,13 +11,13 @@
 #include <string_view>
 #include <unistd.h>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
-namespace fs = std::filesystem;
+namespace fs = oyama::fs;
 
-[[nodiscard]] fs::path absolute_lexical(const fs::path& path,
-                                        std::string_view label) {
+OYAMA_NODISCARD fs::path absolute_lexical(const fs::path& path,
+                                        oyama::string_view label) {
     std::error_code error;
     fs::path result = fs::absolute(path, error);
     if (error) {
@@ -27,13 +27,13 @@ namespace fs = std::filesystem;
     return result.lexically_normal();
 }
 
-[[nodiscard]] bool is_missing_error(const std::error_code& error) {
+OYAMA_NODISCARD bool is_missing_error(const std::error_code& error) {
     return error == std::errc::no_such_file_or_directory ||
            error.value() == ENOENT;
 }
 
-[[nodiscard]] bool require_directory(const fs::path& path,
-                                     std::string_view label) {
+OYAMA_NODISCARD bool require_directory(const fs::path& path,
+                                     oyama::string_view label) {
     std::error_code error;
     const fs::file_status status = fs::symlink_status(path, error);
     if (error) {
@@ -56,7 +56,7 @@ namespace fs = std::filesystem;
     return true;
 }
 
-[[nodiscard]] bool directory_present(const fs::path& path) {
+OYAMA_NODISCARD bool directory_present(const fs::path& path) {
     std::error_code error;
     const fs::file_status status = fs::symlink_status(path, error);
     if (error) {
@@ -111,14 +111,14 @@ void validate_paths(const LegacyPaths& paths) {
     (void)require_directory(target, "migration target directory");
 }
 
-[[nodiscard]] fs::path migrate_sibling(const fs::path& path) {
+OYAMA_NODISCARD fs::path migrate_sibling(const fs::path& path) {
     if (path == path.root_path() || path.filename().empty()) {
         throw Error("refusing to use the filesystem root as a migration path");
     }
     return path.parent_path() / (path.filename().string() + "-migrate");
 }
 
-[[nodiscard]] std::string utc_timestamp() {
+OYAMA_NODISCARD std::string utc_timestamp() {
     const std::time_t now = std::time(nullptr);
     std::tm utc{};
     if (::gmtime_r(&now, &utc) == nullptr) {
@@ -152,7 +152,7 @@ void flush_directory(const fs::path& directory) {
                 std::string(std::strerror(saved_errno)));
 }
 
-[[nodiscard]] std::vector<fs::path> find_plaintext_dirs_unchecked(
+OYAMA_NODISCARD std::vector<fs::path> find_plaintext_dirs_unchecked(
     const LegacyPaths& paths) {
     const fs::path parent = paths.data_dir.parent_path();
     const std::string prefix =
@@ -175,7 +175,7 @@ void flush_directory(const fs::path& directory) {
     }
     const fs::directory_iterator end;
     while (iterator != end) {
-        const fs::path candidate = iterator->path();
+        const fs::path candidate = (*iterator).path();
         const std::string name = candidate.filename().string();
         if (name.rfind(prefix, 0) == 0) {
             std::error_code status_error;
@@ -206,7 +206,7 @@ void flush_directory(const fs::path& directory) {
     return found;
 }
 
-[[nodiscard]] std::string describe_state(const LegacyPaths& paths) {
+OYAMA_NODISCARD std::string describe_state(const LegacyPaths& paths) {
     const bool old_present = directory_present(paths.data_dir);
     const bool target_present = directory_present(paths.target_data_dir);
     const std::size_t plaintext_count =
@@ -372,4 +372,4 @@ void promote_after_verification(LocalCluster& old_cluster,
     }
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

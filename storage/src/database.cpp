@@ -2,7 +2,7 @@
 
 #include <utility>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 constexpr int kMinimumServerVersion = 140000;
@@ -10,7 +10,7 @@ constexpr int kMinimumServerVersion = 140000;
 }  // namespace
 
 Database::Database(ConnectionConfig config,
-                   std::filesystem::path migrations_directory)
+                   oyama::fs::path migrations_directory)
     : connection_(config), migrations_(std::move(migrations_directory)) {
     if (connection_.server_version() < kMinimumServerVersion) {
         throw Error("PostgreSQL 14 or newer is required");
@@ -45,4 +45,4 @@ int Database::current_version() {
     return migrations_.current_version(connection_);
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

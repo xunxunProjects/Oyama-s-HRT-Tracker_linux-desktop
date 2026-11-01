@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 using json = nlohmann::json;
@@ -24,26 +24,27 @@ constexpr double kDoseMax = 10000.0;
 constexpr double kWeightMin = 20.0;
 constexpr double kWeightMax = 400.0;
 
-constexpr std::array<std::string_view, 6> kRoutes = {
+const std::array<oyama::string_view, 6> kRoutes = {
     "oral",     "sublingual", "injection",
     "patchApply", "patchRemove", "gel",
 };
-constexpr std::array<std::string_view, 17> kEsters = {
+const std::array<oyama::string_view, 17> kEsters = {
     "E2",   "EB",   "EV",   "EC",   "EN",   "EU",   "CPA",  "T",    "TC",
     "TE",   "TU",   "SPIRO", "BICA", "MPA",  "LEUP", "TRIP", "RLX",
 };
-constexpr std::array<std::string_view, 4> kUnits = {
+const std::array<oyama::string_view, 4> kUnits = {
     "pg/ml", "pmol/l", "ng/dl", "nmol/l",
 };
-constexpr std::array<std::string_view, 2> kAssays = {"immuno", "lcms"};
-constexpr std::array<std::string_view, 4> kCalibrationMethods = {
+const std::array<oyama::string_view, 2> kAssays = {"immuno", "lcms"};
+const std::array<oyama::string_view, 4> kCalibrationMethods = {
     "off", "ekf", "ou_kalman", "mipd",
 };
-constexpr std::array<std::string_view, 2> kHistoryModes = {
+const std::array<oyama::string_view, 2> kHistoryModes = {
     "forward", "retrospective",
 };
 
-bool contains(const auto& values, std::string_view value) {
+template <typename Values>
+bool contains(const Values& values, oyama::string_view value) {
     for (const auto& candidate : values) {
         if (candidate == value) {
             return true;
@@ -65,7 +66,7 @@ std::string compact(const json& value) {
     return value.dump();
 }
 
-json parse_object(std::string_view text, const std::string& kind,
+json parse_object(oyama::string_view text, const std::string& kind,
                   const std::string& id) {
     json value = json::parse(text.begin(), text.end(), nullptr, false);
     if (value.is_discarded() || !value.is_object()) {
@@ -74,11 +75,11 @@ json parse_object(std::string_view text, const std::string& kind,
     return value;
 }
 
-void check_allowed(const json& value, std::initializer_list<std::string_view> allowed,
+void check_allowed(const json& value, std::initializer_list<oyama::string_view> allowed,
                    const std::string& kind, const std::string& id) {
     for (auto it = value.begin(); it != value.end(); ++it) {
         bool ok = false;
-        for (std::string_view key : allowed) {
+        for (oyama::string_view key : allowed) {
             if (it.key() == key) {
                 ok = true;
                 break;
@@ -123,12 +124,12 @@ std::int64_t required_integer(const json& value, const char* key,
     return number;
 }
 
-std::optional<std::int64_t> optional_integer(const json& value, const char* key,
+oyama::optional<std::int64_t> optional_integer(const json& value, const char* key,
                                              const std::string& kind,
                                              const std::string& id) {
     const auto it = value.find(key);
     if (it == value.end() || it->is_null()) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     if (!it->is_number_integer() && !it->is_number_unsigned()) {
         fail(kind, id, key, "must be an integer");
@@ -140,12 +141,12 @@ std::optional<std::int64_t> optional_integer(const json& value, const char* key,
     return number;
 }
 
-std::optional<double> optional_number(const json& value, const char* key,
+oyama::optional<double> optional_number(const json& value, const char* key,
                                       const std::string& kind,
                                       const std::string& id) {
     const auto it = value.find(key);
     if (it == value.end() || it->is_null()) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     if (!it->is_number() || !std::isfinite(it->get<double>())) {
         fail(kind, id, key, "must be a finite number");
@@ -406,7 +407,7 @@ std::string encode_settings(const Settings& settings) {
     return canonical(value);
 }
 
-Settings decode_settings(std::string_view text) {
+Settings decode_settings(oyama::string_view text) {
     const json value = parse_object(text, "settings", "");
     check_allowed(value,
                   {"weight", "weightUpdatedAt", "birthYear",
@@ -430,8 +431,8 @@ Settings decode_settings(std::string_view text) {
     }
     settings.birth_year_updated_at =
         optional_integer(value, "birthYearUpdatedAt", "settings", "");
-    if (const auto params = value.find("pkParams");
-        params != value.end() && !params->is_null()) {
+    const auto params = value.find("pkParams");
+    if (params != value.end() && !params->is_null()) {
         if (!params->is_object()) {
             fail("settings", "", "pkParams", "must be an object");
         }
@@ -439,8 +440,8 @@ Settings decode_settings(std::string_view text) {
     }
     settings.pk_params_updated_at =
         optional_integer(value, "pkParamsUpdatedAt", "settings", "");
-    if (const auto calibration = value.find("calibration");
-        calibration != value.end() && !calibration->is_null()) {
+    const auto calibration = value.find("calibration");
+    if (calibration != value.end() && !calibration->is_null()) {
         if (!calibration->is_object()) {
             fail("settings", "", "calibration", "must be an object");
         }
@@ -482,7 +483,7 @@ std::string encode_preferences(const std::vector<Preference>& preferences) {
     return canonical(json{{"items", items}});
 }
 
-std::vector<Preference> decode_preferences(std::string_view text) {
+std::vector<Preference> decode_preferences(oyama::string_view text) {
     const json value = parse_object(text, "preferences", "");
     check_allowed(value, {"items"}, "preferences", "");
     const auto items = value.find("items");
@@ -555,7 +556,7 @@ std::string encode_dose_event(const DoseEvent& event) {
     return canonical(value);
 }
 
-DoseEvent decode_dose_event(std::string_view text) {
+DoseEvent decode_dose_event(oyama::string_view text) {
     const std::string kind = "dose_event";
     const json value = parse_object(text, kind, "");
     check_allowed(value,
@@ -614,7 +615,7 @@ std::string encode_lab_result(const LabResult& result) {
     return canonical(value);
 }
 
-LabResult decode_lab_result(std::string_view text) {
+LabResult decode_lab_result(oyama::string_view text) {
     const std::string kind = "lab_result";
     const json value = parse_object(text, kind, "");
     check_allowed(value,
@@ -661,7 +662,7 @@ std::string encode_json_record(const JsonRecord& record,
     return canonical(payload);
 }
 
-JsonRecord decode_json_record(std::string_view text,
+JsonRecord decode_json_record(oyama::string_view text,
                               JsonRecordKind record_kind) {
     const std::string kind = kind_name(record_kind);
     const json payload = parse_object(text, kind, "");
@@ -691,7 +692,7 @@ std::string encode_tombstone(const Tombstone& tombstone) {
                           {"deletedAt", tombstone.deleted_at}});
 }
 
-Tombstone decode_tombstone(std::string_view text) {
+Tombstone decode_tombstone(oyama::string_view text) {
     const json value = parse_object(text, "tombstone", "");
     check_allowed(value, {"kind", "recordId", "deletedAt"}, "tombstone", "");
     Tombstone tombstone;
@@ -710,4 +711,4 @@ Tombstone decode_tombstone(std::string_view text) {
     return tombstone;
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage
