@@ -76,6 +76,7 @@ public:
     Q_INVOKABLE void cancelVaultSetup();
     Q_INVOKABLE bool unlockVault(const QString& phrase);
     Q_INVOKABLE void lockVault();
+    Q_INVOKABLE void panicLock();
     Q_INVOKABLE bool retryLegacyMigration();
     Q_INVOKABLE void cancelLegacyMigration();
     Q_INVOKABLE bool addDose(const QString& route, const QString& ester,

@@ -301,6 +301,7 @@ if(OYAMA_BUILD_QT_SHELL)
             app/qml/VaultGate.qml
             app/qml/SetupVaultPage.qml
             app/qml/UnlockVaultPage.qml
+            app/qml/PanicLockPage.qml
             app/qml/Sidebar.qml
             app/qml/NavItem.qml
             app/qml/FirstRun.qml

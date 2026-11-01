@@ -138,4 +138,11 @@ ApplicationWindow {
         anchors.fill: parent
         visible: app.vaultState !== "unlocked"
     }
+
+    PanicLockPage {
+        objectName: "panicLockPage"
+        anchors.fill: parent
+        visible: app.vaultState === "panic"
+        z: 10000
+    }
 }
