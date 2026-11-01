@@ -128,6 +128,8 @@ The top-level `Makefile` wraps the normal CMake workflow:
 make                 # configure and build the default target
 make JOBS=2          # limit parallel compilation
 make test            # run CTest
+make SECURITY=0      # build without security hardening (debug only)
+make test-both       # build and test both security variants
 sudo make install    # install under /usr/local by default
 make PREFIX=/opt/oyama-hrt
 make package PACKAGE=dist/oyama-hrt-netbsd-amd64.tar.gz
@@ -137,6 +139,13 @@ make clean
 `make package` stages the files under `STAGE_DIR` (default `dist/stage`) using
 `DESTDIR`, then writes a gzip tarball. Set `PACKAGE` to a platform-specific
 artifact name; the default is `dist/oyama-hrt.tar.gz`.
+
+### Security mode
+
+The Makefile defaults to security mode ON (`SECURITY=1`). In this mode the
+build enables stack protection, `_FORTIFY_SOURCE=2`, and linker hardening
+(`-Wl,-z,relro,-z,now`). Set `SECURITY=0` to disable these for debugging.
+Both variants must pass the full test suite before release.
 
 The equivalent direct CMake commands are:
 
