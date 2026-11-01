@@ -1,5 +1,8 @@
 #include "app_controller.h"
 #include "ui_preferences.h"
+#if OYAMA_SECURITY_PROFILE_FULL
+#include "capture_guard.h"
+#endif
 
 #include <QDebug>
 #include <QFontDatabase>
@@ -71,6 +74,14 @@ int main(int argc, char* argv[]) {
     qmlRegisterSingletonInstance("OyamaHrt", 1, 0, "Ui", &ui);
     QQmlApplicationEngine engine;
     engine.rootContext()->setContextProperty("app", &controller);
+#if OYAMA_SECURITY_PROFILE_FULL
+    CaptureGuard captureGuard;
+    engine.rootContext()->setContextProperty("captureGuard", &captureGuard);
+    captureGuard.start();
+#else
+    // Provide a null context property so QML binding doesn't fail.
+    engine.rootContext()->setContextProperty("captureGuard", nullptr);
+#endif
 
     QObject::connect(
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
