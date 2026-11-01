@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Oyama's HRT Tracker
+GenericName=HRT Tracker
+Comment=Track hormone replacement therapy doses, labs, and pharmacokinetics locally
+Exec=oyama-hrt-app
+Icon=oyama-hrt
+Terminal=false
+Categories=Science;MedicalSoftware;
+Keywords=HRT;hormone;therapy;tracker;pharmacokinetics;
+StartupNotify=true
+StartupWMClass=oyama-hrt-app

@@ -216,6 +216,13 @@ if(OYAMA_BUILD_QT_SHELL)
             target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
         endif()
         install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        install(FILES app/assets/oyama-hrt.desktop
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
+        install(FILES app/assets/oyama-hrt.metainfo.xml
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/metainfo)
+        install(FILES app/assets/app-icon.png
+            DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/256x256/apps
+            RENAME oyama-hrt.png)
 
         qt_add_executable(ui_preferences_test
             app/tests/ui_preferences_test.cpp
