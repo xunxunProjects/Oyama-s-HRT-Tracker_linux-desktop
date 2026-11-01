@@ -75,6 +75,8 @@ int oyama_vault_setup_with_params(oyama_vault *vault, const char *phrase,
                                   size_t phrase_len,
                                   const oyama_vault_kdf_params *params,
                                   oyama_error *err);
+int oyama_vault_setup_generated(oyama_vault *vault, char *phrase_out,
+                               size_t phrase_out_len, oyama_error *err);
 int oyama_vault_unlock(oyama_vault *vault, const char *phrase,
                        size_t phrase_len, oyama_error *err);
 int oyama_vault_change_phrase(oyama_vault *vault, const char *new_phrase,

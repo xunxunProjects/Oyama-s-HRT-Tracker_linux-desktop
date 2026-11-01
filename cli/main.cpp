@@ -8,12 +8,16 @@
 #include <oyama/storage/vault_settings_repository.h>
 #include <oyama/storage/vault_store.h>
 
+#include <oyama/bip39.h>
+#include <oyama/vault.h>
+
 #include <sodium.h>
 
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -1212,12 +1216,20 @@ int command_vault(const GlobalOptions& global,
             phrase.assign(read_secret_from_stdin());
             vault.setup(phrase.value(), params);
         } else {
-            const auto words = Passphrase::generate();
+            char phrase_buf[OYAMA_BIP39_MAX_LEN];
+            oyama_error gen_err{};
+            std::memset(&gen_err, 0, sizeof(gen_err));
+            if (oyama_bip39_generate(phrase_buf, sizeof(phrase_buf),
+                                     &gen_err) != OYAMA_VAULT_OK) {
+                throw Error(std::string("could not generate recovery phrase: ") +
+                            gen_err.message);
+            }
             SecretString phrase;
-            phrase.assign(Passphrase::join(words));
+            phrase.assign(phrase_buf);
+            sodium_memzero(phrase_buf, sizeof(phrase_buf));
             std::cout << "phrase\t" << phrase.value() << '\n' << std::flush;
 
-            const auto positions = Passphrase::challenge(words.size());
+            const auto positions = Passphrase::challenge(24, 3);
             std::vector<std::string> answers;
             answers.reserve(positions.size());
             for (const std::size_t position : positions) {
