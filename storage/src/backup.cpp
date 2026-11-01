@@ -14,9 +14,12 @@
 
 #include <algorithm>
 #include <array>
+#include <cerrno>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <ctime>
+#include <fcntl.h>
 #include <fstream>
 #include <functional>
 #include <limits>
@@ -26,6 +29,7 @@
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
+#include <unistd.h>
 #include <utility>
 #include <vector>
 
@@ -40,6 +44,10 @@ constexpr std::int64_t kClockSkewMs = std::int64_t{5} * 60 * 1000;
 constexpr std::int64_t kTombstoneTtlMs = 180LL * 24 * 60 * 60 * 1000;
 constexpr std::size_t kTombstoneMaxPerKind = 5000;
 constexpr std::size_t kMaxEntries = 20000;
+constexpr std::size_t kMaxRecordJsonDepth = 16;
+constexpr std::size_t kMaxExtrasBytes = 16U * 1024U;
+constexpr std::size_t kMaxPkParamsBytes = 16U * 1024U;
+constexpr std::size_t kMaxPreferenceBytes = 4U * 1024U;
 constexpr double kDoseMax = 10000.0;
 constexpr double kTimeMax = 1500000.0;
 constexpr double kWeightMin = 20.0;
@@ -97,6 +105,94 @@ std::string iso_utc(std::int64_t now_ms) {
 std::string canonical(const json& value) {
     // nlohmann::json stores objects in sorted key order, so dump() is stable.
     return value.dump();
+}
+
+// Iterative, string/escape-aware scan.  It does not validate JSON; it only
+// bounds nesting before nlohmann's recursive parser sees the text.
+bool depth_within(std::string_view text, std::size_t max_depth) {
+    std::size_t depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (const char ch : text) {
+        if (in_string) {
+            if (escaped) {
+                escaped = false;
+            } else if (ch == '\\') {
+                escaped = true;
+            } else if (ch == '"') {
+                in_string = false;
+            }
+            continue;
+        }
+        if (ch == '"') {
+            in_string = true;
+        } else if (ch == '{' || ch == '[') {
+            if (++depth > max_depth) {
+                return false;
+            }
+        } else if (ch == '}' || ch == ']') {
+            if (depth > 0) {
+                --depth;
+            }
+        }
+    }
+    return true;
+}
+
+bool json_depth_exceeds(const json& value, std::size_t max_depth) {
+    std::vector<std::pair<const json*, std::size_t>> stack;
+    stack.emplace_back(&value, 1);
+    while (!stack.empty()) {
+        const auto [node, depth] = stack.back();
+        stack.pop_back();
+        if (depth > max_depth) {
+            return true;
+        }
+        if (node->is_object()) {
+            for (auto it = node->begin(); it != node->end(); ++it) {
+                stack.emplace_back(&it.value(), depth + 1);
+            }
+        } else if (node->is_array()) {
+            for (const auto& child : *node) {
+                stack.emplace_back(&child, depth + 1);
+            }
+        }
+    }
+    return false;
+}
+
+// Caps a single record value before it is copied or dumped recursively.
+bool checked_dump(const json& value, std::size_t max_bytes,
+                  const char* label, std::string* text, std::string& error,
+                  const std::string& where) {
+    if (json_depth_exceeds(value, kMaxRecordJsonDepth)) {
+        error = where + ": " + label + " is nested too deeply";
+        return false;
+    }
+    auto dumped = value.dump();
+    if (dumped.size() > max_bytes) {
+        error = where + ": " + label + " is too large";
+        return false;
+    }
+    if (text != nullptr) {
+        *text = std::move(dumped);
+    }
+    return true;
+}
+
+json parse_stored_json(std::string_view text) {
+    if (text.size() > kMaxBackupFileBytes) {
+        throw Error("stored JSON is too large");
+    }
+    if (!depth_within(text, kMaxBackupJsonDepth)) {
+        throw Error("stored JSON is nested too deeply");
+    }
+    try {
+        return json::parse(text);
+    } catch (const std::exception& error) {
+        throw Error("could not parse stored JSON: " +
+                    std::string(error.what()));
+    }
 }
 
 bool id_ok(const json& value, std::string& id) {
@@ -173,14 +269,15 @@ bool required_integer(const json& object, const char* key,
     return true;
 }
 
-json extras_object(const json& object, std::vector<std::string>& issues,
-                   const std::string& where) {
+const json& extras_object(const json& object, std::vector<std::string>& issues,
+                          const std::string& where) {
+    static const json empty = json::object();
     if (!object.contains("extras")) {
-        return json::object();
+        return empty;
     }
     if (!object.at("extras").is_object()) {
         issues.push_back(where + ": extras must be an object; using {}");
-        return json::object();
+        return empty;
     }
     return object.at("extras");
 }
@@ -291,7 +388,11 @@ bool parse_event(const json& value, Mode mode, std::int64_t now_ms,
     event.mode = mode;
     event.route = route;
     event.ester = ester;
-    event.extras_json = extras_object(value, issues, where).dump();
+    const auto& extras = extras_object(value, issues, where);
+    if (!checked_dump(extras, kMaxExtrasBytes, "extras",
+                      &event.extras_json, error, where)) {
+        return false;
+    }
     event.created_at = 0;
     return true;
 }
@@ -370,9 +471,14 @@ bool parse_template(const json& value, Mode mode, std::int64_t now_ms,
         error = where + ": " + error;
         return false;
     }
+    const auto& extras = extras_object(value, issues, where);
+    if (!checked_dump(extras, kMaxExtrasBytes, "extras", nullptr, error,
+                      where)) {
+        return false;
+    }
     json payload{{"id", record.id},       {"name", name},
                  {"route", route},        {"ester", ester},
-                 {"doseMG", dose},        {"extras", extras_object(value, issues, where)},
+                 {"doseMG", dose},        {"extras", extras},
                  {"createdAt", created}};
     if (record.updated_at.has_value()) {
         payload["updatedAt"] = *record.updated_at;
@@ -504,11 +610,16 @@ bool parse_plan(const json& value, Mode mode, std::int64_t now_ms,
     if (every_days > 1) {
         times = 1;
     }
+    const auto& extras = extras_object(value, issues, where);
+    if (!checked_dump(extras, kMaxExtrasBytes, "extras", nullptr, error,
+                      where)) {
+        return false;
+    }
     record.mode = mode;
     record.updated_at.reset();
     record.payload_json =
         json{{"id", record.id}, {"route", route}, {"ester", ester},
-             {"doseMG", dose}, {"extras", extras_object(value, issues, where)},
+             {"doseMG", dose}, {"extras", extras},
              {"everyDays", every_days}, {"timesPerDay", times}}
             .dump();
     return true;
@@ -736,7 +847,14 @@ ParsedBundle parse_bundle(const json& root, std::int64_t now_ms) {
             if (!root.at("pkParams").is_object()) {
                 parsed.errors.push_back("pkParams must be an object or null");
             } else {
-                parsed.pk_json = root.at("pkParams").dump();
+                std::string pk_text;
+                std::string pk_error;
+                if (!checked_dump(root.at("pkParams"), kMaxPkParamsBytes,
+                                  "pkParams", &pk_text, pk_error, "pkParams")) {
+                    parsed.errors.push_back(pk_error);
+                } else {
+                    parsed.pk_json = std::move(pk_text);
+                }
             }
         }
         std::string error;
@@ -779,7 +897,15 @@ ParsedBundle parse_bundle(const json& root, std::int64_t now_ms) {
                 parsed.issues.push_back("ignoring unknown preference " + key);
                 continue;
             }
-            parsed.preferences[key] = value.dump();
+            std::string preference_text;
+            std::string preference_error;
+            if (!checked_dump(value, kMaxPreferenceBytes, "preference",
+                              &preference_text, preference_error,
+                              "preferences." + key)) {
+                parsed.errors.push_back(preference_error);
+                continue;
+            }
+            parsed.preferences[key] = std::move(preference_text);
         }
     }
     parsed.valid = parsed.errors.empty();
@@ -830,7 +956,7 @@ std::string content_fingerprint(const DoseEvent& event) {
                 {"ester", event.ester},
                 {"doseMG", event.dose_mg},
                 {"timeH", event.time_h},
-                {"extras", json::parse(event.extras_json)}}
+                {"extras", parse_stored_json(event.extras_json)}}
         .dump();
 }
 
@@ -843,7 +969,7 @@ std::string content_fingerprint(const LabResult& lab) {
 }
 
 std::string content_fingerprint(const JsonRecord& record) {
-    json value = json::parse(record.payload_json);
+    json value = parse_stored_json(record.payload_json);
     value.erase("mode");
     return canonical(value);
 }
@@ -993,6 +1119,20 @@ void merge_unstamped(std::vector<JsonRecord>& local,
     }
 }
 
+template <typename Record>
+std::map<std::string, std::int64_t> newest_stamps(
+    const std::vector<Record>& records) {
+    std::map<std::string, std::int64_t> stamps;
+    for (const auto& record : records) {
+        if (!record.updated_at.has_value()) {
+            continue;
+        }
+        auto& stamp = stamps[record.id];
+        stamp = std::max(stamp, *record.updated_at);
+    }
+    return stamps;
+}
+
 template <typename Repositories>
 MergedState merge_bundle(typename Repositories::Store& store,
                          const ParsedBundle& parsed, std::int64_t now_ms) {
@@ -1046,22 +1186,23 @@ MergedState merge_bundle(typename Repositories::Store& store,
         std::size_t removed = 0;
         std::vector<std::string> removed_ids;
 
+        const auto local_event_stamps = newest_stamps(state.events[key]);
+        const auto incoming_event_stamps = newest_stamps(incoming.events);
+        const auto local_lab_stamps = newest_stamps(state.labs[key]);
+        const auto incoming_lab_stamps = newest_stamps(incoming.labs);
+        const auto local_template_stamps = newest_stamps(state.templates[key]);
+        const auto incoming_template_stamps =
+            newest_stamps(incoming.templates);
+        const auto protected_by = [](const auto& stamps, const std::string& id,
+                                     std::int64_t stamp) {
+            const auto found = stamps.find(id);
+            return found != stamps.end() && found->second > stamp;
+        };
+
         auto& event_tomb = state.tombstones["events"];
         for (const auto& [id, stamp] : incoming.deletion_events) {
-            bool protect = false;
-            for (const auto& record : state.events[key]) {
-                if (record.id == id && record.updated_at.has_value() &&
-                    *record.updated_at > stamp) {
-                    protect = true;
-                }
-            }
-            for (const auto& record : incoming.events) {
-                if (record.id == id && record.updated_at.has_value() &&
-                    *record.updated_at > stamp) {
-                    protect = true;
-                }
-            }
-            if (!protect) {
+            if (!protected_by(local_event_stamps, id, stamp) &&
+                !protected_by(incoming_event_stamps, id, stamp)) {
                 event_tomb[id] = std::max(event_tomb[id], stamp);
             }
         }
@@ -1082,20 +1223,8 @@ MergedState merge_bundle(typename Repositories::Store& store,
 
         auto& lab_tomb = state.tombstones["labResults"];
         for (const auto& [id, stamp] : incoming.deletion_labs) {
-            bool protect = false;
-            for (const auto& record : state.labs[key]) {
-                if (record.id == id && record.updated_at.has_value() &&
-                    *record.updated_at > stamp) {
-                    protect = true;
-                }
-            }
-            for (const auto& record : incoming.labs) {
-                if (record.id == id && record.updated_at.has_value() &&
-                    *record.updated_at > stamp) {
-                    protect = true;
-                }
-            }
-            if (!protect) {
+            if (!protected_by(local_lab_stamps, id, stamp) &&
+                !protected_by(incoming_lab_stamps, id, stamp)) {
                 lab_tomb[id] = std::max(lab_tomb[id], stamp);
             }
         }
@@ -1116,20 +1245,8 @@ MergedState merge_bundle(typename Repositories::Store& store,
 
         auto& template_tomb = state.tombstones["doseTemplates"];
         for (const auto& [id, stamp] : incoming.deletion_templates) {
-            bool protect = false;
-            for (const auto& record : state.templates[key]) {
-                if (record.id == id && record.updated_at.has_value() &&
-                    *record.updated_at > stamp) {
-                    protect = true;
-                }
-            }
-            for (const auto& record : incoming.templates) {
-                if (record.id == id && record.updated_at.has_value() &&
-                    *record.updated_at > stamp) {
-                    protect = true;
-                }
-            }
-            if (!protect) {
+            if (!protected_by(local_template_stamps, id, stamp) &&
+                !protected_by(incoming_template_stamps, id, stamp)) {
                 template_tomb[id] = std::max(template_tomb[id], stamp);
             }
         }
@@ -1265,7 +1382,7 @@ json lab_json(const LabResult& lab) {
 }
 
 json record_json(const JsonRecord& record) {
-    json value = json::parse(record.payload_json);
+    json value = parse_stored_json(record.payload_json);
     value.erase("mode");
     if (record.updated_at.has_value()) {
         value["updatedAt"] = *record.updated_at;
@@ -1313,12 +1430,7 @@ void write_merged_state(typename Repositories::Store& store,
     apply_json(merged.quick, JsonRecordKind::QuickDose);
     apply_json(merged.supplies, JsonRecordKind::Supply);
     apply_json(merged.plan, JsonRecordKind::PlanItem);
-    TombstoneRepo tombstones(store);
-    for (const auto& [kind, records] : merged.tombstones) {
-        for (const auto& [id, stamp] : records) {
-            tombstones.record(Tombstone{kind, id, stamp});
-        }
-    }
+    TombstoneRepo(store).record_many(merged.tombstones);
     PreferencesRepo preferences(store);
     for (const auto& [key, preference] : merged.preferences) {
         (void)key;
@@ -1349,7 +1461,7 @@ json build_export(const LocalState& state, std::int64_t now_ms) {
         }
     }
     if (state.settings.pk_params_json.has_value()) {
-        root["pkParams"] = json::parse(*state.settings.pk_params_json);
+        root["pkParams"] = parse_stored_json(*state.settings.pk_params_json);
         if (state.settings.pk_params_updated_at.has_value()) {
             root["pkParamsUpdatedAt"] = *state.settings.pk_params_updated_at;
         }
@@ -1360,7 +1472,8 @@ json build_export(const LocalState& state, std::int64_t now_ms) {
     json preferences = json::object();
     for (const auto& preference : state.preferences) {
         if (contains(kPreferences, preference.key)) {
-            preferences[preference.key] = json::parse(preference.value_json);
+            preferences[preference.key] = parse_stored_json(
+                preference.value_json);
         }
     }
     root["preferences"] = std::move(preferences);
@@ -1420,15 +1533,83 @@ json build_export(const LocalState& state, std::int64_t now_ms) {
     return root;
 }
 
-std::string read_backup_file(const std::filesystem::path& path) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw Error("could not open backup: " + path.string());
+struct BackupInput {
+    int fd{-1};
+    std::size_t size{0};
+};
+
+struct CloseFd {
+    int fd{-1};
+    ~CloseFd() {
+        if (fd >= 0) {
+            (void)::close(fd);
+        }
     }
-    std::string bytes((std::istreambuf_iterator<char>(input)),
-                      std::istreambuf_iterator<char>());
-    if (input.bad()) {
-        throw Error("could not read backup: " + path.string());
+};
+
+BackupInput open_backup_input(const std::filesystem::path& path) {
+    int flags = O_RDONLY | O_CLOEXEC | O_NONBLOCK;
+#ifdef O_NOFOLLOW
+    flags |= O_NOFOLLOW;
+#endif
+    const int fd = ::open(path.c_str(), flags);
+    if (fd < 0) {
+        throw Error("could not open backup: " + path.string() + ": " +
+                    std::strerror(errno));
+    }
+    CloseFd guard{fd};
+
+    struct stat metadata {};
+    if (::fstat(fd, &metadata) != 0) {
+        throw Error("could not inspect backup: " + path.string() + ": " +
+                    std::strerror(errno));
+    }
+    if (!S_ISREG(metadata.st_mode)) {
+        throw Error("backup must be a regular file: " + path.string());
+    }
+    if (metadata.st_size < 0 ||
+        static_cast<std::uintmax_t>(metadata.st_size) >
+            kMaxBackupFileBytes) {
+        throw Error("backup is too large: " + path.string());
+    }
+    const auto size = static_cast<std::size_t>(metadata.st_size);
+
+    const int status = ::fcntl(fd, F_GETFL);
+    if (status >= 0) {
+        (void)::fcntl(fd, F_SETFL, status & ~O_NONBLOCK);
+    }
+
+    guard.fd = -1;
+    return BackupInput{fd, size};
+}
+
+std::string read_backup_file(const std::filesystem::path& path) {
+    const auto input = open_backup_input(path);
+    CloseFd guard{input.fd};
+
+    std::string bytes;
+    bytes.reserve(input.size);
+    std::array<char, 64 * 1024> chunk{};
+    std::size_t total = 0;
+    for (;;) {
+        const ssize_t count = ::read(input.fd, chunk.data(), chunk.size());
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            throw Error("could not read backup: " + path.string() + ": " +
+                        std::strerror(errno));
+        }
+        if (count == 0) {
+            break;
+        }
+        const auto amount = static_cast<std::size_t>(count);
+        if (amount > kMaxBackupFileBytes - total) {
+            // The file grew after fstat(); never allocate past the cap.
+            throw Error("backup is too large: " + path.string());
+        }
+        bytes.append(chunk.data(), amount);
+        total += amount;
     }
     return bytes;
 }
@@ -1444,6 +1625,12 @@ json parse_backup_file(const std::filesystem::path& path,
         plaintext = decrypt_backup_json(bytes, backup_phrase);
     } else {
         plaintext = bytes;
+    }
+    if (plaintext.size() > kMaxBackupFileBytes) {
+        throw Error("backup JSON is too large");
+    }
+    if (!depth_within(plaintext, kMaxBackupJsonDepth)) {
+        throw Error("backup JSON is nested too deeply");
     }
     try {
         return json::parse(plaintext);
@@ -1469,20 +1656,120 @@ void fill_counts(BackupPreview& preview, const ParsedBundle& parsed) {
 
 void write_backup_file(const std::filesystem::path& path,
                        std::string_view contents) {
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
-    if (!output) {
-        throw Error("could not write backup: " + path.string());
+    if (path.filename().empty()) {
+        throw Error("could not write backup: destination has no file name: " +
+                    path.string());
     }
-    output.write(contents.data(),
-                 static_cast<std::streamsize>(contents.size()));
-    output.close();
-    if (!output) {
-        throw Error("could not write backup: " + path.string());
+
+    const auto parent =
+        path.parent_path().empty() ? std::filesystem::path(".")
+                                   : path.parent_path();
+
+    struct stat existing {};
+    if (::lstat(path.c_str(), &existing) == 0) {
+        if (!S_ISREG(existing.st_mode)) {
+            throw Error("could not write backup: destination is not a regular "
+                        "file: " +
+                        path.string());
+        }
+    } else if (errno != ENOENT) {
+        throw Error("could not write backup: " + path.string() + ": " +
+                    std::strerror(errno));
     }
-    (void)::chmod(path.c_str(), 0600);
+
+    std::string pattern =
+        (parent / (path.filename().string() + ".tmp.XXXXXX")).string();
+    std::vector<char> pattern_buffer(pattern.begin(), pattern.end());
+    pattern_buffer.push_back('\0');
+
+    int fd = ::mkstemp(pattern_buffer.data());
+    if (fd < 0) {
+        throw Error("could not write backup: " + path.string() + ": " +
+                    std::strerror(errno));
+    }
+    const std::string temp_path(pattern_buffer.data());
+
+    auto remove_temp = [&]() {
+        if (fd >= 0) {
+            ::close(fd);
+            fd = -1;
+        }
+        ::unlink(temp_path.c_str());
+    };
+
+    if (::fchmod(fd, 0600) != 0) {
+        const int error = errno;
+        remove_temp();
+        throw Error("could not secure backup file: " + path.string() + ": " +
+                    std::strerror(error));
+    }
+
+    std::size_t offset = 0;
+    while (offset < contents.size()) {
+        const auto remaining = contents.size() - offset;
+        const auto chunk = std::min<std::size_t>(
+            remaining,
+            static_cast<std::size_t>(std::numeric_limits<ssize_t>::max()));
+        const ssize_t written =
+            ::write(fd, contents.data() + offset, chunk);
+        if (written < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            const int error = errno;
+            remove_temp();
+            throw Error("could not write backup: " + path.string() + ": " +
+                        std::strerror(error));
+        }
+        if (written == 0) {
+            remove_temp();
+            throw Error("could not write backup: short write: " +
+                        path.string());
+        }
+        offset += static_cast<std::size_t>(written);
+    }
+
+    if (::fsync(fd) != 0) {
+        const int error = errno;
+        remove_temp();
+        throw Error("could not flush backup: " + path.string() + ": " +
+                    std::strerror(error));
+    }
+
+    if (::close(fd) != 0) {
+        const int error = errno;
+        fd = -1;
+        ::unlink(temp_path.c_str());
+        throw Error("could not close backup: " + path.string() + ": " +
+                    std::strerror(error));
+    }
+    fd = -1;
+
+    if (::rename(temp_path.c_str(), path.c_str()) != 0) {
+        const int error = errno;
+        ::unlink(temp_path.c_str());
+        throw Error("could not replace backup: " + path.string() + ": " +
+                    std::strerror(error));
+    }
 }
 
 }  // namespace
+
+bool backup_file_is_encrypted(const std::filesystem::path& path) {
+    const auto input = open_backup_input(path);
+    CloseFd guard{input.fd};
+    char magic[8];
+    ssize_t count = 0;
+    do {
+        count = ::read(input.fd, magic, sizeof(magic));
+    } while (count < 0 && errno == EINTR);
+    if (count < 0) {
+        throw Error("could not read backup: " + path.string() + ": " +
+                    std::strerror(errno));
+    }
+    return is_encrypted_backup(
+        std::string_view(magic, static_cast<std::size_t>(count)));
+}
 
 BackupPreview preview_backup(VaultStore& vault,
                              const std::filesystem::path& path,

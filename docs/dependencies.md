@@ -118,7 +118,7 @@ ctest --test-dir build --output-on-failure
 sudo cmake --install build
 ```
 
-The 0.5.0 release suite has 31 tests. Integration tests return `77` (skip) when
+The 0.5.0 release suite has 32 tests. Integration tests return `77` (skip) when
 the PostgreSQL server tools are unavailable. OpenBSD must be rebuilt and tested
 on an OpenBSD host or VM; a Linux result is not evidence for an OpenBSD binary.
 

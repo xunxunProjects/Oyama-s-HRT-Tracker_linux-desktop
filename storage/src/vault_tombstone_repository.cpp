@@ -22,24 +22,55 @@ VaultTombstoneRepository::VaultTombstoneRepository(VaultStore& vault)
     : vault_(vault) {}
 
 void VaultTombstoneRepository::record(const Tombstone& tombstone) {
-    std::string record_id;
-    std::int64_t deleted_at = tombstone.deleted_at;
+    record_many({{tombstone.kind, {{tombstone.record_id,
+                                    tombstone.deleted_at}}}});
+}
+
+void VaultTombstoneRepository::record_many(
+    const std::map<std::string, std::map<std::string, std::int64_t>>&
+        tombstones) {
+    using Key = std::pair<std::string, std::string>;
+    struct Existing {
+        std::string record_id;
+        std::int64_t deleted_at;
+    };
+
+    std::map<Key, Existing> existing;
     for (const auto& record : vault_.scan("tombstone")) {
-        const auto existing = decode_tombstone(record.payload);
-        if (!matches(existing, tombstone.kind, tombstone.record_id)) {
-            continue;
+        const auto tombstone = decode_tombstone(record.payload);
+        const Key key{tombstone.kind, tombstone.record_id};
+        const auto found = existing.find(key);
+        if (found == existing.end()) {
+            existing.emplace(key, Existing{record.id, tombstone.deleted_at});
+        } else {
+            found->second.deleted_at =
+                std::max(found->second.deleted_at, tombstone.deleted_at);
         }
-        record_id = record.id;
-        deleted_at = std::max(deleted_at, existing.deleted_at);
-        break;
     }
-    if (record_id.empty()) {
-        record_id = generate_uuid_v4();
+
+    std::map<Key, std::int64_t> merged;
+    for (const auto& [kind, records] : tombstones) {
+        for (const auto& [record_id, deleted_at] : records) {
+            auto& stamp = merged[Key{kind, record_id}];
+            stamp = std::max(stamp, deleted_at);
+        }
     }
-    const Tombstone merged{tombstone.kind, tombstone.record_id, deleted_at};
-    vault_.put(VaultRecord{record_id, "tombstone",
-                           static_cast<std::uint64_t>(merged.deleted_at),
-                           encode_tombstone(merged)});
+
+    for (const auto& [key, deleted_at] : merged) {
+        std::string record_id;
+        std::int64_t stamp = deleted_at;
+        const auto found = existing.find(key);
+        if (found != existing.end()) {
+            record_id = found->second.record_id;
+            stamp = std::max(stamp, found->second.deleted_at);
+        } else {
+            record_id = generate_uuid_v4();
+        }
+        const Tombstone tombstone{key.first, key.second, stamp};
+        vault_.put(VaultRecord{record_id, "tombstone",
+                               static_cast<std::uint64_t>(tombstone.deleted_at),
+                               encode_tombstone(tombstone)});
+    }
 }
 
 bool VaultTombstoneRepository::remove(std::string_view kind,

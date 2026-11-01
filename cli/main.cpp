@@ -27,10 +27,13 @@
 #include <utility>
 #include <vector>
 
+#include "process_hardening.h"
+
 namespace {
 
 using oyama::storage::AppConfig;
 using oyama::storage::Backend;
+using oyama::storage::backup_file_is_encrypted;
 using oyama::storage::BackupPreview;
 using oyama::storage::Connection;
 using oyama::storage::ConnectionConfig;
@@ -46,7 +49,6 @@ using oyama::storage::LocalCluster;
 using oyama::storage::LocalClusterConfig;
 using oyama::storage::Mode;
 using oyama::storage::PromotionState;
-using oyama::storage::is_encrypted_backup;
 using oyama::storage::Passphrase;
 using oyama::storage::Settings;
 using oyama::storage::VaultDoseEventRepository;
@@ -404,20 +406,6 @@ UnlockedVault open_unlocked_vault(const GlobalOptions& global,
     unlocked.phrase.assign(read_secret_from_stdin());
     unlocked.vault.unlock(unlocked.phrase.value());
     return unlocked;
-}
-
-bool backup_file_is_encrypted(const std::filesystem::path& path) {
-    std::ifstream input(path, std::ios::binary);
-    if (!input) {
-        throw Error("could not open backup: " + path.string());
-    }
-    char magic[8];
-    input.read(magic, sizeof(magic));
-    if (input.bad()) {
-        throw Error("could not read backup: " + path.string());
-    }
-    const auto count = static_cast<std::size_t>(input.gcount());
-    return is_encrypted_backup(std::string_view(magic, count));
 }
 
 void print_plaintext_warning() {
@@ -1741,6 +1729,7 @@ int command_doses(const GlobalOptions& global,
 }  // namespace
 
 int main(int argc, char** argv) {
+    oyama::harden_process_for_secrets();
     try {
         std::vector<std::string> args;
         args.reserve(static_cast<std::size_t>(argc > 0 ? argc - 1 : 0));

@@ -10,15 +10,23 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <csignal>
+#include <cstdint>
 #include <cstdlib>
+#include <cstring>
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <string>
 #include <string_view>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 namespace {
@@ -66,9 +74,105 @@ void write_file(const std::filesystem::path& path, std::string_view contents) {
     out.write(contents.data(), static_cast<std::streamsize>(contents.size()));
 }
 
+std::string read_file(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    return std::string((std::istreambuf_iterator<char>(input)),
+                       std::istreambuf_iterator<char>());
+}
+
 json read_json(const std::filesystem::path& path) {
     std::ifstream input(path, std::ios::binary);
     return json::parse(input);
+}
+
+// Runs `probe` in a child process with an alarm.  A crash or a blocking read
+// then fails the check instead of taking down or hanging the test harness.
+bool run_probe(const std::function<void()>& probe, std::string& message) {
+    int fds[2];
+    if (::pipe(fds) != 0) {
+        message = std::string("pipe failed: ") + std::strerror(errno);
+        return false;
+    }
+    const pid_t pid = ::fork();
+    if (pid < 0) {
+        ::close(fds[0]);
+        ::close(fds[1]);
+        message = std::string("fork failed: ") + std::strerror(errno);
+        return false;
+    }
+    if (pid == 0) {
+        ::close(fds[0]);
+        (void)::alarm(5);
+        int code = 1;
+        try {
+            probe();
+        } catch (const Error& error) {
+            const char* text = error.what();
+            const auto size = std::strlen(text);
+            std::size_t offset = 0;
+            while (offset < size) {
+                const ssize_t written =
+                    ::write(fds[1], text + offset, size - offset);
+                if (written <= 0) {
+                    break;
+                }
+                offset += static_cast<std::size_t>(written);
+            }
+            code = 0;
+        } catch (...) {
+            code = 2;
+        }
+        ::close(fds[1]);
+        ::_exit(code);
+    }
+
+    ::close(fds[1]);
+    char buffer[1024];
+    std::string output;
+    for (;;) {
+        const ssize_t count = ::read(fds[0], buffer, sizeof(buffer));
+        if (count > 0) {
+            output.append(buffer, static_cast<std::size_t>(count));
+        } else if (count == 0) {
+            break;
+        } else if (errno != EINTR) {
+            break;
+        }
+    }
+    ::close(fds[0]);
+
+    int status = 0;
+    while (::waitpid(pid, &status, 0) < 0 && errno == EINTR) {
+    }
+    if (WIFSIGNALED(status)) {
+        message = "probe killed by signal " +
+                  std::to_string(WTERMSIG(status));
+        return false;
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        message = WIFEXITED(status)
+                      ? "probe exited " + std::to_string(WEXITSTATUS(status))
+                      : "probe did not exit normally";
+        return false;
+    }
+    message = output;
+    return true;
+}
+
+std::string deep_bundle(std::size_t depth) {
+    std::string nested(depth, '[');
+    nested.append(depth, ']');
+    return std::string(
+               R"({"format":"oyama-hrt-complete-backup","formatVersion":1,)"
+               R"("createdAt":"2026-11-01T00:00:00Z","mode":"transfem",)"
+               R"("modes":{"transfem":{"events":[{"id":)"
+               R"("11111111-1111-4111-8111-111111111111","route":"oral",)"
+               R"("ester":"E2","timeH":1,"doseMG":1,"extras":)") +
+           nested +
+           R"(}],"labResults":[],"doseTemplates":[],"quickDoses":[],)"
+           R"("supplies":[],"plan":[],"deletions":{}},"transmasc":{)"
+           R"("events":[],"labResults":[],"doseTemplates":[],)"
+           R"("quickDoses":[],"supplies":[],"plan":[],"deletions":{}}}}})";
 }
 
 constexpr const char* kEventA = "11111111-1111-4111-8111-111111111111";
@@ -145,6 +249,33 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
         std::istreambuf_iterator<char>());
     check(exported_text == json_text,
           "vault export file matches export_backup_json");
+
+    const auto symlink_target = dir / "symlink-target.txt";
+    write_file(symlink_target, "must not be overwritten");
+    const auto symlink_path = dir / "vault-symlink.json";
+    std::error_code symlink_error;
+    std::filesystem::create_symlink(symlink_target, symlink_path, symlink_error);
+    check(!symlink_error, "symlink fixture is created");
+    if (!symlink_error) {
+        bool refused = false;
+        try {
+            export_backup(vault, symlink_path, now);
+        } catch (const Error&) {
+            refused = true;
+        }
+        check(refused, "vault export refuses a symlink destination");
+        check(read_file(symlink_target) == "must not be overwritten",
+              "vault export does not follow a symlink destination");
+    }
+
+    const auto fifo_path = dir / "vault-fifo.json";
+    if (::mkfifo(fifo_path.c_str(), 0600) == 0) {
+        std::string message;
+        const bool fifo_rejected =
+            run_probe([&]() { (void)export_backup(vault, fifo_path, now); },
+                      message);
+        check(fifo_rejected, "vault export rejects a FIFO without blocking");
+    }
 
     const auto exported_root = json::parse(json_text);
     const auto& exported_template =
@@ -321,6 +452,71 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
     check(export_backup_json(vault, now) == before_wrong_import,
           "tampered encrypted import leaves the vault unchanged");
 
+    // Braces inside strings must not count toward JSON nesting.
+    auto extras_bundle = read_json(exported);
+    std::string brace_text(2048, '{');
+    brace_text += "[[[";
+    json extras_value = json::object();
+    extras_value["note"] = brace_text;
+    extras_value["nested"] = {{"a", 1}, {"b", json::array({1, 2, 3})}};
+    extras_bundle["modes"]["transfem"]["events"][0]["extras"] = extras_value;
+    extras_bundle["modes"]["transfem"]["events"][0]["updatedAt"] = 4200;
+    const auto extras_path = dir / "vault-extras.json";
+    write_file(extras_path, extras_bundle.dump());
+    const auto extras_import = import_backup(vault, extras_path, now, phrase);
+    check(extras_import.applied, "normal nested extras import applies");
+    const auto extras_event = events.get(kEventA);
+    check(extras_event.has_value() &&
+              extras_event->extras_json.find(brace_text) != std::string::npos,
+          "normal nested extras round-trip unchanged");
+
+    auto deep_extras_bundle = read_json(exported);
+    json deep_extras = json::object();
+    for (int i = 0; i < 20; ++i) {
+        deep_extras = json{{"level", deep_extras}};
+    }
+    deep_extras_bundle["modes"]["transfem"]["events"][0]["extras"] =
+        deep_extras;
+    const auto deep_extras_path = dir / "vault-deep-extras.json";
+    write_file(deep_extras_path, deep_extras_bundle.dump());
+    const auto deep_extras_preview =
+        preview_backup(vault, deep_extras_path, now, phrase);
+    check(std::find(deep_extras_preview.blocked.begin(),
+                    deep_extras_preview.blocked.end(),
+                    "transfem.events") != deep_extras_preview.blocked.end(),
+          "deep per-record extras block the category");
+
+    auto large_extras_bundle = read_json(exported);
+    large_extras_bundle["modes"]["transfem"]["events"][0]["extras"] = {
+        {"note", std::string(20 * 1024, 'x')}};
+    const auto large_extras_path = dir / "vault-large-extras.json";
+    write_file(large_extras_path, large_extras_bundle.dump());
+    const auto large_extras_preview =
+        preview_backup(vault, large_extras_path, now, phrase);
+    check(std::find(large_extras_preview.blocked.begin(),
+                    large_extras_preview.blocked.end(),
+                    "transfem.events") != large_extras_preview.blocked.end(),
+          "oversize per-record extras block the category");
+
+    auto deep_pk_bundle = read_json(exported);
+    json deep_pk = json::object();
+    for (int i = 0; i < 20; ++i) {
+        deep_pk = json{{"level", deep_pk}};
+    }
+    deep_pk_bundle["pkParams"] = deep_pk;
+    const auto deep_pk_path = dir / "vault-deep-pk.json";
+    write_file(deep_pk_path, deep_pk_bundle.dump());
+    const auto deep_pk_preview =
+        preview_backup(vault, deep_pk_path, now, phrase);
+    check(!deep_pk_preview.ok, "deep pkParams is rejected");
+    bool pk_error_named = false;
+    for (const auto& error : deep_pk_preview.errors) {
+        if (error.find("pkParams") != std::string::npos) {
+            pk_error_named = true;
+        }
+    }
+    check(pk_error_named, "deep pkParams error names the field");
+
     vault.clear();
     const auto encrypted_import =
         import_backup(vault, encrypted, now, backup_phrase);
@@ -332,6 +528,136 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
         check_equal(encrypted_events.front().id, std::string(kEventA),
                     "encrypted import keeps the dose id");
     }
+
+    // A 30,000-tombstone import used to perform one full vault scan per
+    // tombstone (quadratic decrypts).  Exercise a meaningful batch and make a
+    // regression terminate rather than run for minutes.
+    vault.clear();
+    VaultTombstoneRepository tombstones(vault);
+    const std::string shared_id = "55555555-5555-4555-8555-555555555555";
+    tombstones.record(Tombstone{"events", shared_id, 4500});
+
+    constexpr std::size_t kBatchPerKind = 2000;
+    json batch{{"format", "oyama-hrt-complete-backup"},
+               {"formatVersion", 1},
+               {"createdAt", "2026-11-01T00:00:00Z"},
+               {"mode", "transfem"},
+               {"modes", json::object()}};
+    for (const auto* key : {"transfem", "transmasc"}) {
+        batch["modes"][key] = {
+            {"events", json::array()},       {"labResults", json::array()},
+            {"doseTemplates", json::array()}, {"quickDoses", json::array()},
+            {"supplies", json::array()},     {"plan", json::array()},
+            {"deletions", json::object()}};
+    }
+    auto& deletions = batch["modes"]["transfem"]["deletions"];
+    deletions["events"] = json::object();
+    deletions["labResults"] = json::object();
+    deletions["doseTemplates"] = json::object();
+    deletions["events"][shared_id] = 4600;
+    deletions["labResults"][shared_id] = 4700;
+    for (std::size_t i = 0; i < kBatchPerKind; ++i) {
+        deletions["events"][generate_uuid_v4()] = 4000 + (i % 1000);
+        deletions["labResults"][generate_uuid_v4()] = 4000 + (i % 1000);
+        deletions["doseTemplates"][generate_uuid_v4()] = 4000 + (i % 1000);
+    }
+    const auto batch_path = dir / "vault-tombstone-batch.json";
+    write_file(batch_path, batch.dump());
+
+    const auto batch_started = std::chrono::steady_clock::now();
+    std::signal(SIGALRM, [](int) { ::_exit(124); });
+    (void)::alarm(30);
+    const auto batch_import = import_backup(vault, batch_path, now, phrase);
+    (void)::alarm(0);
+    const auto batch_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - batch_started)
+                              .count();
+    check(batch_import.applied, "tombstone batch import applies");
+    check(batch_ms < 15000,
+          "tombstone batch import stays linear (took " +
+              std::to_string(batch_ms) + " ms)");
+
+    const auto listed_tombstones = tombstones.list();
+    check_equal(listed_tombstones.size(), kBatchPerKind * 3 + 2,
+                "tombstone batch import keeps every kind/id pair");
+    bool shared_event_kept = false;
+    bool shared_lab_kept = false;
+    for (const auto& tombstone : listed_tombstones) {
+        if (tombstone.record_id != shared_id) {
+            continue;
+        }
+        if (tombstone.kind == "events") {
+            shared_event_kept = tombstone.deleted_at == 4600;
+        } else if (tombstone.kind == "labResults") {
+            shared_lab_kept = tombstone.deleted_at == 4700;
+        }
+    }
+    check(shared_event_kept,
+          "tombstone batch import keeps the newest same-kind stamp");
+    check(shared_lab_kept,
+          "tombstone batch import keeps equal ids in different kinds");
+
+    std::filesystem::remove_all(dir);
+}
+
+void test_input_limits() {
+    ConnectionConfig config;
+    VaultStore vault(config);
+    const auto dir = make_temp_dir();
+    const std::int64_t now = 5000;
+    std::string message;
+
+    const auto fifo = dir / "probe.fifo";
+    check(::mkfifo(fifo.c_str(), 0600) == 0, "FIFO fixture is created");
+    const bool fifo_rejected = run_probe(
+        [&]() { (void)preview_backup(vault, fifo, now); }, message);
+    check(fifo_rejected, "preview rejects a FIFO without blocking");
+    check(message.find("regular file") != std::string::npos,
+          "FIFO rejection names the regular-file requirement");
+    const bool fifo_header_rejected = run_probe(
+        [&]() { (void)backup_file_is_encrypted(fifo); }, message);
+    check(fifo_header_rejected,
+          "encrypted-file pre-check rejects a FIFO without blocking");
+
+    const auto device_link = dir / "device-link.json";
+    std::error_code link_error;
+    std::filesystem::create_symlink("/dev/zero", device_link, link_error);
+    check(!link_error, "device symlink fixture is created");
+    if (!link_error) {
+        const bool link_rejected = run_probe(
+            [&]() { (void)preview_backup(vault, device_link, now); }, message);
+        check(link_rejected, "preview rejects a symlink to a device");
+    }
+
+    const auto oversize = dir / "oversize.json";
+    {
+        std::ofstream out(oversize, std::ios::binary);
+        out.put('\0');
+    }
+    constexpr std::uintmax_t kOversize =
+        static_cast<std::uintmax_t>(kMaxBackupFileBytes) + 1U;
+    std::error_code resize_error;
+    std::filesystem::resize_file(oversize, kOversize, resize_error);
+    check(!resize_error, "oversize sparse fixture is created");
+    if (!resize_error) {
+        const bool oversize_rejected = run_probe(
+            [&]() { (void)preview_backup(vault, oversize, now); }, message);
+        check(oversize_rejected, "preview rejects an oversize backup");
+        check(message.find("too large") != std::string::npos,
+              "oversize rejection names the size limit");
+        const bool oversize_header_rejected = run_probe(
+            [&]() { (void)backup_file_is_encrypted(oversize); }, message);
+        check(oversize_header_rejected,
+              "encrypted-file pre-check rejects an oversize backup");
+    }
+
+    const auto deep = dir / "deep.json";
+    write_file(deep, deep_bundle(50000));
+    const bool deep_rejected = run_probe(
+        [&]() { (void)preview_backup(vault, deep, now); }, message);
+    check(deep_rejected, "preview rejects deep JSON without crashing");
+    check(message.find("nested too deeply") != std::string::npos,
+          "deep JSON rejection names the nesting limit");
 
     std::filesystem::remove_all(dir);
 }
@@ -367,6 +693,7 @@ void test_integration() {
 
 int main() {
     try {
+        test_input_limits();
         test_integration();
     } catch (const std::exception& error) {
         std::cerr << "FAIL: unexpected exception: " << error.what() << '\n';

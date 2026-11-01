@@ -206,6 +206,7 @@
   "status.dose_updated": "دوز به‌روزرسانی شد.",
   "status.estimate": "سطح برآوردی کنونی",
   "status.existing": "پایگاه داده موجود",
+  "status.history_too_large": "سابقه دوز برای شبیه‌سازی ایمن بیش از حد بزرگ است. داده‌ها دست‌نخورده‌اند؛ تعداد رکوردهای دوز را کاهش دهید.",
   "status.invalid_calibration": "روش کالیبراسیون نامعتبر است.",
   "status.invalid_combination": "حالت، مسیر یا استر نامعتبر است.",
   "status.invalid_dose_time": "دوز و زمان معتبر وارد کنید.",

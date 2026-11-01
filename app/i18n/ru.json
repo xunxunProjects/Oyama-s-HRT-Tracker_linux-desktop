@@ -206,6 +206,7 @@
   "status.dose_updated": "Доза обновлена.",
   "status.estimate": "Текущий расчётный уровень",
   "status.existing": "Существующая база данных",
+  "status.history_too_large": "История доз слишком велика для безопасного моделирования. Данные не изменены; уменьшите число записей.",
   "status.invalid_calibration": "Неверный метод калибровки.",
   "status.invalid_combination": "Неверный режим, путь введения или эфир.",
   "status.invalid_dose_time": "Введите корректную дозу и время.",

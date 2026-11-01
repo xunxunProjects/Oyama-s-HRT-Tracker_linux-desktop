@@ -113,7 +113,8 @@ private:
     void fail(const QString& key, const QString& message,
               const QStringList& args = {});
     void load_data();
-    void compute_curve(const std::vector<oyama::storage::DoseEvent>& events);
+    [[nodiscard]] bool compute_curve(
+        const std::vector<oyama::storage::DoseEvent>& events);
     void set_vault_state(const QString& state);
     void set_vault_busy(bool busy);
     void clear_setup();

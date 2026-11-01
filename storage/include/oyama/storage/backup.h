@@ -12,6 +12,15 @@ namespace oyama::storage {
 
 class VaultStore;
 
+/// Largest accepted backup file, ciphertext or plaintext, in bytes.  Preview
+/// and import require a regular file no larger than this and never read more
+/// than this many bytes.
+inline constexpr std::size_t kMaxBackupFileBytes = 64U * 1024U * 1024U;
+
+/// Maximum JSON nesting depth accepted by preview and import.  The check runs
+/// before nlohmann::json's recursive parser sees the text.
+inline constexpr std::size_t kMaxBackupJsonDepth = 64;
+
 struct BackupCategoryCounts {
     std::size_t events{0};
     std::size_t lab_results{0};
@@ -50,6 +59,13 @@ struct BackupImportResult {
 /// Encrypted files are detected by the magic and opened with `backup_phrase`.
 [[nodiscard]] std::string export_backup_json(VaultStore& vault,
                                              std::int64_t now_ms);
+
+/// Applies the same regular-file, symlink, size, and read bounds as preview
+/// and returns true when the file starts with the encrypted-backup magic.
+/// Throws Error for a missing, symlinked, non-regular, oversize, or unreadable
+/// file.
+[[nodiscard]] bool backup_file_is_encrypted(
+    const std::filesystem::path& path);
 
 [[nodiscard]] BackupPreview preview_backup(
     VaultStore& vault, const std::filesystem::path& path, std::int64_t now_ms,

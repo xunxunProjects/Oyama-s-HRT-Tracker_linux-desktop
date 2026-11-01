@@ -1122,6 +1122,7 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
     double start_time, end_time, total_hours, step_size;
     size_t steps, all_n, unique_n;
     size_t activate_idx = 0, active_n = 0;
+    size_t work = 0;
     double auc = 0.0;
     oyama_pk_status status = OYAMA_PK_ERR_INTERNAL;
 
@@ -1130,6 +1131,9 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
     out->auc = 0.0;
     if (request == NULL) return OYAMA_PK_ERR_INVALID_ARGUMENT;
     if (request->event_count == 0 || request->events == NULL) return OYAMA_PK_NO_RESULT;
+    if (request->event_count > OYAMA_PK_MAX_EVENTS) {
+        return OYAMA_PK_ERR_TOO_MUCH_DATA;
+    }
     if (!isfinite(request->body_weight_kg) || request->body_weight_kg <= 0.0) {
         return OYAMA_PK_NO_RESULT;
     }
@@ -1227,6 +1231,10 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
     }
     {
         const size_t capacity = steps + n + 10 * n_models + 1;
+        if (capacity > SIZE_MAX / sizeof *times) {
+            status = OYAMA_PK_ERR_INTERNAL;
+            goto cleanup;
+        }
         times = (double *)malloc(capacity * sizeof *times);
         if (times == NULL) goto cleanup;
         all_n = 0;
@@ -1287,6 +1295,11 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
         }
         for (j = 0; j < active_n;) {
             const event_model *m = &models[active[j]];
+            if (work >= OYAMA_PK_MAX_WORK) {
+                status = OYAMA_PK_ERR_TOO_MUCH_DATA;
+                goto cleanup;
+            }
+            work++;
             if (t - sorted[m->event_index].time_h > m->max_lifetime_h) {
                 active[j] = active[active_n - 1];
                 active_n--;
@@ -1300,7 +1313,13 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
             for (j = 0; j < active_n; j++) {
                 const event_model *m = &models[active[j]];
                 const oyama_pk_dose *e = &sorted[m->event_index];
-                const double amount = event_amount(e, &m->params, m->wear_h, t);
+                double amount;
+                if (work >= OYAMA_PK_MAX_WORK) {
+                    status = OYAMA_PK_ERR_TOO_MUCH_DATA;
+                    goto cleanup;
+                }
+                work++;
+                amount = event_amount(e, &m->params, m->wear_h, t);
                 if (e->ester == OYAMA_PK_ESTER_CPA) total_cpa += amount;
                 else if (oyama_pk_ester_is_testosterone(e->ester)) total_t += amount;
                 else total_e2 += amount;
@@ -1331,6 +1350,10 @@ cleanup:
     free(models);
     free(active);
     free(times);
+    if (status == OYAMA_PK_ERR_TOO_MUCH_DATA) {
+        out->length = 0;
+        out->auc = 0.0;
+    }
     return status;
 }
 

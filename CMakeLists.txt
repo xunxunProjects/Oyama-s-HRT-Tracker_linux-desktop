@@ -85,7 +85,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_storage PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-add_executable(oyama-hrt-cli cli/main.cpp)
+add_executable(oyama-hrt-cli cli/main.cpp cli/process_hardening.cpp)
 target_link_libraries(oyama-hrt-cli PRIVATE oyama_storage PkgConfig::SODIUM)
 target_compile_definitions(oyama-hrt-cli PRIVATE
     OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
@@ -258,6 +258,17 @@ if(BUILD_TESTING)
         target_compile_options(pk_smoke_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME pk_smoke_test COMMAND pk_smoke_test)
+
+    add_executable(process_hardening_test
+        cli/process_hardening_test.cpp
+        cli/process_hardening.cpp)
+    target_include_directories(process_hardening_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/cli)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(process_hardening_test PRIVATE
+            -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME process_hardening_test COMMAND process_hardening_test)
 
     add_executable(vault_crypto_test vault/tests/vault_crypto_test.c)
     target_include_directories(vault_crypto_test PRIVATE vault/src)

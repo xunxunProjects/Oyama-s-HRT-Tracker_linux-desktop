@@ -206,6 +206,7 @@
   "status.dose_updated": "Dose updated.",
   "status.estimate": "Current estimated level",
   "status.existing": "Existing database",
+  "status.history_too_large": "The dose history is too large to simulate safely. The data is intact; reduce the number of dose records.",
   "status.invalid_calibration": "Invalid calibration method.",
   "status.invalid_combination": "Invalid mode, route, or ester.",
   "status.invalid_dose_time": "Enter a valid dose and time.",
