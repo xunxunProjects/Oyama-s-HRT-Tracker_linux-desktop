@@ -177,14 +177,25 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 option(OYAMA_BUILD_QT_SHELL "Build the Qt/QML desktop shell" ON)
+set(OYAMA_QT_MAJOR "6" CACHE STRING "Qt major version: 6 or 5")
+set_property(CACHE OYAMA_QT_MAJOR PROPERTY STRINGS 6 5)
+
+if(NOT OYAMA_QT_MAJOR MATCHES "^[56]$")
+    message(FATAL_ERROR "OYAMA_QT_MAJOR must be 5 or 6")
+endif()
 
 if(OYAMA_BUILD_QT_SHELL)
-    find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
-    if(OYAMA_THIRD_PARTY STREQUAL "vendored" AND NOT Qt6_FOUND)
-        message(FATAL_ERROR
-            "Vendored Qt 6 was requested but not found in third_party/prefix")
+    if(OYAMA_QT_MAJOR STREQUAL "6")
+        find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
+        if(OYAMA_THIRD_PARTY STREQUAL "vendored" AND NOT Qt6_FOUND)
+            message(FATAL_ERROR
+                "Vendored Qt 6 was requested but not found in third_party/prefix")
+        endif()
+    elseif(OYAMA_QT_MAJOR STREQUAL "5")
+        message(FATAL_ERROR "Qt 5 build is implemented in Task A.5")
     endif()
     if(Qt6_FOUND)
+        qt_standard_project_setup()
         qt_standard_project_setup()
         # These policies were introduced after the minimum supported Qt.
         # Setting an unknown policy is fatal, so keep Qt 6.4 (Debian 12 and
