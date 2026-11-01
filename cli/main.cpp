@@ -27,6 +27,8 @@
 #include <utility>
 #include <vector>
 
+#include "process_hardening.h"
+
 namespace {
 
 using oyama::storage::AppConfig;
@@ -1727,6 +1729,7 @@ int command_doses(const GlobalOptions& global,
 }  // namespace
 
 int main(int argc, char** argv) {
+    oyama::harden_process_for_secrets();
     try {
         std::vector<std::string> args;
         args.reserve(static_cast<std::size_t>(argc > 0 ? argc - 1 : 0));
