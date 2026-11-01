@@ -173,6 +173,7 @@ target_compile_definitions(oyama-hrt-cli PRIVATE
     OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama-hrt-cli PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(oyama-hrt-cli PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 endif()
 
 option(OYAMA_BUILD_QT_SHELL "Build the Qt/QML desktop shell" ON)
@@ -301,6 +302,34 @@ if(OYAMA_BUILD_QT_SHELL)
             target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
         endif()
         install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+        add_library(app_cxx11_compile OBJECT
+            cli/main.cpp
+            cli/process_hardening.cpp
+            app/src/main.cpp
+            app/src/app_controller.cpp
+            app/src/legacy_migration_worker.cpp
+            app/src/ui_preferences.cpp)
+        target_include_directories(app_cxx11_compile PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/storage/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/app/src)
+        target_link_libraries(app_cxx11_compile PRIVATE
+            oyama_storage
+            oyama_pk
+            nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
+            Qt6::Core
+            Qt6::Qml
+            Qt6::Quick
+            Qt6::QuickControls2)
+        target_compile_options(app_cxx11_compile PRIVATE
+            -std=c++17 -pedantic-errors -Wall -Wextra -Wpedantic
+            -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
+        target_compile_definitions(app_cxx11_compile PRIVATE
+            OYAMA_APP_VERSION="0.5.0"
+            OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
+            OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
         install(FILES app/assets/oyama-hrt.desktop
             DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
         install(FILES app/assets/oyama-hrt.metainfo.xml
