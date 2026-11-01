@@ -7,7 +7,7 @@ in and out through the upstream `oyama-hrt-complete-backup` format, encrypted by
 default.
 
 **Status: model core, encrypted storage, legacy migration, encrypted backups,
-and an early vault-gated Qt/QML shell implemented (M2).** The C99
+and an early vault-gated Qt/QML shell implemented (M9).** The C99
 pharmacokinetic core is in `core/`, with a strict C test and a comparison
 harness that checks it against the upstream TypeScript model to machine
 precision. `storage/` contains the PostgreSQL schema, forward-only migration
@@ -323,7 +323,7 @@ storage/
   migrations/          forward-only SQL schema migrations
   tests/               unit and PostgreSQL integration tests
 cli/                   oyama-hrt-cli (database and data commands)
-app/                   Qt 6/QML shell (M2; see app/README.md)
+app/                   Qt 6/QML shell (M9; see app/README.md)
 tools/compare/         upstream numerical comparison harness
 docs/
   superpowers/specs/   design documents
