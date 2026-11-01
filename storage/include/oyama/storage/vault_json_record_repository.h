@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include "types.h"
 
@@ -7,18 +8,18 @@
 #include <string_view>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 class VaultStore;
 
 class VaultJsonRecordRepository {
 public:
     VaultJsonRecordRepository(VaultStore& vault, JsonRecordKind kind);
-    [[nodiscard]] JsonRecordKind kind() const noexcept;
-    [[nodiscard]] std::vector<JsonRecord> list(Mode mode);
-    [[nodiscard]] std::optional<JsonRecord> get(std::string_view id);
+    OYAMA_NODISCARD JsonRecordKind kind() const noexcept;
+    OYAMA_NODISCARD std::vector<JsonRecord> list(Mode mode);
+    OYAMA_NODISCARD oyama::optional<JsonRecord> get(oyama::string_view id);
     void upsert(const JsonRecord& record);
-    [[nodiscard]] bool remove(std::string_view id);
+    OYAMA_NODISCARD bool remove(oyama::string_view id);
 
 private:
     VaultStore& vault_;
@@ -26,4 +27,4 @@ private:
     std::string vault_kind_;
 };
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

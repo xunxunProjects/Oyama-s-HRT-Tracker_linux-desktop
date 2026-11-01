@@ -10,10 +10,10 @@
 #include <string>
 #include <utility>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
-[[nodiscard]] const char* vault_kind_name(JsonRecordKind kind) {
+OYAMA_NODISCARD const char* vault_kind_name(JsonRecordKind kind) {
     switch (kind) {
     case JsonRecordKind::DoseTemplate:
         return "dose_template";
@@ -50,10 +50,10 @@ std::vector<JsonRecord> VaultJsonRecordRepository::list(Mode mode) {
     return result;
 }
 
-std::optional<JsonRecord> VaultJsonRecordRepository::get(std::string_view id) {
+oyama::optional<JsonRecord> VaultJsonRecordRepository::get(oyama::string_view id) {
     const auto stored = vault_.get(id);
     if (!stored.has_value()) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     if (stored->kind != vault_kind_) {
         throw VaultError(OYAMA_VAULT_ERR_CORRUPT,
@@ -76,7 +76,7 @@ void VaultJsonRecordRepository::upsert(const JsonRecord& record) {
                            encode_json_record(record, kind_)});
 }
 
-bool VaultJsonRecordRepository::remove(std::string_view id) {
+bool VaultJsonRecordRepository::remove(oyama::string_view id) {
     const auto stored = vault_.get(id);
     if (!stored.has_value() || stored->kind != vault_kind_) {
         return false;
@@ -84,4 +84,4 @@ bool VaultJsonRecordRepository::remove(std::string_view id) {
     return vault_.remove(id);
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

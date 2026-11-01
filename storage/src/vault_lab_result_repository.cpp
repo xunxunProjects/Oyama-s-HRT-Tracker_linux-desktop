@@ -8,13 +8,13 @@
 #include <cstdint>
 #include <string>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 constexpr const char* kLabKind = "lab_result";
 
 std::uint64_t envelope_stamp(
-    const std::optional<std::int64_t>& updated_at) {
+    const oyama::optional<std::int64_t>& updated_at) {
     if (!updated_at.has_value() || *updated_at <= 0) {
         return 0;
     }
@@ -44,10 +44,10 @@ std::vector<LabResult> VaultLabResultRepository::list(Mode mode) {
     return results;
 }
 
-std::optional<LabResult> VaultLabResultRepository::get(std::string_view id) {
+oyama::optional<LabResult> VaultLabResultRepository::get(oyama::string_view id) {
     const auto record = vault_.get(id);
     if (!record.has_value()) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     if (record->kind != kLabKind) {
         throw VaultError(OYAMA_VAULT_ERR_CORRUPT,
@@ -67,7 +67,7 @@ void VaultLabResultRepository::upsert(const LabResult& result) {
                            encode_lab_result(result)});
 }
 
-bool VaultLabResultRepository::remove(std::string_view id) {
+bool VaultLabResultRepository::remove(oyama::string_view id) {
     const auto record = vault_.get(id);
     if (!record.has_value()) {
         return false;
@@ -78,4 +78,4 @@ bool VaultLabResultRepository::remove(std::string_view id) {
     return vault_.remove(id);
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

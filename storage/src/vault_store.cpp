@@ -7,7 +7,7 @@
 #include <cstring>
 #include <utility>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 [[noreturn]] void throw_status(int status, const oyama_error& err) {
@@ -56,7 +56,7 @@ VaultError::VaultError(int code, const std::string& message)
 int VaultError::code() const noexcept { return code_; }
 
 VaultStore::VaultStore(const ConnectionConfig& config)
-    : impl_(std::make_unique<Impl>()) {
+    : impl_(oyama::make_unique<Impl>()) {
     impl_->config = config;
 }
 
@@ -99,7 +99,7 @@ VaultState VaultStore::state() const {
     throw VaultError(OYAMA_VAULT_ERR_CORRUPT, "unknown vault state");
 }
 
-void VaultStore::setup(std::string_view phrase,
+void VaultStore::setup(oyama::string_view phrase,
                        const VaultKdfParams& params) {
     const std::string normalized = Passphrase::normalize(phrase);
     const oyama_vault_kdf_params c_params{params.opslimit, params.memlimit};
@@ -111,7 +111,7 @@ void VaultStore::setup(std::string_view phrase,
     }
 }
 
-void VaultStore::unlock(std::string_view phrase) {
+void VaultStore::unlock(oyama::string_view phrase) {
     const std::string normalized = Passphrase::normalize(phrase);
     oyama_error err{};
     const int status =
@@ -122,7 +122,7 @@ void VaultStore::unlock(std::string_view phrase) {
     }
 }
 
-void VaultStore::change_phrase(std::string_view new_phrase) {
+void VaultStore::change_phrase(oyama::string_view new_phrase) {
     const std::string normalized = Passphrase::normalize(new_phrase);
     oyama_error err{};
     const int status = oyama_vault_change_phrase(
@@ -154,14 +154,14 @@ void VaultStore::put(const VaultRecord& record) {
     }
 }
 
-std::optional<VaultRecord> VaultStore::get(std::string_view id) {
+oyama::optional<VaultRecord> VaultStore::get(oyama::string_view id) {
     const std::string id_string(id);
     oyama_record c_record{};
     oyama_error err{};
     const int status =
         oyama_vault_get(impl_->vault, id_string.c_str(), &c_record, &err);
     if (status == OYAMA_VAULT_ERR_NOT_FOUND) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     if (status != OYAMA_VAULT_OK) {
         throw_status(status, err);
@@ -179,7 +179,7 @@ std::optional<VaultRecord> VaultStore::get(std::string_view id) {
     return record;
 }
 
-bool VaultStore::remove(std::string_view id) {
+bool VaultStore::remove(oyama::string_view id) {
     const std::string id_string(id);
     oyama_error err{};
     const int status =
@@ -193,7 +193,7 @@ bool VaultStore::remove(std::string_view id) {
     return true;
 }
 
-std::vector<VaultRecord> VaultStore::scan(std::string_view kind) {
+std::vector<VaultRecord> VaultStore::scan(oyama::string_view kind) {
     const std::string kind_string(kind);
     const char* filter = kind_string.empty() ? nullptr : kind_string.c_str();
     ScanContext context;
@@ -238,4 +238,4 @@ void VaultStore::rollback() {
     }
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

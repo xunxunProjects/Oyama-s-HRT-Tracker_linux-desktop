@@ -33,11 +33,11 @@ void check_equal(const T& actual, const T& expected, const std::string& message)
     }
 }
 
-std::filesystem::path make_temp_dir() {
+oyama::fs::path make_temp_dir() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    auto path = std::filesystem::temp_directory_path() /
+    auto path = oyama::fs::temp_directory_path() /
                 ("oyama-cluster-test-" + std::to_string(stamp));
-    std::filesystem::create_directories(path);
+    oyama::fs::create_directories(path);
     return path;
 }
 
@@ -84,14 +84,14 @@ void test_config_round_trip() {
                     "cluster socket dir comes from config");
     }
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_config_missing() {
     const auto dir = make_temp_dir();
     check(!oyama::storage::load_app_config(dir / "absent").has_value(),
           "missing config is reported as absent");
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_config_rejects_bad_port() {
@@ -108,7 +108,7 @@ void test_config_rejects_bad_port() {
         rejected = true;
     }
     check(rejected, "malformed config is rejected");
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_config_rejects_relative_paths() {
@@ -139,7 +139,7 @@ void test_config_rejects_relative_paths() {
     check(relative_data_rejected,
           "relative managed data directory is rejected on save");
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_config_existing_round_trip() {
@@ -160,7 +160,7 @@ void test_config_existing_round_trip() {
                     "existing socket dir round-trips");
         check(loaded->data_dir.empty(), "existing config has no data dir");
     }
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_local_cluster_rejects_unsafe_config() {
@@ -190,7 +190,7 @@ void test_local_cluster_rejects_unsafe_config() {
     check(newline_rejected,
           "line breaks in managed cluster paths are rejected");
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_local_cluster_starts_uninitialized() {
@@ -207,24 +207,24 @@ void test_local_cluster_starts_uninitialized() {
     check(!cluster.find_binaries().has_value(),
           "missing server binaries are reported");
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_local_cluster_finds_configured_binaries() {
     const auto dir = make_temp_dir();
     const auto bin = dir / "bin";
-    std::filesystem::create_directories(bin);
+    oyama::fs::create_directories(bin);
     for (const char* name : {"initdb", "pg_ctl", "postgres"}) {
         std::ofstream out(bin / name);
         out << "#!/bin/sh\n";
     }
     for (const char* name : {"initdb", "pg_ctl", "postgres"}) {
-        std::filesystem::permissions(
+        oyama::fs::permissions(
             bin / name,
-            std::filesystem::perms::owner_exec |
-                std::filesystem::perms::owner_read |
-                std::filesystem::perms::owner_write,
-            std::filesystem::perm_options::replace);
+            oyama::fs::perms::owner_exec |
+                oyama::fs::perms::owner_read |
+                oyama::fs::perms::owner_write,
+            oyama::fs::perm_options::replace);
     }
 
     LocalClusterConfig config;
@@ -238,7 +238,7 @@ void test_local_cluster_finds_configured_binaries() {
         check_equal(found->string(), bin.string(), "configured bin dir is used");
     }
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 }  // namespace

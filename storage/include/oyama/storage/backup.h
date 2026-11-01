@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -8,18 +9,18 @@
 #include <string_view>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 class VaultStore;
 
 /// Largest accepted backup file, ciphertext or plaintext, in bytes.  Preview
 /// and import require a regular file no larger than this and never read more
 /// than this many bytes.
-inline constexpr std::size_t kMaxBackupFileBytes = 64U * 1024U * 1024U;
+const std::size_t kMaxBackupFileBytes = 64U * 1024U * 1024U;
 
 /// Maximum JSON nesting depth accepted by preview and import.  The check runs
 /// before nlohmann::json's recursive parser sees the text.
-inline constexpr std::size_t kMaxBackupJsonDepth = 64;
+const std::size_t kMaxBackupJsonDepth = 64;
 
 struct BackupCategoryCounts {
     std::size_t events{0};
@@ -52,39 +53,41 @@ struct BackupPreview {
 struct BackupImportResult {
     BackupPreview preview;
     bool applied{false};
+    BackupImportResult() = default;
+    BackupImportResult(const BackupPreview& p, bool a) : preview(p), applied(a) {}
 };
 
 /// Vault-backed backup operations.  They read and write the exact same upstream
 /// `oyama-hrt-complete-backup` v1 JSON through the encrypted vault.
 /// Encrypted files are detected by the magic and opened with `backup_phrase`.
-[[nodiscard]] std::string export_backup_json(VaultStore& vault,
+OYAMA_NODISCARD std::string export_backup_json(VaultStore& vault,
                                              std::int64_t now_ms);
 
 /// Applies the same regular-file, symlink, size, and read bounds as preview
 /// and returns true when the file starts with the encrypted-backup magic.
 /// Throws Error for a missing, symlinked, non-regular, oversize, or unreadable
 /// file.
-[[nodiscard]] bool backup_file_is_encrypted(
-    const std::filesystem::path& path);
+OYAMA_NODISCARD bool backup_file_is_encrypted(
+    const oyama::fs::path& path);
 
-[[nodiscard]] BackupPreview preview_backup(
-    VaultStore& vault, const std::filesystem::path& path, std::int64_t now_ms,
-    std::string_view backup_phrase = {});
+OYAMA_NODISCARD BackupPreview preview_backup(
+    VaultStore& vault, const oyama::fs::path& path, std::int64_t now_ms,
+    oyama::string_view backup_phrase = {});
 
-[[nodiscard]] BackupImportResult import_backup(
-    VaultStore& vault, const std::filesystem::path& path, std::int64_t now_ms,
-    std::string_view backup_phrase = {});
+OYAMA_NODISCARD BackupImportResult import_backup(
+    VaultStore& vault, const oyama::fs::path& path, std::int64_t now_ms,
+    oyama::string_view backup_phrase = {});
 
 /// Writes the upstream-compatible bundle with mode 0600.
-void export_backup(VaultStore& vault, const std::filesystem::path& path,
+void export_backup(VaultStore& vault, const oyama::fs::path& path,
                    std::int64_t now_ms);
 
 /// Writes an encrypted `OYAMAEBK` v1 envelope around the same upstream JSON.
 /// The plaintext bundle exists only in memory; the file is written with mode
 /// 0600.
 void export_encrypted_backup(VaultStore& vault,
-                             const std::filesystem::path& path,
+                             const oyama::fs::path& path,
                              std::int64_t now_ms,
-                             std::string_view backup_phrase);
+                             oyama::string_view backup_phrase);
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage
