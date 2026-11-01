@@ -106,7 +106,8 @@ add_library(oyama_security_full STATIC
     security/src/capture.c
     security/src/capture_null.c
     security/src/capture_dbus.c
-    security/src/capture_x11.c)
+    security/src/capture_x11.c
+    security/src/keyproto.c)
 target_include_directories(oyama_security_full
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -532,6 +533,15 @@ if(BUILD_TESTING)
         target_compile_options(capture_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME capture_test COMMAND capture_test)
+
+    add_executable(keyproto_test security/tests/keyproto_test.c)
+    target_include_directories(keyproto_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(keyproto_test PRIVATE oyama_security_full)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(keyproto_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME keyproto_test COMMAND keyproto_test)
 
     add_executable(bip39_test vault/tests/bip39_test.c)
     target_include_directories(bip39_test PRIVATE vault/src include)
