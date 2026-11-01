@@ -268,6 +268,15 @@ void run_vault_backup_checks(const ConnectionConfig& config) {
               "vault export does not follow a symlink destination");
     }
 
+    const auto fifo_path = dir / "vault-fifo.json";
+    if (::mkfifo(fifo_path.c_str(), 0600) == 0) {
+        std::string message;
+        const bool fifo_rejected =
+            run_probe([&]() { (void)export_backup(vault, fifo_path, now); },
+                      message);
+        check(fifo_rejected, "vault export rejects a FIFO without blocking");
+    }
+
     const auto exported_root = json::parse(json_text);
     const auto& exported_template =
         exported_root["modes"]["transfem"]["doseTemplates"][0];
