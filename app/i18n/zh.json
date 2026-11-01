@@ -206,6 +206,7 @@
   "status.dose_updated": "剂量已更新。",
   "status.estimate": "当前估算血药浓度",
   "status.existing": "现有数据库",
+  "status.history_too_large": "剂量历史过大，无法安全模拟。数据未受影响；请减少剂量记录。",
   "status.invalid_calibration": "校准方法无效。",
   "status.invalid_combination": "模式、途径或酯型无效。",
   "status.invalid_dose_time": "请输入有效的剂量和时间。",

@@ -34,12 +34,32 @@ extern "C" {
 /* Hard cap on the number of base grid points, matching upstream. */
 #define OYAMA_PK_MAX_STEPS 100000
 
+/*
+ * Resource limits for oyama_pk_simulate().  They bound CPU work, not the
+ * numerical model: a normal history is unaffected, while a crafted request
+ * (for example 20,000 patch applications that never end) is rejected with
+ * OYAMA_PK_ERR_TOO_MUCH_DATA instead of freezing the caller.
+ *
+ * OYAMA_PK_MAX_EVENTS is the largest accepted request->event_count, before
+ * unmodelled drugs are filtered; it matches the backup importer's per-mode
+ * event cap.  OYAMA_PK_MAX_WORK is the approximate number of model/time-point
+ * evaluations allowed (patches are re-evaluated at every grid and offset
+ * point).  The budget is data-independent and is normally reached in about a
+ * second on a desktop CPU.
+ */
+#define OYAMA_PK_MAX_EVENTS 20000
+#define OYAMA_PK_MAX_WORK 100000000ULL
+
 typedef enum {
     OYAMA_PK_OK = 0,
     OYAMA_PK_NO_RESULT = 1,
     OYAMA_PK_ERR_INVALID_ARGUMENT = 2,
     OYAMA_PK_ERR_BUFFER_TOO_SMALL = 3,
-    OYAMA_PK_ERR_INTERNAL = 4
+    OYAMA_PK_ERR_INTERNAL = 4,
+    /* The request is valid but exceeds the documented resource budget.  The
+     * caller may show a "history too large to simulate" error; the model does
+     * not silently truncate the history. */
+    OYAMA_PK_ERR_TOO_MUCH_DATA = 5
 } oyama_pk_status;
 
 typedef enum {

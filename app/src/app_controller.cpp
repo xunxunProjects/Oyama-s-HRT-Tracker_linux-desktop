@@ -946,16 +946,20 @@ void AppController::load_data() {
         item["extras"] = QString::fromStdString(event.extras_json);
         doses_.append(item);
     }
-    compute_curve(events);
+    const bool curve_ok = compute_curve(events);
+    start_idle_timer();
+    if (!curve_ok) {
+        emit changed();
+        return;
+    }
     setStatus("status.connected",
               "Connected to " + QString::fromStdString(app_config_.dbname) +
                   " via " + backend_,
               {QString::fromStdString(app_config_.dbname), backend_});
-    start_idle_timer();
     emit changed();
 }
 
-void AppController::compute_curve(const std::vector<DoseEvent>& events) {
+bool AppController::compute_curve(const std::vector<DoseEvent>& events) {
     curve_.clear();
     current_e2_ = 0.0;
     current_cpa_ = 0.0;
@@ -982,8 +986,20 @@ void AppController::compute_curve(const std::vector<DoseEvent>& events) {
         doses.push_back(dose);
     }
     if (doses.empty()) {
-        return;
+        return true;
     }
+
+    const auto too_much_data = [&]() {
+        curve_.clear();
+        current_e2_ = 0.0;
+        current_cpa_ = 0.0;
+        current_t_ = 0.0;
+        setStatus("status.history_too_large",
+                  "The dose history is too large to simulate safely. The data "
+                  "is intact; reduce the number of dose records.");
+        emit changed();
+        return false;
+    };
 
     const auto params = pk_params_from_json(pkParamsJson());
     oyama_pk_request request{};
@@ -1002,7 +1018,10 @@ void AppController::compute_curve(const std::vector<DoseEvent>& events) {
                          0);
     const auto status = oyama_pk_simulate(&request, &result);
     if (status == OYAMA_PK_NO_RESULT) {
-        return;
+        return true;
+    }
+    if (status == OYAMA_PK_ERR_TOO_MUCH_DATA) {
+        return too_much_data();
     }
     if (status == OYAMA_PK_ERR_BUFFER_TOO_SMALL) {
         const std::size_t n = result.length;
@@ -1013,8 +1032,12 @@ void AppController::compute_curve(const std::vector<DoseEvent>& events) {
         std::vector<double> t(n);
         oyama_pk_result_init(&result, time.data(), total.data(), e2.data(),
                              cpa.data(), t.data(), n);
-        if (oyama_pk_simulate(&request, &result) != OYAMA_PK_OK) {
-            return;
+        const auto second = oyama_pk_simulate(&request, &result);
+        if (second == OYAMA_PK_ERR_TOO_MUCH_DATA) {
+            return too_much_data();
+        }
+        if (second != OYAMA_PK_OK) {
+            return true;
         }
         // The model steps about once an hour. Keep that resolution for the
         // timeline (a 7-day window needs it for a daily pill's peaks), thinning
@@ -1036,6 +1059,7 @@ void AppController::compute_curve(const std::vector<DoseEvent>& events) {
         if (std::isfinite(cpa_now)) current_cpa_ = cpa_now;
         if (std::isfinite(t_now)) current_t_ = t_now;
     }
+    return true;
 }
 
 bool AppController::addDose(const QString& route, const QString& ester,

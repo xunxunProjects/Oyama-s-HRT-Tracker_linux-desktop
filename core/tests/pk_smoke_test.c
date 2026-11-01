@@ -4,9 +4,15 @@
  * These are intentionally independent of the TypeScript implementation. The
  * numerical cross-check against the upstream model lives in tools/compare.
  */
+#include <errno.h>
 #include <math.h>
+#include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "oyama/pk.h"
 
@@ -166,6 +172,112 @@ static int test_buffer_too_small(void)
     return 0;
 }
 
+static int test_event_count_limit(void)
+{
+    const size_t count = (size_t)OYAMA_PK_MAX_EVENTS + 1;
+    oyama_pk_dose *events = calloc(count, sizeof *events);
+    oyama_pk_request req;
+    oyama_pk_result out;
+    size_t i;
+    int ok;
+
+    if (events == NULL) return 1;
+    for (i = 0; i < count; i++) {
+        events[i].route = OYAMA_PK_ROUTE_ORAL;
+        events[i].ester = OYAMA_PK_ESTER_E2;
+        events[i].time_h = NOW_H - (double)(count - i);
+        events[i].dose_mg = 1.0;
+    }
+    memset(&req, 0, sizeof req);
+    req.events = events;
+    req.event_count = count;
+    req.body_weight_kg = 70.0;
+    req.now_h = NOW_H;
+    memset(&out, 0, sizeof out);
+    ok = oyama_pk_simulate(&req, &out) == OYAMA_PK_ERR_TOO_MUCH_DATA &&
+         out.length == 0;
+    free(events);
+    return ok ? 0 : 1;
+}
+
+static int test_patch_apply_flood_is_bounded(void)
+{
+    const size_t count = 20000;
+    const pid_t pid = fork();
+
+    if (pid < 0) {
+        fprintf(stderr, "FAIL: fork failed\n");
+        return 1;
+    }
+    if (pid == 0) {
+        oyama_pk_dose *events;
+        oyama_pk_request req;
+        oyama_pk_result out;
+        oyama_pk_status status;
+        size_t i, n;
+        double *t, *total, *e2, *cpa, *tt;
+        clock_t started;
+        double elapsed;
+
+        alarm(10);
+        events = calloc(count, sizeof *events);
+        if (events == NULL) _exit(2);
+        for (i = 0; i < count; i++) {
+            events[i].id = "flood";
+            events[i].route = OYAMA_PK_ROUTE_PATCH_APPLY;
+            events[i].ester = OYAMA_PK_ESTER_E2;
+            events[i].time_h = NOW_H - (double)(count - i) * 4.0;
+            events[i].dose_mg = 1.0;
+        }
+        memset(&req, 0, sizeof req);
+        req.events = events;
+        req.event_count = count;
+        req.body_weight_kg = 70.0;
+        req.now_h = NOW_H;
+
+        memset(&out, 0, sizeof out);
+        oyama_pk_result_init(&out, NULL, NULL, NULL, NULL, NULL, 0);
+        status = oyama_pk_simulate(&req, &out);
+        if (status != OYAMA_PK_ERR_BUFFER_TOO_SMALL) _exit(3);
+        n = out.length;
+        if (n == 0) _exit(4);
+        t = malloc(n * sizeof *t);
+        total = malloc(n * sizeof *total);
+        e2 = malloc(n * sizeof *e2);
+        cpa = malloc(n * sizeof *cpa);
+        tt = malloc(n * sizeof *tt);
+        if (!t || !total || !e2 || !cpa || !tt) _exit(5);
+
+        oyama_pk_result_init(&out, t, total, e2, cpa, tt, n);
+        started = clock();
+        status = oyama_pk_simulate(&req, &out);
+        elapsed = (double)(clock() - started) / (double)CLOCKS_PER_SEC;
+
+        if (status != OYAMA_PK_ERR_TOO_MUCH_DATA) _exit(6);
+        if (elapsed > 5.0) _exit(7);
+        _exit(0);
+    }
+
+    {
+        int status = 0;
+        while (waitpid(pid, &status, 0) < 0) {
+            if (errno != EINTR) return 1;
+        }
+        if (WIFSIGNALED(status)) {
+            fprintf(stderr,
+                    "FAIL: patch flood probe was killed by signal %d\n",
+                    WTERMSIG(status));
+            return 1;
+        }
+        if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+            fprintf(stderr, "FAIL: patch flood probe failed (exit %d)\n",
+                    WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int test_age_multiplier(void)
 {
     const int birth_year = 1970;
@@ -226,6 +338,8 @@ int main(void)
     if (test_oral_e2_exposure()) return 1;
     if (test_oral_decays_out_of_window()) return 1;
     if (test_buffer_too_small()) return 1;
+    if (test_event_count_limit()) return 1;
+    if (test_patch_apply_flood_is_bounded()) return 1;
     if (test_age_multiplier()) return 1;
     if (test_api_helpers()) return 1;
     puts("pk_smoke_test: ok");
