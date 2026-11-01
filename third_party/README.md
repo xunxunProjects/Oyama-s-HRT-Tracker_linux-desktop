@@ -45,7 +45,7 @@ fails with the file name and the cache path. It never downloads, never runs
 
 ## Default and compatibility Qt
 
-The default desktop build uses Qt 6.4.3. Qt 5.15.2 is an optional compatibility
-build (`OYAMA_QT_MAJOR=5`) and needs the pinned KDE Qt5 patch collection. The
-open-source Qt 5.15.2 release is end-of-life upstream; track the patch
-collection and do not describe it as receiving upstream security fixes.
+The default desktop build uses Qt 6.4.3. Qt 5.15.2 is planned as an optional
+compatibility build (`OYAMA_QT_MAJOR=5`) and needs the pinned KDE Qt5 patch
+collection. The open-source Qt 5.15.2 release is end-of-life upstream; track the
+patch collection and do not describe it as receiving upstream security fixes.

@@ -94,9 +94,9 @@ tree, then in `<prefix>/share/oyama-hrt/migrations`. Override the location with
 ## Build profiles
 
 `OYAMA_SECURITY_PROFILE` selects `off`, `standard`, or `full`; the default is
-`standard`. Qt 6.4 is the default for every profile, and the optional Qt 5.15.2
-compatibility build is selected with `OYAMA_QT_MAJOR=5`. With the Makefile
-wrapper, `make` builds `standard` and `make SECURITY=0` builds `off`.
+`standard`. Qt 6.4+ is the default for every profile; the Qt 5.15.2
+compatibility build is planned for the Qt compatibility phase. With the
+Makefile wrapper, `make` builds `standard` and `make SECURITY=0` builds `off`.
 
 See [`docs/security/profiles.md`](docs/security/profiles.md) for the feature
 table, the compiler-hardening differences, and the

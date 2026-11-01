@@ -34,8 +34,8 @@ daemons, no capture hooks.
 
 `full` is the secure release: all modules compiled, `oyama-keyd` in a separate
 key guest, capture guard, and panic lock. It may be built with Qt 6.4
-(recommended) or Qt 5.15.2 (compatibility). Release notes state which Qt was
-used.
+(recommended) or, once the compatibility switch lands, Qt 5.15.2. Release notes
+state which Qt was used.
 
 ## Selecting a profile
 
