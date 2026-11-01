@@ -174,6 +174,21 @@ not exported in your shell; a stale value from manual testing can override the
 test configuration. Use `ctest --test-dir build -V` to capture the exact
 scenario and cluster path.
 
+### Vendored build
+
+The default build uses the system packages listed above. To build the large
+dependencies from the pinned sources instead:
+
+```sh
+scripts/bootstrap-third-party.sh           # online, verifies every hash
+scripts/bootstrap-third-party.sh --offline # from third_party/cache
+cmake -S . -B build-vendored -G Ninja \
+  -DOYAMA_THIRD_PARTY=vendored -DCMAKE_BUILD_TYPE=Release
+```
+
+The vendored prefix lives in `third_party/prefix` and is not committed.
+`OYAMA_THIRD_PARTY=system` remains the default for distribution packaging.
+
 ## Runtime requirements
 
 - **Linux:** glibc, Qt 6 runtime libraries, libpq 14+, and a local PostgreSQL

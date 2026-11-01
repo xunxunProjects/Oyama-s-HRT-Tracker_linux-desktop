@@ -19,6 +19,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+include(cmake/OyamaThirdParty.cmake)
+
 find_package(PostgreSQL 14 REQUIRED)
 find_package(nlohmann_json 3.11 REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -109,6 +111,10 @@ option(OYAMA_SECURITY_MODE "Enable security hardening (default ON)" ON)
 
 if(OYAMA_BUILD_QT_SHELL)
     find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
+    if(OYAMA_THIRD_PARTY STREQUAL "vendored" AND NOT Qt6_FOUND)
+        message(FATAL_ERROR
+            "Vendored Qt 6 was requested but not found in third_party/prefix")
+    endif()
     if(Qt6_FOUND)
         qt_standard_project_setup()
         # These policies were introduced after the minimum supported Qt.
