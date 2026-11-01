@@ -35,3 +35,8 @@ data/
 # OS
 .DS_Store
 Thumbs.db
+
+# Vendored third-party sources and build output
+third_party/cache/
+third_party/build/
+third_party/prefix/

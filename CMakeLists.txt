@@ -270,6 +270,10 @@ endif()
 include(CTest)
 
 if(BUILD_TESTING)
+    add_test(NAME supply_chain_hashes
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify-third-party.sh)
+    set_tests_properties(supply_chain_hashes PROPERTIES SKIP_RETURN_CODE 77)
+
     add_executable(pk_smoke_test core/tests/pk_smoke_test.c)
     target_link_libraries(pk_smoke_test PRIVATE oyama_pk)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
