@@ -518,3 +518,8 @@ install(TARGETS oyama-hrt-cli
 install(DIRECTORY storage/migrations/
     DESTINATION ${CMAKE_INSTALL_DATADIR}/oyama-hrt/migrations
     FILES_MATCHING PATTERN "*.sql")
+
+install(FILES
+    ${CMAKE_CURRENT_SOURCE_DIR}/man/oyama-hrt-app.1
+    ${CMAKE_CURRENT_SOURCE_DIR}/man/oyama-hrt-cli.1
+    DESTINATION ${CMAKE_INSTALL_MANDIR}/man1)

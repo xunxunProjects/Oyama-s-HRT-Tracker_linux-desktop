@@ -1,0 +1,67 @@
+.TH OYAMA-HRT-CLI 1 "2026-11-01" "Oyama's HRT Tracker 0.5.0" "User Commands"
+.SH NAME
+oyama-hrt-cli \- command-line interface for Oyama's HRT Tracker
+.SH SYNOPSIS
+.B oyama-hrt-cli
+[\fIGLOBAL OPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR...]
+.SH DESCRIPTION
+.B oyama-hrt-cli
+is the command-line companion to
+.BR oyama-hrt-app .
+It manages the encrypted vault, PostgreSQL cluster, backups, and data
+migration without the graphical interface.
+.SH COMMANDS
+.TP
+.B version
+Print the application version.
+.TP
+.B vault setup
+Initialize a new encrypted vault with a recovery phrase.
+.TP
+.B vault unlock \fB--phrase-stdin\fR
+Unlock the vault using a recovery phrase read from stdin.
+.TP
+.B backup export \fIFILE\fR
+Export an encrypted backup to \fIFILE\fR.
+.TP
+.B backup export --plaintext \fIFILE\fR
+Export a plaintext (unencrypted) backup to \fIFILE\fR.
+.TP
+.B backup import \fIFILE\fR
+Import a backup from \fIFILE\fR.
+.TP
+.B backup preview \fIFILE\fR
+Preview the contents of a backup without importing.
+.TP
+.B db start
+Start the managed PostgreSQL cluster.
+.TP
+.B db stop
+Stop the managed PostgreSQL cluster.
+.TP
+.B db migrate-vault
+Migrate a legacy plaintext database to the encrypted vault.
+.SH GLOBAL OPTIONS
+.TP
+.B \-\-phrase-stdin
+Read the recovery phrase from stdin (disables terminal echo).
+.TP
+.B \-\-db \fINAME\fR
+Specify the database name.
+.TP
+.B \-\-host \fIHOST\fR
+Specify the PostgreSQL host.
+.TP
+.B \-\-port \fIPORT\fR
+Specify the PostgreSQL port.
+.SH SECURITY
+The CLI disables core dumps and marks itself non-dumpable before handling
+vault secrets, to prevent recovery phrase leakage via core files.
+.SH FILES
+.TP
+.I ~/.config/oyama-hrt/
+Application configuration.
+.SH SEE ALSO
+.BR oyama-hrt-app (1)
+.SH AUTHOR
+Oyama's HRT Tracker contributors.
