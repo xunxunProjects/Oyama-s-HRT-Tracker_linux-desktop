@@ -424,6 +424,14 @@ if(BUILD_TESTING)
                 $<TARGET_FILE:legacy_promotion_test>)
     set_tests_properties(legacy_promotion_integration PROPERTIES SKIP_RETURN_CODE 77)
 
+    add_executable(compat_test storage/tests/compat_test.cpp)
+    target_include_directories(compat_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_options(compat_test PRIVATE -std=c++11 -pedantic-errors)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(compat_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME compat_test COMMAND compat_test)
+
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)
     target_compile_definitions(storage_test PRIVATE
