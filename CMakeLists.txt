@@ -192,10 +192,58 @@ if(OYAMA_BUILD_QT_SHELL)
                 "Vendored Qt 6 was requested but not found in third_party/prefix")
         endif()
     elseif(OYAMA_QT_MAJOR STREQUAL "5")
-        message(FATAL_ERROR "Qt 5 build is implemented in Task A.5")
+        find_package(Qt5 5.15 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2)
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+        set(QML5_DIR "${CMAKE_BINARY_DIR}/qml5")
+        add_custom_command(
+            OUTPUT "${QML5_DIR}/qmldir"
+            COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/qml5ify.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
+                    "${QML5_DIR}"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/qml5ify.py"
+            VERBATIM)
+        add_custom_target(qml5_transform DEPENDS "${QML5_DIR}/qmldir")
+
+        add_executable(oyama-hrt-app
+            app/src/main.cpp
+            app/src/app_controller.cpp
+            app/src/app_controller.h
+            app/src/legacy_migration_worker.cpp
+            app/src/legacy_migration_worker.h
+            app/src/ui_preferences.cpp
+            app/src/ui_preferences.h)
+        add_dependencies(oyama-hrt-app qml5_transform)
+        target_include_directories(oyama-hrt-app PRIVATE
+            app/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
+        target_link_libraries(oyama-hrt-app PRIVATE
+            oyama_storage
+            oyama_pk
+            nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
+            Qt5::Core
+            Qt5::Gui
+            Qt5::Qml
+            Qt5::Quick
+            Qt5::QuickControls2)
+        target_compile_definitions(oyama-hrt-app PRIVATE
+            OYAMA_APP_VERSION="${PROJECT_VERSION}"
+            OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
+            OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
+            target_compile_options(oyama-hrt-app PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
+        endif()
+        qt5_add_resources(oyama-hrt-app "qml5_resources" "${QML5_DIR}/qml.qrc")
+        set_target_properties(oyama-hrt-app PROPERTIES AUTOMOC ON AUTORCC ON)
+        install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        # skip the rest of the Qt 6 block
+        set(OYAMA_QT5_DONE TRUE)
     endif()
-    if(Qt6_FOUND)
-        qt_standard_project_setup()
+    if(Qt6_FOUND AND NOT OYAMA_QT5_DONE)
         qt_standard_project_setup()
         # These policies were introduced after the minimum supported Qt.
         # Setting an unknown policy is fatal, so keep Qt 6.4 (Debian 12 and
