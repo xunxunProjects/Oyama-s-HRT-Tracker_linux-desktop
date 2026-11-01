@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Pin Qt, PostgreSQL, libsodium, nlohmann/json, and Xen to checksum-verified
+  source archives, with an offline bootstrap script and a CycloneDX SBOM.
+- Add `off`, `standard`, and `full` security profiles. `standard` is the
+  default; `oyama-hrt-cli version --verbose` reports the active profile.
+
 ## 0.5.1 — 2026-11-01
 
 - Align vault pages with the PR #10 design system.
