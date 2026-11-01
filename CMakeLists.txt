@@ -107,7 +107,8 @@ add_library(oyama_security_full STATIC
     security/src/capture_null.c
     security/src/capture_dbus.c
     security/src/capture_x11.c
-    security/src/keyproto.c)
+    security/src/keyproto.c
+    security/src/vchan.c)
 target_include_directories(oyama_security_full
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -543,6 +544,15 @@ if(BUILD_TESTING)
     endif()
     add_test(NAME keyproto_test COMMAND keyproto_test)
 
+    add_executable(vchan_test security/tests/vchan_test.c)
+    target_include_directories(vchan_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(vchan_test PRIVATE oyama_security_full)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(vchan_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME vchan_test COMMAND vchan_test)
+
     add_executable(bip39_test vault/tests/bip39_test.c)
     target_include_directories(bip39_test PRIVATE vault/src include)
     target_link_libraries(bip39_test PRIVATE oyama_vault)
@@ -814,6 +824,24 @@ endif()
 option(OYAMA_BUILD_COMPARE_TOOLS "Build the upstream comparison dumper" ON)
 
 if(OYAMA_BUILD_COMPARE_TOOLS)
+    # Key daemon (full profile only)
+    if(OYAMA_SECURITY_PROFILE STREQUAL "full")
+        add_executable(oyama-keyd
+            keyd/main.c
+            keyd/server.c)
+        target_include_directories(oyama-keyd PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/storage/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/keyd)
+        target_link_libraries(oyama-keyd PRIVATE
+            oyama_vault
+            PostgreSQL::PostgreSQL
+            PkgConfig::SODIUM)
+        if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(oyama-keyd PRIVATE -Wall -Wextra -Wpedantic)
+        endif()
+    endif()
+
     add_executable(oyama_pk_dump tools/compare/dump.c)
     target_link_libraries(oyama_pk_dump PRIVATE oyama_pk)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
