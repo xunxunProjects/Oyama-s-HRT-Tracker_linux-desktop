@@ -60,8 +60,8 @@ bool use_config(const char* variable) {
     return ::setenv("OYAMA_CONFIG_FILE", path, 1) == 0;
 }
 
-std::filesystem::path target_dir(const AppConfig& config) {
-    const std::filesystem::path data_dir(config.data_dir);
+oyama::fs::path target_dir(const AppConfig& config) {
+    const oyama::fs::path data_dir(config.data_dir);
     return data_dir.parent_path() /
            (data_dir.filename().string() + "-migrate");
 }
@@ -104,7 +104,7 @@ int run_success_case() {
     REQUIRE(events.finished, "finished must fire on success");
     REQUIRE(!events.failed, "failed must not fire on success");
     REQUIRE(events.progress_count > 0, "progress must be reported");
-    REQUIRE(std::filesystem::exists(target_dir(*config)) == false,
+    REQUIRE(oyama::fs::exists(target_dir(*config)) == false,
             "the promotion must consume the target directory");
     REQUIRE(plaintext_count(*config) == 1,
             "promotion must leave exactly one plaintext sibling");
@@ -162,11 +162,11 @@ int run_failure_case() {
             "failure must identify the rejected record");
     REQUIRE(events.plaintext_path.isEmpty(),
             "no plaintext path exists before promotion");
-    REQUIRE(std::filesystem::exists(config->data_dir),
+    REQUIRE(oyama::fs::exists(config->data_dir),
             "the old data directory must survive a failed migration");
     REQUIRE(plaintext_count(*config) == 0,
             "a failed migration must not promote anything");
-    REQUIRE(std::filesystem::exists(target_dir(*config)),
+    REQUIRE(oyama::fs::exists(target_dir(*config)),
             "the failed target is kept for resume");
     REQUIRE(events.progress_count > 0,
             "progress must be reported before the failure");

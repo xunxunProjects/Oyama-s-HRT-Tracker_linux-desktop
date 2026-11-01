@@ -78,8 +78,8 @@ bool target_directory_exists() {
     if (!config.has_value()) {
         return false;
     }
-    const std::filesystem::path data_dir(config->data_dir);
-    return std::filesystem::exists(
+    const oyama::fs::path data_dir(config->data_dir);
+    return oyama::fs::exists(
         data_dir.parent_path() /
         (data_dir.filename().string() + "-migrate"));
 }
@@ -507,7 +507,7 @@ int run_managed_legacy_retry_scenario(QCoreApplication& application,
             "a failed migration must report the error");
     REQUIRE(controller.status().contains("old data"),
             "a failed migration must report the retained old data");
-    REQUIRE(std::filesystem::exists(load_app_config()->data_dir),
+    REQUIRE(oyama::fs::exists(load_app_config()->data_dir),
             "a failed migration must keep the old data directory");
     REQUIRE(plaintext_sibling_count() == 0,
             "a failed migration must not promote anything");
