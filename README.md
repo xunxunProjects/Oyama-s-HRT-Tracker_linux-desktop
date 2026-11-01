@@ -24,6 +24,11 @@ parity are still ahead.
 - PK comparison: [`tools/compare/README.md`](tools/compare/README.md)
 - Upstream project: <https://github.com/xunxunProjects/Oyama-s-HRT-Tracker>
 - License: MIT (see [`LICENSE`](LICENSE))
+- Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- AI contributors: [`AI-CONTRIBUTORS.md`](AI-CONTRIBUTORS.md)
+- Changelog: [`CHANGELOG.md`](CHANGELOG.md)
+- Documentation index: [`docs/README.md`](docs/README.md)
+- Wiki: <https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki>
 
 ## Build
 
