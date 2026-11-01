@@ -1,8 +1,8 @@
 # Dependencies
 
 Oyama's HRT Tracker is a native Qt 6 / PostgreSQL desktop application. Linux,
-FreeBSD, and OpenBSD builds are produced separately on each platform; their
-binaries are not interchangeable. This page explains the dependencies used by
+FreeBSD, OpenBSD, and NetBSD builds are produced separately on each platform;
+their binaries are not interchangeable. This page explains the dependencies used by
 the top-level `Makefile`; the finer CMake options are in the main
 [`README.md`](../README.md).
 
@@ -74,6 +74,31 @@ sudo pkg install cmake ninja git-lite libsodium nlohmann-json \
 needs `plasma6-kwin-x11`; `plasma6-kwin` alone provides only the Wayland
 compositor on FreeBSD.
 
+### NetBSD
+
+```sh
+su -
+export PKG_PATH=https://cdn.NetBSD.org/pub/pkgsrc/packages/NetBSD/x86_64/11.0_2026Q3/All
+pkg_add cmake ninja-build pkgconf libsodium nlohmann-json \
+  postgresql18-client postgresql18-server \
+  qt6-qtbase qt6-qtdeclarative noto-cjk-fonts bash
+```
+
+The pkgsrc repository path is release-specific. The example above is for
+NetBSD 11.0; use the matching `11.0_YYYYQn` directory for another release.
+NetBSD package archives use `.tgz` names but are XZ-compressed.
+
+Do not build or test as root: `initdb` refuses to run with root privileges.
+The full integration suite starts several PostgreSQL clusters at once. Raise
+the SysV semaphore limits before running `make test`, and persist them in
+`/etc/sysctl.conf` if the VM will run the suite repeatedly:
+
+```sh
+sysctl -w kern.ipc.semmni=128
+sysctl -w kern.ipc.semmns=1024
+sysctl -w kern.ipc.semmnu=256
+```
+
 ### OpenBSD
 
 ```sh
@@ -105,22 +130,32 @@ make JOBS=2          # limit parallel compilation
 make test            # run CTest
 sudo make install    # install under /usr/local by default
 make PREFIX=/opt/oyama-hrt
+make package PACKAGE=dist/oyama-hrt-netbsd-amd64.tar.gz
 make clean
 ```
+
+`make package` stages the files under `STAGE_DIR` (default `dist/stage`) using
+`DESTDIR`, then writes a gzip tarball. Set `PACKAGE` to a platform-specific
+artifact name; the default is `dist/oyama-hrt.tar.gz`.
 
 The equivalent direct CMake commands are:
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
   -DOYAMA_BUILD_QT_SHELL=ON
-cmake --build build -j"$(nproc)"
+cmake --build build -j2
 ctest --test-dir build --output-on-failure
 sudo cmake --install build
 ```
 
-The 0.5.0 release suite has 32 tests. Integration tests return `77` (skip) when
-the PostgreSQL server tools are unavailable. OpenBSD must be rebuilt and tested
-on an OpenBSD host or VM; a Linux result is not evidence for an OpenBSD binary.
+Use `su` instead of `sudo` on a base NetBSD system where `sudo` is not
+installed. `-j2` is deliberately portable; raise it only when the host has
+enough memory, because each integration test can start a PostgreSQL cluster.
+
+The current release suite has 32 tests. Integration tests return `77` (skip) when
+the PostgreSQL server tools are unavailable. OpenBSD and NetBSD must be rebuilt
+and tested on their native hosts or VMs; a Linux result is not evidence for
+either binary.
 
 The integration tests create their own throwaway clusters under `TMPDIR` and
 set their own XDG paths. If they fail with state-related messages such as
@@ -137,6 +172,8 @@ scenario and cluster path.
 - **FreeBSD:** FreeBSD 15.x, Qt 6, libpq, PostgreSQL, and an X11 window manager
   for the desktop shell.
 - **OpenBSD:** Qt 6, libpq, and PostgreSQL from the native package set.
+- **NetBSD:** NetBSD 11.0, Qt 6, libpq 14+, PostgreSQL 18 server and client
+  from pkgsrc, and an X11 window manager for the desktop shell.
 
 The application is local-only: it has no account system, telemetry, or cloud
 sync. The managed cluster listens only on a Unix socket and does not open a TCP

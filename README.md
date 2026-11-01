@@ -17,8 +17,8 @@ application-managed cluster lifecycle, and the LWW/tombstone backup merge;
 Qt 6/QML shell with setup/unlock/lock gates and Overview, Add dose, History, and
 Settings screens wired to the encrypted vault and the PK model, including
 route-specific dose extras and in-place dose editing. It is an early milestone:
-Labs, Plan, Supplies, Forecast, packaging, and full upstream UI parity are still
-ahead.
+Labs, Plan, Supplies, Forecast, distribution packaging, and full upstream UI
+parity are still ahead.
 
 - Design: [`docs/superpowers/specs/2026-10-29-linux-desktop-design.md`](docs/superpowers/specs/2026-10-29-linux-desktop-design.md)
 - PK comparison: [`tools/compare/README.md`](tools/compare/README.md)
@@ -44,17 +44,19 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-For the short path on Linux, FreeBSD, or OpenBSD, use the portable wrapper:
+For the short path on Linux, FreeBSD, OpenBSD, or NetBSD, use the portable wrapper:
 
 ```sh
 make            # configure + Release build in build/
 make test
 sudo make install
+make package PACKAGE=dist/oyama-hrt-netbsd-amd64.tar.gz
 ```
 
 The package names and platform-specific notes are in
-[`docs/dependencies.md`](docs/dependencies.md). OpenBSD is a native build target; its binary is
-not interchangeable with the Linux or FreeBSD builds.
+[`docs/dependencies.md`](docs/dependencies.md). OpenBSD and NetBSD are native
+build targets; their binaries are not interchangeable with the Linux or
+FreeBSD builds.
 
 The PK test binary is `build/pk_smoke_test`; the comparison dumper is
 `build/oyama_pk_dump` (see `tools/compare/README.md`). Storage tests include
@@ -296,7 +298,8 @@ requested.
 
 The Qt 6/QML shell implements the vault setup, unlock, and lock screens plus
 Overview, Add dose, History, and Settings. Plan, Labs, Supplies, Forecast,
-desktop packaging, and the remaining upstream UI parity work are still ahead.
+distribution packaging, and the remaining upstream UI parity work are still
+ahead.
 
 ## Repository layout
 
