@@ -1,3 +1,4 @@
+#include <oyama/security/profile.h>
 #include <oyama/storage/storage.h>
 #include <oyama/storage/backup_crypto.h>
 #include <oyama/storage/legacy_migration.h>
@@ -114,7 +115,7 @@ void print_usage(std::ostream& output) {
         << "  --backup-phrase-stdin\n"
         << "                     read a separate backup phrase from one stdin line\n\n"
         << "Commands:\n"
-        << "  version\n"
+        << "  version [--verbose]\n"
         << "  vault status      show uninitialized, locked, or unlocked\n"
         << "  vault setup [--phrase-stdin] [--kdf-ops N --kdf-mem BYTES]\n"
         << "  vault unlock-check --phrase-stdin\n"
@@ -1754,6 +1755,10 @@ int main(int argc, char** argv) {
         const std::string command = args[index++];
         if (command == "version") {
             std::cout << "oyama-hrt-cli " << kVersion << '\n';
+            if (index < args.size() && args[index] == "--verbose") {
+                std::cout << "security-profile: "
+                          << oyama_security_profile_name() << '\n';
+            }
             return 0;
         }
         if (command == "db") {
