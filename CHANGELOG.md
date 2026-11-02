@@ -10,7 +10,8 @@
   entropy); existing vaults keep their original phrase.  Add memory hygiene
   primitives and a panic lock (full profile) that wipes phrase buffers and
   shows a solid gray screen.  Add a best-effort capture guard (full profile)
-  that blacks out the window on screenshot detection.
+  that blacks out the window on screenshot detection.  Add a versioned key
+  protocol codec and a reference Xen key-isolation deployment (full profile).
 
 ## 0.5.1 — 2026-11-01
 
