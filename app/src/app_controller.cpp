@@ -607,7 +607,8 @@ bool AppController::confirmVaultSetup(const QVariantList& answers,
         secret, setup_challenge_, normalized_answers);
     if (!matches) {
         sodium_memzero(secret.data(), secret.size());
-        setStatus("", "The challenge words do not match. Try again.");
+        setStatus("vault.status.challenge_mismatch",
+                  "The challenge words do not match. Try again.");
         emit changed();
         return false;
     }
@@ -683,7 +684,7 @@ bool AppController::unlockVault(const QString& phrase) {
     sodium_memzero(normalized.data(), normalized.size());
     if (empty) {
         sodium_memzero(secret.data(), secret.size());
-        fail("", "Enter the recovery phrase.");
+        fail("vault.status.enter_phrase", "Enter the recovery phrase.");
         return false;
     }
 
@@ -698,10 +699,15 @@ bool AppController::unlockVault(const QString& phrase) {
     } catch (const std::exception&) {
         sodium_memzero(secret.data(), secret.size());
         vault_->lock();
-        set_vault_state("locked");
+        // A wrong phrase on the panic screen keeps the grey screen; only a
+        // right one leaves it.
+        if (vault_state_ != "panic") {
+            set_vault_state("locked");
+        }
         set_vault_busy(false);
-        fail("", "Could not unlock the vault. Check the recovery phrase and "
-                  "try again.");
+        fail("vault.status.unlock_failed",
+             "Could not unlock the vault. Check the recovery phrase and "
+             "try again.");
         return false;
     }
 }

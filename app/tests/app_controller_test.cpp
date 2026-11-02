@@ -175,6 +175,8 @@ int run_existing_database_scenario(QCoreApplication& application,
     wrong_answers[0] = QStringLiteral("definitely-not-a-phrase-word");
     REQUIRE(!controller.confirmVaultSetup(wrong_answers, true),
             "a wrong challenge must not complete setup");
+    REQUIRE(controller.statusKey() == "vault.status.challenge_mismatch",
+            "a wrong challenge must be reported in the interface language");
     REQUIRE(controller.vaultState() == "uninitialized",
             "a wrong challenge must leave the vault uninitialized");
     REQUIRE(!vault_meta_row_exists(),
@@ -309,10 +311,15 @@ int run_existing_database_scenario(QCoreApplication& application,
     REQUIRE(controller.status() == "Vault is locked",
             "locked settings must report the vault lock");
 
+    REQUIRE(!controller.unlockVault("   "), "an empty phrase must be rejected");
+    REQUIRE(controller.statusKey() == "vault.status.enter_phrase",
+            "an empty phrase must be reported in the interface language");
     REQUIRE(!controller.unlockVault("wrong phrase"),
             "a wrong phrase must be rejected");
     REQUIRE(controller.vaultState() == "locked",
             "a wrong phrase must leave the vault locked");
+    REQUIRE(controller.statusKey() == "vault.status.unlock_failed",
+            "a wrong phrase must be reported in the interface language");
     REQUIRE(!controller.vaultBusy(), "failed unlock must clear the busy flag");
 
     REQUIRE(controller.unlockVault(phrase), "the right phrase must unlock");
@@ -324,6 +331,24 @@ int run_existing_database_scenario(QCoreApplication& application,
             "unlocking must load the stored settings");
     REQUIRE(idle_timer->isActive(),
             "idle timer must restart after unlock");
+
+    controller.panicLock();
+    REQUIRE(controller.vaultState() == "panic",
+            "panic lock must switch to the panic screen");
+    REQUIRE(controller.doses().isEmpty(), "panic lock must clear the models");
+    REQUIRE(!controller.unlockVault("wrong phrase"),
+            "a wrong phrase must not leave the panic screen");
+    REQUIRE(controller.vaultState() == "panic",
+            "a wrong phrase must keep the panic screen");
+    REQUIRE(!controller.vaultBusy(), "failed panic unlock must clear busy");
+    REQUIRE(controller.unlockVault(phrase),
+            "the right phrase must leave the panic screen");
+    REQUIRE(controller.vaultState() == "unlocked",
+            "the right phrase must unlock from the panic screen");
+    REQUIRE(controller.doses().size() == 1,
+            "unlocking from panic must load the stored dose");
+    REQUIRE(idle_timer->isActive(),
+            "idle timer must restart after a panic unlock");
 
     QMetaObject::invokeMethod(idle_timer, "timeout", Qt::DirectConnection);
     REQUIRE(controller.vaultState() == "locked",

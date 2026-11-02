@@ -2,21 +2,44 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// First run: the recovery phrase to write down, numbered in four columns of
+// six so it copies onto paper in order; three of its words typed back as a
+// check; the two things to be sure of, ticked; then the vault is created.
 Item {
     id: page
 
     readonly property var phraseWords: app.setupPhrase.length > 0
                                       ? app.setupPhrase.split(" ")
                                       : []
+    // The words to type back, in the order they come in the phrase; the
+    // controller wants the answers in its own order.
+    readonly property var checkOrder: {
+        const order = []
+        for (let i = 0; i < app.setupChallenge.length; ++i)
+            order.push(i)
+        return order.sort(function(a, b) { return app.setupChallenge[a] - app.setupChallenge[b] })
+    }
+    property bool wroteDown: false
+    property bool understood: false
+    property string errorText: ""
 
-    function clearInputs() {
-        wroteDown.checked = false
-        acknowledged.checked = false
+    readonly property bool answered: {
         for (let i = 0; i < challengeRepeater.count; ++i) {
             const field = challengeRepeater.itemAt(i)
-            if (field) {
-                field.answer = ""
-            }
+            if (!field || field.text.trim().length === 0)
+                return false
+        }
+        return challengeRepeater.count > 0
+    }
+
+    function clearInputs() {
+        wroteDown = false
+        understood = false
+        errorText = ""
+        for (let i = 0; i < challengeRepeater.count; ++i) {
+            const field = challengeRepeater.itemAt(i)
+            if (field)
+                field.text = ""
         }
     }
 
@@ -24,9 +47,17 @@ Item {
         const answers = []
         for (let i = 0; i < challengeRepeater.count; ++i) {
             const field = challengeRepeater.itemAt(i)
-            answers.push(field ? field.answer : "")
+            answers[checkOrder[i]] = field ? field.text : ""
         }
         return answers
+    }
+
+    function create() {
+        if (app.vaultBusy || !wroteDown || !understood || !answered)
+            return
+        errorText = ""
+        if (!app.confirmVaultSetup(collectAnswers(), understood))
+            errorText = app.statusKey ? T.t(app.statusKey, app.statusArgs) : app.status
     }
 
     Component.onCompleted: {
@@ -45,63 +76,90 @@ Item {
         }
     }
 
-    ScrollView {
-        anchors.fill: parent
-        contentWidth: availableWidth
+    Flickable {
+        anchors.top: parent.top
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: footer.top
+        contentWidth: width
+        contentHeight: body.implicitHeight + 112
         clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: AppScrollBar {}
 
         ColumnLayout {
-            width: page.width
-            spacing: 14
+            id: body
+            width: Math.min(560, parent.width - 64)
+            x: (parent.width - width) / 2
+            y: 56
+            spacing: 0
 
-            Item { Layout.preferredHeight: 24 }
-
-            Label {
+            Doodle {
                 Layout.alignment: Qt.AlignHCenter
+                Layout.bottomMargin: 28
+                name: "lock"
+                size: 56
+            }
+
+            UiText {
                 Layout.fillWidth: true
-                Layout.maximumWidth: 760
-                horizontalAlignment: Text.AlignHCenter
-                text: qsTr("Create your vault")
-                color: Theme.text
-                font.pixelSize: 26
+                text: page.phraseWords.length > 0 ? T.t("vault.setup_title")
+                                                  : T.t("vault.no_phrase")
+                size: Theme.title
                 font.weight: Font.DemiBold
-            }
-
-            Label {
-                Layout.alignment: Qt.AlignHCenter
-                Layout.fillWidth: true
-                Layout.maximumWidth: 700
+                font.letterSpacing: -0.52
                 horizontalAlignment: Text.AlignHCenter
-                text: qsTr("Your data is encrypted with a seven-word recovery " +
-                           "phrase. Write it down on paper. There is no " +
-                           "recovery if you lose it.")
-                color: Theme.textMuted
-                font.pixelSize: 13
-                wrapMode: Text.WordWrap
+                wrapMode: Text.Wrap
             }
 
-            Rectangle {
-                Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Math.min(
-                    Math.max(page.width - 96, 240), 860)
-                Layout.preferredHeight: phraseColumn.implicitHeight + 40
+            UiText {
+                Layout.fillWidth: true
+                Layout.topMargin: 12
                 visible: page.phraseWords.length > 0
-                radius: 14
-                color: "#151c23"
-                border.color: "#26313c"
+                text: T.t("vault.setup_subtitle", [page.phraseWords.length])
+                color: Theme.textMuted
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                lineHeightMode: Text.ProportionalHeight
+                lineHeight: 1.2
+            }
 
-                ColumnLayout {
-                    id: phraseColumn
-                    anchors.fill: parent
-                    anchors.margins: 20
-                    spacing: 8
+            AppButton {
+                objectName: "beginSetupButton"
+                Layout.alignment: Qt.AlignHCenter
+                Layout.topMargin: 32
+                visible: page.phraseWords.length === 0
+                text: T.t("vault.get_phrase")
+                enabled: !app.vaultBusy
+                onClicked: app.beginVaultSetup()
+            }
 
-                    Label {
-                        text: qsTr("Recovery phrase")
-                        color: Theme.textMuted
-                        font.pixelSize: 11
-                        font.letterSpacing: 1.0
-                    }
+            // The phrase, numbered down each column. Words stay in the
+            // order they are written, whatever the page's direction.
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 32
+                visible: page.phraseWords.length > 0
+                spacing: 0
+
+                GroupHeading {
+                    text: T.t("vault.phrase_label")
+                    Layout.topMargin: 0
+                }
+
+                Hairline {}
+
+                GridLayout {
+                    objectName: "setupPhraseGrid"
+                    Layout.fillWidth: true
+                    Layout.topMargin: 14
+                    Layout.bottomMargin: 14
+                    flow: GridLayout.TopToBottom
+                    rows: Math.ceil(page.phraseWords.length / 4)
+                    columnSpacing: 16
+                    rowSpacing: 6
+                    LayoutMirroring.enabled: false
+                    LayoutMirroring.childrenInherit: true
 
                     Repeater {
                         model: page.phraseWords
@@ -110,160 +168,159 @@ Item {
                             required property int index
                             required property var modelData
                             Layout.fillWidth: true
-                            spacing: 12
+                            Layout.preferredWidth: 1
+                            spacing: 8
 
-                            Label {
-                                text: (index + 1) + "."
-                                Layout.preferredWidth: 30
+                            UiText {
+                                Layout.preferredWidth: 20
+                                text: index + 1
+                                size: Theme.caption
+                                color: Theme.textMuted
                                 horizontalAlignment: Text.AlignRight
-                                color: "#5f6d7c"
-                                font.pixelSize: 16
-                                font.family: "monospace"
                             }
 
-                            Text {
-                                text: modelData
+                            UiText {
                                 Layout.fillWidth: true
-                                color: Theme.text
-                                font.pixelSize: 18
-                                font.family: "monospace"
-                                font.letterSpacing: 1.0
+                                text: modelData
+                                font.weight: Font.Medium
+                                elide: Text.ElideRight
                             }
                         }
                     }
                 }
+
+                Hairline {}
             }
 
+            // Three of the words typed back from the paper.
             ColumnLayout {
-                Layout.alignment: Qt.AlignHCenter
-                visible: page.phraseWords.length === 0
-                spacing: 12
-
-                Label {
-                    horizontalAlignment: Text.AlignHCenter
-                    text: qsTr("No recovery phrase is ready. Generate one to " +
-                               "continue.")
-                    color: Theme.textMuted
-                    font.pixelSize: 13
-                }
-
-                Button {
-                    objectName: "beginSetupButton"
-                    Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("Generate recovery phrase")
-                    highlighted: true
-                    enabled: !app.vaultBusy
-                    onClicked: app.beginVaultSetup()
-                }
-            }
-
-            ColumnLayout {
-                Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Math.min(
-                    Math.max(page.width - 96, 240), 860)
+                Layout.fillWidth: true
+                Layout.topMargin: 32
                 visible: page.phraseWords.length > 0
-                spacing: 12
+                spacing: 0
 
-                Label {
-                    text: qsTr("Enter the three requested words from the " +
-                               "phrase above.")
-                    color: "#c9d2dc"
-                    font.pixelSize: 13
+                GroupHeading {
+                    text: T.t("vault.check_heading")
+                    Layout.topMargin: 0
+                }
+
+                UiText {
+                    Layout.fillWidth: true
+                    text: T.t("vault.check_hint")
+                    size: Theme.caption
+                    color: Theme.textMuted
+                    wrapMode: Text.Wrap
                 }
 
                 RowLayout {
                     Layout.fillWidth: true
-                    spacing: 12
+                    Layout.topMargin: 12
+                    spacing: 24
 
                     Repeater {
                         id: challengeRepeater
-                        model: app.setupChallenge
+                        model: page.checkOrder
 
-                        delegate: ColumnLayout {
-                            id: challengeItem
+                        delegate: LineField {
                             required property int index
                             required property var modelData
-                            property alias answer: challengeField.text
+                            objectName: "setupChallenge" + index
                             Layout.fillWidth: true
-                            spacing: 4
-
-                            Label {
-                                text: qsTr("Word %1").arg(modelData + 1)
-                                color: Theme.textMuted
-                                font.pixelSize: 12
-                            }
-
-                            TextField {
-                                id: challengeField
-                                objectName: "setupChallenge" + index
-                                Layout.fillWidth: true
-                                placeholderText: qsTr("Word %1").arg(
-                                                     modelData + 1)
-                                enabled: !app.vaultBusy
-                            }
+                            Layout.preferredWidth: 1
+                            label: T.t("vault.word_n", [app.setupChallenge[modelData] + 1])
+                            enabled: !app.vaultBusy
+                            inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+                            onAccepted: page.create()
+                            onEdited: page.errorText = ""
                         }
                     }
                 }
 
-                CheckBox {
-                    id: wroteDown
-                    text: qsTr("I wrote down the recovery phrase")
-                    enabled: !app.vaultBusy
-                }
-
-                CheckBox {
-                    id: acknowledged
-                    text: qsTr("I understand there is no recovery")
-                    enabled: !app.vaultBusy
-                }
-
-                RowLayout {
-                    Layout.alignment: Qt.AlignHCenter
-                    spacing: 12
-
-                    Button {
-                        objectName: "confirmSetupButton"
-                        text: qsTr("Create vault")
-                        highlighted: true
-                        enabled: !app.vaultBusy && wroteDown.checked &&
-                                 acknowledged.checked
-                        onClicked: {
-                            app.confirmVaultSetup(page.collectAnswers(),
-                                                  acknowledged.checked)
-                        }
-                    }
-
-                    Button {
-                        objectName: "cancelSetupButton"
-                        text: qsTr("Cancel")
-                        enabled: !app.vaultBusy
-                        onClicked: {
-                            page.clearInputs()
-                            app.cancelVaultSetup()
-                        }
-                    }
-
-                    BusyIndicator {
-                        objectName: "setupBusy"
-                        visible: app.vaultBusy
-                        running: app.vaultBusy
-                        Layout.preferredWidth: 32
-                        Layout.preferredHeight: 32
-                    }
-                }
-
-                Label {
+                UiText {
                     objectName: "setupStatus"
                     Layout.fillWidth: true
-                    horizontalAlignment: Text.AlignHCenter
-                    text: app.status
-                    color: Theme.textMuted
-                    font.pixelSize: 12
-                    wrapMode: Text.WordWrap
+                    Layout.topMargin: 8
+                    visible: page.errorText !== ""
+                    text: page.errorText
+                    size: Theme.caption
+                    color: Theme.danger
+                    wrapMode: Text.Wrap
                 }
             }
 
-            Item { Layout.preferredHeight: 24 }
+            // The two things to be sure of, ticked like any choice.
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.topMargin: 24
+                visible: page.phraseWords.length > 0
+                spacing: 0
+
+                ChoiceRow {
+                    objectName: "setupWroteDown"
+                    title: T.t("vault.wrote_down", [page.phraseWords.length])
+                    selected: page.wroteDown
+                    selectedWeight: Font.Medium
+                    enabled: !app.vaultBusy
+                    Accessible.role: Accessible.CheckBox
+                    onClicked: page.wroteDown = !page.wroteDown
+                }
+
+                ChoiceRow {
+                    objectName: "setupUnderstood"
+                    divider: true
+                    title: T.t("vault.no_recovery")
+                    selected: page.understood
+                    selectedWeight: Font.Medium
+                    enabled: !app.vaultBusy
+                    Accessible.role: Accessible.CheckBox
+                    onClicked: page.understood = !page.understood
+                }
+            }
+        }
+    }
+
+    // The way on, at the foot like the intro's: a new phrase is a way out,
+    // creating the vault the one thing the page is for.
+    Item {
+        id: footer
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: 68
+        visible: page.phraseWords.length > 0
+
+        Rectangle {
+            width: parent.width
+            height: Theme.hairline
+            color: Theme.border
+        }
+
+        Item {
+            width: Math.min(560, parent.width - 64)
+            height: parent.height
+            anchors.horizontalCenter: parent.horizontalCenter
+
+            AppButton {
+                objectName: "cancelSetupButton"
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                variant: "ghost"
+                text: T.t("btn.cancel")
+                enabled: !app.vaultBusy
+                onClicked: {
+                    page.clearInputs()
+                    app.cancelVaultSetup()
+                }
+            }
+
+            AppButton {
+                objectName: "confirmSetupButton"
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: app.vaultBusy ? T.t("vault.creating") : T.t("vault.create")
+                enabled: !app.vaultBusy && page.wroteDown && page.understood && page.answered
+                onClicked: page.create()
+            }
         }
     }
 }
