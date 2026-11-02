@@ -323,7 +323,7 @@ runner, managed cluster lifecycle, application-level vault, legacy plaintext
 migration, encrypted backups, first-run setup, LWW/tombstone merge, and the
 CLI are implemented.
 
-The first launch generates a seven-word recovery phrase, shows it once, and
+The first launch generates a 24-word BIP39 recovery phrase, shows it once, and
 asks you to write it down. There is no recovery service and no back door; if
 the phrase is lost, the data is lost. Backups are encrypted by default;
 `--plaintext` exports the upstream-compatible JSON only when explicitly

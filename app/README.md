@@ -23,10 +23,12 @@ pharmacokinetic model.  It currently provides:
 - **Single-window shell** — sidebar navigation, a page header, light/dark/system
   themes, and English, Chinese, Russian, and Persian UI text, with right-to-left
   layout for Persian.
-- **Vault gate** — first run generates a seven-word recovery phrase, asks you to
-  write it down and re-enter three positions, then unlocks the vault. Later
-  launches show an unlock screen. A header button locks immediately; the app
-  also locks after 15 minutes of inactivity and on quit.
+- **Vault gate** — first run shows a 24-word BIP39 recovery phrase in four
+  numbered columns, asks you to write it down and type back three of its
+  words, then unlocks the vault. Later launches show an unlock screen. The
+  Lock button at the foot of the sidebar locks immediately; the app also locks
+  after 15 minutes of inactivity and on quit. Every vault screen follows the
+  light or dark theme and the interface language.
 - **Managed cluster lifecycle** — if the saved configuration selects a managed
   cluster, the app starts it at launch through `LocalCluster::ensure_running()`.
   If that cluster still contains legacy plaintext data, setup hands the phrase

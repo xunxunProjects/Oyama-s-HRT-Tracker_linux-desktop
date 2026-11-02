@@ -14,6 +14,7 @@ ColumnLayout {
     property string hint: ""
     property string error: ""
     signal edited()
+    signal accepted()
 
     spacing: 0
 
@@ -31,6 +32,7 @@ ColumnLayout {
         Layout.fillWidth: true
         Layout.topMargin: labelText.visible ? 4 : 0
         onTextEdited: root.edited()
+        onAccepted: root.accepted()
     }
 
     UiText {

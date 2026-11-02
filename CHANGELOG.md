@@ -12,6 +12,11 @@
   shows a solid gray screen.  Add a best-effort capture guard (full profile)
   that blacks out the window on screenshot detection.  Add a versioned key
   protocol codec and a reference Xen key-isolation deployment (full profile).
+- Rebuild the vault screens (setup, unlock, migration, unavailable, panic) on
+  the app's design system: they follow the light and dark themes (the setup
+  page was unreadable in light), are translated, and lay the 24 words out in
+  four numbered columns. A wrong phrase on the panic screen keeps the grey
+  screen. Field lines are straight, as on the web.
 
 ## 0.5.1 — 2026-11-01
 
