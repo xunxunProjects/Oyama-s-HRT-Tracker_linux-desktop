@@ -70,7 +70,9 @@ endif()
 
 add_library(oyama_vault STATIC
     vault/src/vault.c
-    vault/src/vault_crypto.c)
+    vault/src/vault_crypto.c
+    vault/src/bip39.c
+    vault/src/bip39_wordlist.c)
 target_include_directories(oyama_vault
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -461,6 +463,26 @@ if(BUILD_TESTING)
         target_compile_options(vault_crypto_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME vault_crypto_test COMMAND vault_crypto_test)
+
+    add_executable(bip39_test vault/tests/bip39_test.c)
+    target_include_directories(bip39_test PRIVATE vault/src include)
+    target_link_libraries(bip39_test PRIVATE oyama_vault)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(bip39_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME bip39_test COMMAND bip39_test)
+
+    add_executable(bip39_vault_test vault/tests/bip39_vault_test.c)
+    target_include_directories(bip39_vault_test PRIVATE vault/src)
+    target_link_libraries(bip39_vault_test PRIVATE oyama_vault PostgreSQL::PostgreSQL)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(bip39_vault_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(
+        NAME bip39_vault_integration
+        COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/vault/tests/run_vault_pg_test.sh
+                $<TARGET_FILE:bip39_vault_test>)
+    set_tests_properties(bip39_vault_integration PROPERTIES SKIP_RETURN_CODE 77)
 
     add_executable(vault_meta_test vault/tests/vault_meta_test.c)
     target_include_directories(vault_meta_test PRIVATE vault/src)

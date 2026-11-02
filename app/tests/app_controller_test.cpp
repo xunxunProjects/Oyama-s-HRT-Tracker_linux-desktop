@@ -15,6 +15,7 @@
 #include <oyama/storage/app_config.h>
 #include <oyama/storage/connection.h>
 #include <oyama/storage/legacy_promotion.h>
+#include <oyama/bip39.h>
 
 #include <chrono>
 #include <cmath>
@@ -136,8 +137,8 @@ int run_existing_database_scenario(QCoreApplication& application,
 
     REQUIRE(controller.beginVaultSetup(), "begin vault setup");
     REQUIRE(controller.setupPhrase().split(' ', Qt::SkipEmptyParts).size() ==
-                7,
-            "setup must generate seven words");
+                24,
+            "setup must generate 24 words");
     REQUIRE(controller.setupChallenge().size() == 3,
             "setup must choose three challenge positions");
     controller.cancelVaultSetup();
@@ -153,7 +154,14 @@ int run_existing_database_scenario(QCoreApplication& application,
     REQUIRE(controller.beginVaultSetup(), "restart vault setup");
     const QString phrase = controller.setupPhrase();
     const QStringList words = phrase.split(' ', Qt::SkipEmptyParts);
-    REQUIRE(words.size() == 7, "setup phrase must have seven words");
+    REQUIRE(words.size() == 24, "setup phrase must have 24 words");
+    {
+        const std::string phrase_std = phrase.toStdString();
+        oyama_error berr{};
+        REQUIRE(oyama_bip39_validate(phrase_std.c_str(), &berr) ==
+                    OYAMA_VAULT_OK,
+                "setup phrase must be a valid BIP39 mnemonic");
+    }
     const QVariantList challenge = controller.setupChallenge();
     REQUIRE(challenge.size() == 3, "challenge must have three positions");
     for (const auto& position : challenge) {
@@ -379,8 +387,8 @@ int run_managed_legacy_scenario(AppController& controller) {
     REQUIRE(controller.beginVaultSetup(),
             "setup must be allowed while legacy migration is pending");
     REQUIRE(controller.setupPhrase().split(' ', Qt::SkipEmptyParts).size() ==
-                7,
-            "legacy setup must generate seven words");
+                24,
+            "legacy setup must generate 24 words");
     REQUIRE(controller.setupChallenge().size() == 3,
             "legacy setup must choose three challenge positions");
     controller.cancelVaultSetup();
@@ -420,7 +428,7 @@ int run_managed_legacy_migration_scenario(QCoreApplication& application,
     REQUIRE(controller.beginVaultSetup(), "begin legacy migration setup");
     const QString phrase = controller.setupPhrase();
     const QStringList words = phrase.split(' ', Qt::SkipEmptyParts);
-    REQUIRE(words.size() == 7, "migration phrase must have seven words");
+    REQUIRE(words.size() == 24, "migration phrase must have 24 words");
     const QVariantList answers =
         answers_for(words, controller.setupChallenge());
     REQUIRE(controller.confirmVaultSetup(answers, true),
@@ -487,7 +495,7 @@ int run_managed_legacy_retry_scenario(QCoreApplication& application,
     REQUIRE(controller.beginVaultSetup(), "begin failed migration setup");
     const QString phrase = controller.setupPhrase();
     const QStringList words = phrase.split(' ', Qt::SkipEmptyParts);
-    REQUIRE(words.size() == 7, "migration phrase must have seven words");
+    REQUIRE(words.size() == 24, "migration phrase must have 24 words");
     const QVariantList answers =
         answers_for(words, controller.setupChallenge());
     REQUIRE(controller.confirmVaultSetup(answers, true),

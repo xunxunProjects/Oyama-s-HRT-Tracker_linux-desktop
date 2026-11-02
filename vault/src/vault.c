@@ -1,4 +1,5 @@
 #include "vault_crypto.h"
+#include "oyama/bip39.h"
 
 #include <libpq-fe.h>
 #include <sodium.h>
@@ -286,6 +287,38 @@ int oyama_vault_setup(oyama_vault *vault, const char *phrase,
     const oyama_vault_kdf_params production = {3, 67108864};
     return oyama_vault_setup_with_params(vault, phrase, phrase_len,
                                          &production, err);
+}
+
+int oyama_vault_setup_generated(oyama_vault *vault, char *phrase_out,
+                               size_t phrase_out_len, oyama_error *err) {
+    char phrase[OYAMA_BIP39_MAX_LEN];
+    oyama_error local_err;
+    int rc;
+
+    if (vault == NULL || phrase_out == NULL ||
+        phrase_out_len < OYAMA_BIP39_MAX_LEN) {
+        return fail(err, OYAMA_VAULT_ERR_INVALID_ARGUMENT,
+                    "invalid generated setup argument");
+    }
+
+    memset(&local_err, 0, sizeof(local_err));
+    rc = oyama_bip39_generate(phrase, sizeof(phrase), &local_err);
+    if (rc != OYAMA_VAULT_OK) {
+        if (err != NULL) {
+            *err = local_err;
+        }
+        return rc;
+    }
+
+    rc = oyama_vault_setup(vault, phrase, strlen(phrase), err);
+    if (rc != OYAMA_VAULT_OK) {
+        sodium_memzero(phrase, sizeof(phrase));
+        return rc;
+    }
+
+    snprintf(phrase_out, phrase_out_len, "%s", phrase);
+    sodium_memzero(phrase, sizeof(phrase));
+    return OYAMA_VAULT_OK;
 }
 
 int oyama_vault_setup_with_params(oyama_vault *vault, const char *phrase,
