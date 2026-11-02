@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 std::string to_string(Mode mode) {
     switch (mode) {
@@ -14,14 +14,14 @@ std::string to_string(Mode mode) {
     throw std::invalid_argument("unknown HRT mode");
 }
 
-std::optional<Mode> parse_mode(std::string_view text) {
+oyama::optional<Mode> parse_mode(oyama::string_view text) {
     if (text == "transfem") {
         return Mode::Transfem;
     }
     if (text == "transmasc") {
         return Mode::Transmasc;
     }
-    return std::nullopt;
+    return oyama::nullopt;
 }
 
 std::string table_name(JsonRecordKind kind) {
@@ -38,4 +38,4 @@ std::string table_name(JsonRecordKind kind) {
     throw std::invalid_argument("unknown JSON record kind");
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

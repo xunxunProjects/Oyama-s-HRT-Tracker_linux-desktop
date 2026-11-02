@@ -56,25 +56,25 @@ constexpr const char* kPlaintextWarning =
     "filesystems, snapshots, RAID, or backups. Full-disk encryption and "
     "destruction of the old medium are the only reliable remedies.";
 
-std::filesystem::path migrations_dir() {
+oyama::fs::path migrations_dir() {
     if (const char* value = std::getenv("OYAMA_MIGRATIONS_DIR");
         value != nullptr && *value != '\0') {
         return value;
     }
 #ifdef OYAMA_DEFAULT_MIGRATIONS_DIR
-    if (std::filesystem::is_directory(OYAMA_DEFAULT_MIGRATIONS_DIR)) {
+    if (oyama::fs::is_directory(OYAMA_DEFAULT_MIGRATIONS_DIR)) {
         return OYAMA_DEFAULT_MIGRATIONS_DIR;
     }
 #endif
 #ifdef OYAMA_INSTALL_MIGRATIONS_DIR
-    if (std::filesystem::is_directory(OYAMA_INSTALL_MIGRATIONS_DIR)) {
+    if (oyama::fs::is_directory(OYAMA_INSTALL_MIGRATIONS_DIR)) {
         return OYAMA_INSTALL_MIGRATIONS_DIR;
     }
 #endif
     return "storage/migrations";
 }
 
-std::optional<oyama_pk_route> route_from(const QString& value) {
+oyama::optional<oyama_pk_route> route_from(const QString& value) {
     const QString route = value.trimmed();
     if (route.compare("oral", Qt::CaseInsensitive) == 0) {
         return OYAMA_PK_ROUTE_ORAL;
@@ -95,10 +95,10 @@ std::optional<oyama_pk_route> route_from(const QString& value) {
     if (route.compare("patchRemove", Qt::CaseInsensitive) == 0) {
         return OYAMA_PK_ROUTE_PATCH_REMOVE;
     }
-    return std::nullopt;
+    return oyama::nullopt;
 }
 
-std::optional<oyama_pk_ester> ester_from(const QString& value) {
+oyama::optional<oyama_pk_ester> ester_from(const QString& value) {
     const QString ester = value.trimmed().toUpper();
     if (ester == "E2") return OYAMA_PK_ESTER_E2;
     if (ester == "EB") return OYAMA_PK_ESTER_EB;
@@ -117,7 +117,7 @@ std::optional<oyama_pk_ester> ester_from(const QString& value) {
     if (ester == "TC") return OYAMA_PK_ESTER_TC;
     if (ester == "TE") return OYAMA_PK_ESTER_TE;
     if (ester == "TU") return OYAMA_PK_ESTER_TU;
-    return std::nullopt;
+    return oyama::nullopt;
 }
 
 oyama_pk_extras extras_from_json(const std::string& text) {
@@ -126,10 +126,10 @@ oyama_pk_extras extras_from_json(const std::string& text) {
     if (parsed.is_discarded() || !parsed.is_object()) {
         return extras;
     }
-    const auto number = [&](const char* key) -> std::optional<double> {
+    const auto number = [&](const char* key) -> oyama::optional<double> {
         const auto it = parsed.find(key);
         if (it == parsed.end() || !it->is_number()) {
-            return std::nullopt;
+            return oyama::nullopt;
         }
         return it->get<double>();
     };
@@ -230,8 +230,8 @@ std::int64_t now_ms() {
 }
 
 LocalClusterConfig cluster_config_for(const AppConfig& config,
-                                      const std::filesystem::path& data_dir,
-                                      const std::filesystem::path& socket_dir) {
+                                      const oyama::fs::path& data_dir,
+                                      const oyama::fs::path& socket_dir) {
     LocalClusterConfig cluster = config.cluster_config();
     cluster.data_dir = data_dir;
     cluster.socket_dir = socket_dir;
@@ -287,14 +287,14 @@ void discard_failed_target(const AppConfig& config,
         target_cluster.stop();
     }
     std::error_code error;
-    std::filesystem::remove_all(paths.target_data_dir, error);
+    oyama::fs::remove_all(paths.target_data_dir, error);
     if (error) {
         throw std::runtime_error(
             "Could not remove the failed migration target: " +
             error.message());
     }
     error.clear();
-    std::filesystem::remove_all(paths.target_socket_dir, error);
+    oyama::fs::remove_all(paths.target_socket_dir, error);
     if (error) {
         throw std::runtime_error(
             "Could not remove the failed migration socket directory: " +
@@ -314,7 +314,7 @@ void prepare_managed_directories(const AppConfig& config) {
     if (state != PromotionState::TargetPending) {
         return;
     }
-    if (!std::filesystem::exists(paths.data_dir)) {
+    if (!oyama::fs::exists(paths.data_dir)) {
         finish_interrupted_promotion(config, paths);
         return;
     }
@@ -481,12 +481,12 @@ void AppController::reload() {
                                                            : "existing";
         if (app_config_.backend == Backend::Managed) {
             prepare_managed_directories(app_config_);
-            cluster_ = std::make_unique<LocalCluster>(
+            cluster_ = oyama::make_unique<LocalCluster>(
                 app_config_.cluster_config());
             cluster_->ensure_running();
         }
 
-        database_ = std::make_unique<Database>(
+        database_ = oyama::make_unique<Database>(
             app_config_.connection_config(), migrations_dir());
         // Detect legacy data before 0003.  A legacy database is never
         // migrated in place: managed clusters go through the dedicated
@@ -514,7 +514,7 @@ void AppController::reload() {
         }
 
         (void)database_->migrate();
-        vault_ = std::make_unique<VaultStore>(app_config_.connection_config());
+        vault_ = oyama::make_unique<VaultStore>(app_config_.connection_config());
         vault_->open();
         switch (vault_->state()) {
         case VaultState::Uninitialized:
@@ -1184,10 +1184,10 @@ bool AppController::saveSettings(double weight, int birth_year,
         settings.body_weight_kg = weight;
         settings.weight_updated_at = now_ms();
         settings.birth_year =
-            birth_year > 0 ? std::optional<int>(birth_year) : std::nullopt;
+            birth_year > 0 ? oyama::optional<int>(birth_year) : oyama::nullopt;
         settings.birth_year_updated_at =
-            birth_year > 0 ? std::optional<std::int64_t>(now_ms())
-                           : std::nullopt;
+            birth_year > 0 ? oyama::optional<std::int64_t>(now_ms())
+                           : oyama::nullopt;
         settings.calibration_method = method;
         settings.calibration_history_mode = history;
         if (!pk_params_json.trimmed().isEmpty()) {

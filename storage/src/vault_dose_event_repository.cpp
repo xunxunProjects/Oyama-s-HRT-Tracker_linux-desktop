@@ -8,13 +8,13 @@
 #include <cstdint>
 #include <string>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 constexpr const char* kDoseKind = "dose_event";
 
 std::uint64_t envelope_stamp(
-    const std::optional<std::int64_t>& updated_at) {
+    const oyama::optional<std::int64_t>& updated_at) {
     if (!updated_at.has_value() || *updated_at <= 0) {
         return 0;
     }
@@ -44,10 +44,10 @@ std::vector<DoseEvent> VaultDoseEventRepository::list(Mode mode) {
     return events;
 }
 
-std::optional<DoseEvent> VaultDoseEventRepository::get(std::string_view id) {
+oyama::optional<DoseEvent> VaultDoseEventRepository::get(oyama::string_view id) {
     const auto record = vault_.get(id);
     if (!record.has_value()) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     if (record->kind != kDoseKind) {
         throw VaultError(OYAMA_VAULT_ERR_CORRUPT,
@@ -67,7 +67,7 @@ void VaultDoseEventRepository::upsert(const DoseEvent& event) {
                            encode_dose_event(event)});
 }
 
-bool VaultDoseEventRepository::remove(std::string_view id) {
+bool VaultDoseEventRepository::remove(oyama::string_view id) {
     const auto record = vault_.get(id);
     if (!record.has_value()) {
         return false;
@@ -82,4 +82,4 @@ std::size_t VaultDoseEventRepository::count(Mode mode) {
     return list(mode).size();
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

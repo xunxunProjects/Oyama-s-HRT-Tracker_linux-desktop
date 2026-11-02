@@ -152,6 +152,15 @@ The Makefile defaults to `SECURITY=1`, which selects `standard`. Set
 `SECURITY=0` to select `off`. `OYAMA_SECURITY_MODE` is derived from the profile
 and no longer needs to be passed directly.
 
+### Build profiles
+
+The default build uses Qt 6.4 and C++20-compatible sources compiled as C++11
+(`OYAMA_QT_MAJOR=6`). Select the Qt major with `-DOYAMA_QT_MAJOR=5` for the
+optional Qt 5.15.2 compatibility build, and the C++ standard with
+`-DCMAKE_CXX_STANDARD=11` or `-DCMAKE_CXX_STANDARD=20`. See
+`docs/security/profiles.md` for the security profiles and
+`CMakePresets.json` for the named configurations.
+
 The equivalent direct CMake commands are:
 
 ```sh

@@ -7,7 +7,7 @@
 
 #include <algorithm>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 constexpr const char kPreferencesId[] =
@@ -46,14 +46,14 @@ void save_preferences(VaultStore& vault, std::vector<Preference> preferences) {
 VaultPreferencesRepository::VaultPreferencesRepository(VaultStore& vault)
     : vault_(vault) {}
 
-std::optional<Preference> VaultPreferencesRepository::get(
-    std::string_view key) {
+oyama::optional<Preference> VaultPreferencesRepository::get(
+    oyama::string_view key) {
     const auto preferences = list();
     const auto found = std::find_if(
         preferences.begin(), preferences.end(),
         [key](const Preference& preference) { return preference.key == key; });
     if (found == preferences.end()) {
-        return std::nullopt;
+        return oyama::nullopt;
     }
     return *found;
 }
@@ -82,7 +82,7 @@ void VaultPreferencesRepository::set(const Preference& preference) {
     save_preferences(vault_, std::move(preferences));
 }
 
-bool VaultPreferencesRepository::remove(std::string_view key) {
+bool VaultPreferencesRepository::remove(oyama::string_view key) {
     auto preferences = load_preferences(vault_);
     const auto found = std::find_if(
         preferences.begin(), preferences.end(),
@@ -95,4 +95,4 @@ bool VaultPreferencesRepository::remove(std::string_view key) {
     return true;
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

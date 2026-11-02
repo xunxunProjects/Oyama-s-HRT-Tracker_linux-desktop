@@ -33,18 +33,18 @@ using oyama::storage::PromotionState;
 using oyama::storage::VaultState;
 using oyama::storage::VaultStore;
 
-std::filesystem::path migrations_dir() {
+oyama::fs::path migrations_dir() {
     if (const char* value = std::getenv("OYAMA_MIGRATIONS_DIR");
         value != nullptr && *value != '\0') {
         return value;
     }
 #ifdef OYAMA_DEFAULT_MIGRATIONS_DIR
-    if (std::filesystem::is_directory(OYAMA_DEFAULT_MIGRATIONS_DIR)) {
+    if (oyama::fs::is_directory(OYAMA_DEFAULT_MIGRATIONS_DIR)) {
         return OYAMA_DEFAULT_MIGRATIONS_DIR;
     }
 #endif
 #ifdef OYAMA_INSTALL_MIGRATIONS_DIR
-    if (std::filesystem::is_directory(OYAMA_INSTALL_MIGRATIONS_DIR)) {
+    if (oyama::fs::is_directory(OYAMA_INSTALL_MIGRATIONS_DIR)) {
         return OYAMA_INSTALL_MIGRATIONS_DIR;
     }
 #endif
@@ -116,8 +116,8 @@ void LegacyMigrationWorker::run(const QString& data_dir,
         }
 
         paths = oyama::storage::make_legacy_paths(
-            std::filesystem::path(data_dir.toStdString()),
-            std::filesystem::path(socket_dir.toStdString()));
+            oyama::fs::path(data_dir.toStdString()),
+            oyama::fs::path(socket_dir.toStdString()));
         paths_ready = true;
         const PromotionState state =
             oyama::storage::inspect_promotion(paths);
@@ -149,7 +149,7 @@ void LegacyMigrationWorker::run(const QString& data_dir,
         LocalCluster target_cluster(target_config);
 
         if (state == PromotionState::TargetPending &&
-            !std::filesystem::exists(paths.data_dir)) {
+            !oyama::fs::exists(paths.data_dir)) {
             if (!target_cluster.is_initialized()) {
                 throw std::runtime_error(
                     "Migration target is not an initialized PostgreSQL "
@@ -234,7 +234,7 @@ void LegacyMigrationWorker::run(const QString& data_dir,
 
                 LegacyMigrator migrator(
                     source, vault,
-                    [this](std::string_view kind, std::size_t done,
+                    [this](oyama::string_view kind, std::size_t done,
                            std::size_t total) {
                         emit progress(
                             QString::fromUtf8(

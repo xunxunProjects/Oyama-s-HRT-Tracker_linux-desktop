@@ -5,7 +5,7 @@
 
 #include <oyama/vault.h>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 namespace {
 
 constexpr const char kSettingsId[] =
@@ -36,4 +36,4 @@ void VaultSettingsRepository::save(const Settings& settings) {
                            encode_settings(settings)});
 }
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

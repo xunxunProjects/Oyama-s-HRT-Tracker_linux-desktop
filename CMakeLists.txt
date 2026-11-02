@@ -119,6 +119,7 @@ add_library(oyama_storage STATIC
     storage/src/vault_tombstone_repository.cpp)
 target_include_directories(oyama_storage
     PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
 target_link_libraries(oyama_storage
     PUBLIC PostgreSQL::PostgreSQL
@@ -126,7 +127,42 @@ target_link_libraries(oyama_storage
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_storage PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(oyama_storage PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 endif()
+
+add_library(storage_cxx11_compile OBJECT
+    storage/src/app_config.cpp
+    storage/src/backup.cpp
+    storage/src/backup_crypto.cpp
+    storage/src/connection.cpp
+    storage/src/database.cpp
+    storage/src/error.cpp
+    storage/src/legacy_migration.cpp
+    storage/src/legacy_promotion.cpp
+    storage/src/local_cluster.cpp
+    storage/src/migration.cpp
+    storage/src/passphrase.cpp
+    storage/src/passphrase_wordlist.cpp
+    storage/src/types.cpp
+    storage/src/uuid.cpp
+    storage/src/vault_codec.cpp
+    storage/src/vault_store.cpp
+    storage/src/vault_dose_event_repository.cpp
+    storage/src/vault_json_record_repository.cpp
+    storage/src/vault_lab_result_repository.cpp
+    storage/src/vault_preferences_repository.cpp
+    storage/src/vault_settings_repository.cpp
+    storage/src/vault_tombstone_repository.cpp)
+target_include_directories(storage_cxx11_compile PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
+target_link_libraries(storage_cxx11_compile PRIVATE
+    nlohmann_json::nlohmann_json
+    PkgConfig::SODIUM
+    PostgreSQL::PostgreSQL)
+target_compile_options(storage_cxx11_compile PRIVATE
+    -std=c++11 -pedantic-errors -Wall -Wextra -Wpedantic
+    -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 
 add_executable(oyama-hrt-cli cli/main.cpp cli/process_hardening.cpp)
 target_include_directories(oyama-hrt-cli PRIVATE
@@ -137,17 +173,77 @@ target_compile_definitions(oyama-hrt-cli PRIVATE
     OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama-hrt-cli PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(oyama-hrt-cli PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 endif()
 
 option(OYAMA_BUILD_QT_SHELL "Build the Qt/QML desktop shell" ON)
+set(OYAMA_QT_MAJOR "6" CACHE STRING "Qt major version: 6 or 5")
+set_property(CACHE OYAMA_QT_MAJOR PROPERTY STRINGS 6 5)
+
+if(NOT OYAMA_QT_MAJOR MATCHES "^[56]$")
+    message(FATAL_ERROR "OYAMA_QT_MAJOR must be 5 or 6")
+endif()
 
 if(OYAMA_BUILD_QT_SHELL)
-    find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
-    if(OYAMA_THIRD_PARTY STREQUAL "vendored" AND NOT Qt6_FOUND)
-        message(FATAL_ERROR
-            "Vendored Qt 6 was requested but not found in third_party/prefix")
+    if(OYAMA_QT_MAJOR STREQUAL "6")
+        find_package(Qt6 6.4 QUIET COMPONENTS Core Qml Quick QuickControls2)
+        if(OYAMA_THIRD_PARTY STREQUAL "vendored" AND NOT Qt6_FOUND)
+            message(FATAL_ERROR
+                "Vendored Qt 6 was requested but not found in third_party/prefix")
+        endif()
+    elseif(OYAMA_QT_MAJOR STREQUAL "5")
+        find_package(Qt5 5.15 REQUIRED COMPONENTS Core Gui Qml Quick QuickControls2)
+        find_package(Python3 COMPONENTS Interpreter REQUIRED)
+
+        set(QML5_DIR "${CMAKE_BINARY_DIR}/qml5")
+        add_custom_command(
+            OUTPUT "${QML5_DIR}/qmldir"
+            COMMAND ${Python3_EXECUTABLE}
+                    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/qml5ify.py"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/app/qml"
+                    "${QML5_DIR}"
+            DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/scripts/qml5ify.py"
+            VERBATIM)
+        add_custom_target(qml5_transform DEPENDS "${QML5_DIR}/qmldir")
+
+        add_executable(oyama-hrt-app
+            app/src/main.cpp
+            app/src/app_controller.cpp
+            app/src/app_controller.h
+            app/src/legacy_migration_worker.cpp
+            app/src/legacy_migration_worker.h
+            app/src/ui_preferences.cpp
+            app/src/ui_preferences.h)
+        add_dependencies(oyama-hrt-app qml5_transform)
+        target_include_directories(oyama-hrt-app PRIVATE
+            app/src
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/storage/include)
+        target_link_libraries(oyama-hrt-app PRIVATE
+            oyama_storage
+            oyama_pk
+            nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
+            Qt5::Core
+            Qt5::Gui
+            Qt5::Qml
+            Qt5::Quick
+            Qt5::QuickControls2)
+        target_compile_definitions(oyama-hrt-app PRIVATE
+            OYAMA_APP_VERSION="${PROJECT_VERSION}"
+            OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
+            OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
+        if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+            target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
+            target_compile_options(oyama-hrt-app PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
+        endif()
+        qt5_add_resources(oyama-hrt-app "qml5_resources" "${QML5_DIR}/qml.qrc")
+        set_target_properties(oyama-hrt-app PROPERTIES AUTOMOC ON AUTORCC ON)
+        install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+        # skip the rest of the Qt 6 block
+        set(OYAMA_QT5_DONE TRUE)
     endif()
-    if(Qt6_FOUND)
+    if(Qt6_FOUND AND NOT OYAMA_QT5_DONE)
         qt_standard_project_setup()
         # These policies were introduced after the minimum supported Qt.
         # Setting an unknown policy is fatal, so keep Qt 6.4 (Debian 12 and
@@ -265,6 +361,34 @@ if(OYAMA_BUILD_QT_SHELL)
             target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
         endif()
         install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+        add_library(app_cxx11_compile OBJECT
+            cli/main.cpp
+            cli/process_hardening.cpp
+            app/src/main.cpp
+            app/src/app_controller.cpp
+            app/src/legacy_migration_worker.cpp
+            app/src/ui_preferences.cpp)
+        target_include_directories(app_cxx11_compile PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/storage/include
+            ${CMAKE_CURRENT_SOURCE_DIR}/app/src)
+        target_link_libraries(app_cxx11_compile PRIVATE
+            oyama_storage
+            oyama_pk
+            nlohmann_json::nlohmann_json
+            PkgConfig::SODIUM
+            Qt6::Core
+            Qt6::Qml
+            Qt6::Quick
+            Qt6::QuickControls2)
+        target_compile_options(app_cxx11_compile PRIVATE
+            -std=c++17 -pedantic-errors -Wall -Wextra -Wpedantic
+            -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
+        target_compile_definitions(app_cxx11_compile PRIVATE
+            OYAMA_APP_VERSION="0.5.0"
+            OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
+            OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
         install(FILES app/assets/oyama-hrt.desktop
             DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
         install(FILES app/assets/oyama-hrt.metainfo.xml
@@ -423,6 +547,14 @@ if(BUILD_TESTING)
         COMMAND bash ${CMAKE_CURRENT_SOURCE_DIR}/storage/tests/run_legacy_promotion_test.sh
                 $<TARGET_FILE:legacy_promotion_test>)
     set_tests_properties(legacy_promotion_integration PROPERTIES SKIP_RETURN_CODE 77)
+
+    add_executable(compat_test storage/tests/compat_test.cpp)
+    target_include_directories(compat_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_compile_options(compat_test PRIVATE -std=c++11 -pedantic-errors)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(compat_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME compat_test COMMAND compat_test)
 
     add_executable(storage_test storage/tests/storage_test.cpp)
     target_link_libraries(storage_test PRIVATE oyama_storage)

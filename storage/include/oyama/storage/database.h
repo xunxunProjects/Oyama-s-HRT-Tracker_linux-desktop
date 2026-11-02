@@ -1,4 +1,5 @@
 #pragma once
+#include <oyama/compat/all.h>
 
 #include "connection.h"
 #include "migration.h"
@@ -6,27 +7,27 @@
 #include <filesystem>
 #include <vector>
 
-namespace oyama::storage {
+namespace oyama { namespace storage {
 
 /// Owns a connection and its migration runner.  Construction checks that the
 /// server is PostgreSQL 14 or newer; migrations are explicit so a read-only
 /// status command never mutates the database.
 class Database {
 public:
-    Database(ConnectionConfig config, std::filesystem::path migrations_directory);
+    Database(ConnectionConfig config, oyama::fs::path migrations_directory);
 
-    [[nodiscard]] Connection& connection() noexcept;
-    [[nodiscard]] const Connection& connection() const noexcept;
-    [[nodiscard]] MigrationRunner& migrations() noexcept;
-    [[nodiscard]] const MigrationRunner& migrations() const noexcept;
+    OYAMA_NODISCARD Connection& connection() noexcept;
+    OYAMA_NODISCARD const Connection& connection() const noexcept;
+    OYAMA_NODISCARD MigrationRunner& migrations() noexcept;
+    OYAMA_NODISCARD const MigrationRunner& migrations() const noexcept;
 
-    [[nodiscard]] std::vector<Migration> migrate();
-    [[nodiscard]] std::vector<MigrationStatus> migration_status();
-    [[nodiscard]] int current_version();
+    OYAMA_NODISCARD std::vector<Migration> migrate();
+    OYAMA_NODISCARD std::vector<MigrationStatus> migration_status();
+    OYAMA_NODISCARD int current_version();
 
 private:
     Connection connection_;
     MigrationRunner migrations_;
 };
 
-}  // namespace oyama::storage
+} }  // namespace oyama::storage

@@ -46,26 +46,26 @@ public:
     explicit AppController(QObject* parent = nullptr);
     ~AppController() override;
 
-    [[nodiscard]] QString status() const { return status_; }
-    [[nodiscard]] QString statusKey() const { return status_key_; }
-    [[nodiscard]] QStringList statusArgs() const { return status_args_; }
-    [[nodiscard]] QString mode() const { return mode_; }
-    [[nodiscard]] QString backend() const { return backend_; }
-    [[nodiscard]] QString vaultState() const { return vault_state_; }
-    [[nodiscard]] bool vaultBusy() const { return vault_busy_; }
-    [[nodiscard]] bool migrationRetryAvailable() const;
-    [[nodiscard]] QString setupPhrase() const { return setup_phrase_; }
-    [[nodiscard]] QVariantList setupChallenge() const;
-    [[nodiscard]] QVariantList doses() const { return doses_; }
-    [[nodiscard]] QVariantList curve() const { return curve_; }
-    [[nodiscard]] double currentE2() const { return current_e2_; }
-    [[nodiscard]] double currentCPA() const { return current_cpa_; }
-    [[nodiscard]] double currentT() const { return current_t_; }
-    [[nodiscard]] double weight() const;
-    [[nodiscard]] int birthYear() const;
-    [[nodiscard]] QString calibrationMethod() const;
-    [[nodiscard]] QString calibrationHistory() const;
-    [[nodiscard]] QString pkParamsJson() const;
+    OYAMA_NODISCARD QString status() const { return status_; }
+    OYAMA_NODISCARD QString statusKey() const { return status_key_; }
+    OYAMA_NODISCARD QStringList statusArgs() const { return status_args_; }
+    OYAMA_NODISCARD QString mode() const { return mode_; }
+    OYAMA_NODISCARD QString backend() const { return backend_; }
+    OYAMA_NODISCARD QString vaultState() const { return vault_state_; }
+    OYAMA_NODISCARD bool vaultBusy() const { return vault_busy_; }
+    OYAMA_NODISCARD bool migrationRetryAvailable() const;
+    OYAMA_NODISCARD QString setupPhrase() const { return setup_phrase_; }
+    OYAMA_NODISCARD QVariantList setupChallenge() const;
+    OYAMA_NODISCARD QVariantList doses() const { return doses_; }
+    OYAMA_NODISCARD QVariantList curve() const { return curve_; }
+    OYAMA_NODISCARD double currentE2() const { return current_e2_; }
+    OYAMA_NODISCARD double currentCPA() const { return current_cpa_; }
+    OYAMA_NODISCARD double currentT() const { return current_t_; }
+    OYAMA_NODISCARD double weight() const;
+    OYAMA_NODISCARD int birthYear() const;
+    OYAMA_NODISCARD QString calibrationMethod() const;
+    OYAMA_NODISCARD QString calibrationHistory() const;
+    OYAMA_NODISCARD QString pkParamsJson() const;
 
     void setMode(const QString& mode);
 
@@ -89,10 +89,10 @@ public:
                                   const QString& calibration_history,
                                   const QString& pk_params_json);
     Q_INVOKABLE bool removeDose(const QString& id);
-    [[nodiscard]] Q_INVOKABLE double nowHours() const;
-    [[nodiscard]] Q_INVOKABLE QString formatTime(double time_h) const;
+    OYAMA_NODISCARD Q_INVOKABLE double nowHours() const;
+    OYAMA_NODISCARD Q_INVOKABLE QString formatTime(double time_h) const;
     // The model's parameter defaults, by the keys pkParamsJson uses.
-    [[nodiscard]] Q_INVOKABLE QVariantMap pkDefaults() const;
+    OYAMA_NODISCARD Q_INVOKABLE QVariantMap pkDefaults() const;
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -113,18 +113,18 @@ private:
     void fail(const QString& key, const QString& message,
               const QStringList& args = {});
     void load_data();
-    [[nodiscard]] bool compute_curve(
+    OYAMA_NODISCARD bool compute_curve(
         const std::vector<oyama::storage::DoseEvent>& events);
     void set_vault_state(const QString& state);
     void set_vault_busy(bool busy);
     void clear_setup();
     void clear_models();
     void start_idle_timer();
-    [[nodiscard]] bool require_unlocked();
-    [[nodiscard]] bool start_migration_worker();
+    OYAMA_NODISCARD bool require_unlocked();
+    OYAMA_NODISCARD bool start_migration_worker();
     void join_migration_thread();
     void clear_pending_migration_phrase();
-    [[nodiscard]] QString migration_plaintext_path() const;
+    OYAMA_NODISCARD QString migration_plaintext_path() const;
 
     std::unique_ptr<oyama::storage::Database> database_;
     std::unique_ptr<oyama::storage::LocalCluster> cluster_;

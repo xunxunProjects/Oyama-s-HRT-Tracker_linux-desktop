@@ -36,15 +36,15 @@ void check_equal(const T& actual, const T& expected, const std::string& message)
     }
 }
 
-std::filesystem::path make_temp_dir() {
+oyama::fs::path make_temp_dir() {
     const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-    auto path = std::filesystem::temp_directory_path() /
+    auto path = oyama::fs::temp_directory_path() /
                 ("oyama-storage-test-" + std::to_string(stamp));
-    std::filesystem::create_directories(path);
+    oyama::fs::create_directories(path);
     return path;
 }
 
-void write_file(const std::filesystem::path& path, std::string_view contents) {
+void write_file(const oyama::fs::path& path, oyama::string_view contents) {
     std::ofstream out(path, std::ios::binary);
     out.write(contents.data(), static_cast<std::streamsize>(contents.size()));
 }
@@ -98,7 +98,7 @@ void test_migration_discovery() {
     }
     check(duplicate_rejected, "duplicate migration versions are rejected");
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_migration_rejects_bad_files() {
@@ -113,7 +113,7 @@ void test_migration_rejects_bad_files() {
     }
     check(empty_rejected, "empty migrations are rejected");
 
-    std::filesystem::remove(dir / "0001_empty.sql");
+    oyama::fs::remove(dir / "0001_empty.sql");
     write_file(dir / "one_bad.sql", "SELECT 1;\n");
     bool name_rejected = false;
     try {
@@ -123,14 +123,14 @@ void test_migration_rejects_bad_files() {
     }
     check(name_rejected, "malformed migration names are rejected");
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void test_migration_missing_directory() {
     bool rejected = false;
     try {
         (void)oyama::storage::MigrationRunner(
-            std::filesystem::path("/nonexistent/oyama-migrations"))
+            oyama::fs::path("/nonexistent/oyama-migrations"))
             .load();
     } catch (const oyama::storage::Error&) {
         rejected = true;
@@ -138,11 +138,11 @@ void test_migration_missing_directory() {
     check(rejected, "missing migration directory is rejected");
 }
 
-std::filesystem::path migrations_dir() {
+oyama::fs::path migrations_dir() {
 #ifdef OYAMA_TEST_MIGRATIONS_DIR
-    return std::filesystem::path(OYAMA_TEST_MIGRATIONS_DIR);
+    return oyama::fs::path(OYAMA_TEST_MIGRATIONS_DIR);
 #else
-    return std::filesystem::path("storage/migrations");
+    return oyama::fs::path("storage/migrations");
 #endif
 }
 
@@ -196,7 +196,7 @@ void test_migration_guard(Connection& connection) {
     check(!status[0].checksum_matches,
           "temporary status reports the checksum mismatch");
 
-    std::filesystem::remove(dir / "0001_probe.sql");
+    oyama::fs::remove(dir / "0001_probe.sql");
     bool missing_rejected = false;
     try {
         (void)runner.apply(connection);
@@ -205,7 +205,7 @@ void test_migration_guard(Connection& connection) {
     }
     check(missing_rejected, "missing applied migration is rejected");
 
-    std::filesystem::remove_all(dir);
+    oyama::fs::remove_all(dir);
 }
 
 void run_integration_checks(Connection& connection) {
