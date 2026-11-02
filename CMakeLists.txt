@@ -83,6 +83,18 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(oyama_vault PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
+add_library(oyama_security STATIC
+    security/src/mem.c
+    security/src/panic.c)
+target_include_directories(oyama_security
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(oyama_security
+    PUBLIC PkgConfig::SODIUM)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(oyama_security PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 add_library(oyama_pk STATIC
     core/src/pk.c)
 target_include_directories(oyama_pk
@@ -289,6 +301,7 @@ if(OYAMA_BUILD_QT_SHELL)
             app/qml/VaultGate.qml
             app/qml/SetupVaultPage.qml
             app/qml/UnlockVaultPage.qml
+            app/qml/PanicLockPage.qml
             app/qml/Sidebar.qml
             app/qml/NavItem.qml
             app/qml/FirstRun.qml
@@ -463,6 +476,24 @@ if(BUILD_TESTING)
         target_compile_options(vault_crypto_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME vault_crypto_test COMMAND vault_crypto_test)
+
+    add_executable(mem_test security/tests/mem_test.c)
+    target_include_directories(mem_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(mem_test PRIVATE oyama_security)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(mem_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME mem_test COMMAND mem_test)
+
+    add_executable(panic_test security/tests/panic_test.c)
+    target_include_directories(panic_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_link_libraries(panic_test PRIVATE oyama_security)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(panic_test PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME panic_test COMMAND panic_test)
 
     add_executable(bip39_test vault/tests/bip39_test.c)
     target_include_directories(bip39_test PRIVATE vault/src include)

@@ -673,7 +673,7 @@ bool AppController::unlockVault(const QString& phrase) {
         fail("", "Vault is not initialized.");
         return false;
     }
-    if (vault_state_ != "locked") {
+    if (vault_state_ != "locked" && vault_state_ != "panic") {
         fail("", "Vault is not locked.");
         return false;
     }
@@ -725,6 +725,24 @@ void AppController::lockVault() {
         set_vault_state("locked");
         setStatus("", "Vault is locked.");
     }
+    emit changed();
+}
+
+void AppController::panicLock() {
+    if (vault_state_ != "unlocked") {
+        return;
+    }
+    if (idle_timer_ != nullptr) {
+        idle_timer_->stop();
+    }
+    if (vault_ != nullptr) {
+        vault_->lock();
+    }
+    clear_pending_migration_phrase();
+    clear_setup();
+    clear_models();
+    set_vault_state("panic");
+    setStatus("", "Vault is locked.");
     emit changed();
 }
 
