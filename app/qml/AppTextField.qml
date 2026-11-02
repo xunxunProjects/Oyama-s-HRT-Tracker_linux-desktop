@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 
-// A field is a line, not a box: the text sits on a hand-drawn rule, and focus
+// A field is a line, not a box: the text sits on a straight rule, and focus
 // draws an ink stroke over it. No glow, no coloured ring, no red outline; what
 // is wrong goes in words under the field.
 TextField {

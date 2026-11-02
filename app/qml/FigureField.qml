@@ -3,7 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 // A number set as a display figure on its own line (body weight, year of
-// birth): large light digits centred over a hand-drawn line, the unit after.
+// birth): large light digits centred over a straight line, the unit after.
 RowLayout {
     id: root
     property alias text: input.text
