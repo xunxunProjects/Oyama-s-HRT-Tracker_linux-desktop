@@ -9,7 +9,8 @@
 - Generate new vault recovery phrases as 24-word BIP39 mnemonics (256 bits of
   entropy); existing vaults keep their original phrase.  Add memory hygiene
   primitives and a panic lock (full profile) that wipes phrase buffers and
-  shows a solid gray screen.
+  shows a solid gray screen.  Add a best-effort capture guard (full profile)
+  that blacks out the window on screenshot detection.
 
 ## 0.5.1 — 2026-11-01
 
