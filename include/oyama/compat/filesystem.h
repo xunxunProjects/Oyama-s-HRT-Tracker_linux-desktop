@@ -281,11 +281,14 @@ inline bool is_empty(const path& p) {
     return false;
 }
 
+#if defined(__clang__) && defined(__has_warning)
+#  if __has_warning("-Wchanges-meaning")
+#    pragma clang diagnostic push
+#    pragma clang diagnostic ignored "-Wchanges-meaning"
+#  endif
+#elif defined(__GNUC__)
 #pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wchanges-meaning"
-#ifdef __clang__
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wchanges-meaning"
+#pragma GCC diagnostic ignored "-Wpedantic"
 #endif
 
 struct directory_entry {
@@ -298,10 +301,13 @@ struct directory_entry {
     bool is_symlink() const { return oyama::fs::is_symlink(p_); }
 };
 
-#ifdef __clang__
-#pragma clang diagnostic pop
-#endif
+#if defined(__clang__) && defined(__has_warning)
+#  if __has_warning("-Wchanges-meaning")
+#    pragma clang diagnostic pop
+#  endif
+#elif defined(__GNUC__)
 #pragma GCC diagnostic pop
+#endif
 
 class directory_iterator {
     DIR* dir_;

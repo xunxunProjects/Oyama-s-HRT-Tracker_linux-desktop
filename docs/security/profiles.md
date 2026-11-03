@@ -62,7 +62,7 @@ cache entry is ignored.
 
 ```sh
 oyama-hrt-cli version --verbose
-# oyama-hrt-cli 0.5.0
+# oyama-hrt-cli 0.6.0
 # security-profile: standard
 ```
 
@@ -75,4 +75,4 @@ The profile is recorded in the binary through the
 Phase 0 wires the profile switch, compiler hardening, and the CLI report. The
 idle lock, BIP39 phrase generation, capture guard, panic lock, and `oyama-keyd`
 arrive in later phases; until then the table describes the target behavior of
-each profile rather than the current 0.5.0 feature set.
+each profile rather than the current 0.6.0 feature set.

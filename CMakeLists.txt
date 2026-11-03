@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(oyama_hrt_linux_desktop
-    VERSION 0.5.0
+    VERSION 0.6.0
     DESCRIPTION "Oyama's HRT Tracker - Linux/BSD desktop"
     LANGUAGES C CXX)
 
@@ -16,6 +16,9 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
 set(CMAKE_CXX_STANDARD 20)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+    add_compile_options(-fpermissive)
+endif()
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -163,7 +166,7 @@ target_link_libraries(oyama_storage
     PRIVATE nlohmann_json::nlohmann_json oyama_vault)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(oyama_storage PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(oyama_storage PRIVATE -Wall -Wextra -Wpedantic -fpermissive)
     target_compile_options(oyama_storage PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 endif()
 
@@ -199,6 +202,7 @@ target_link_libraries(storage_cxx11_compile PRIVATE
     PostgreSQL::PostgreSQL)
 target_compile_options(storage_cxx11_compile PRIVATE
     -std=c++11 -pedantic-errors -Wall -Wextra -Wpedantic
+    -Wno-changes-meaning
     -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 
 add_executable(oyama-hrt-cli cli/main.cpp cli/process_hardening.cpp)
@@ -209,7 +213,7 @@ target_compile_definitions(oyama-hrt-cli PRIVATE
     OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
     OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(oyama-hrt-cli PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(oyama-hrt-cli PRIVATE -Wall -Wextra -Wpedantic -fpermissive)
     target_compile_options(oyama-hrt-cli PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
 endif()
 
@@ -275,7 +279,7 @@ if(OYAMA_BUILD_QT_SHELL)
             OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
             OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
         if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
+            target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic -fpermissive)
             target_compile_options(oyama-hrt-app PRIVATE -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
         endif()
         qt5_add_resources(oyama-hrt-app "qml5_resources" "${QML5_DIR}/qml.qrc")
@@ -404,7 +408,7 @@ if(OYAMA_BUILD_QT_SHELL)
             OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
             OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
         if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-            target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic)
+            target_compile_options(oyama-hrt-app PRIVATE -Wall -Wextra -Wpedantic -fpermissive)
         endif()
         install(TARGETS oyama-hrt-app RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
@@ -430,9 +434,10 @@ if(OYAMA_BUILD_QT_SHELL)
             Qt6::QuickControls2)
         target_compile_options(app_cxx11_compile PRIVATE
             -std=c++17 -pedantic-errors -Wall -Wextra -Wpedantic
+            -Wno-changes-meaning
             -include ${CMAKE_CURRENT_SOURCE_DIR}/include/oyama/compat/all.h)
         target_compile_definitions(app_cxx11_compile PRIVATE
-            OYAMA_APP_VERSION="0.5.0"
+            OYAMA_APP_VERSION="0.6.0"
             OYAMA_DEFAULT_MIGRATIONS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/storage/migrations"
             OYAMA_INSTALL_MIGRATIONS_DIR="${CMAKE_INSTALL_FULL_DATADIR}/oyama-hrt/migrations")
         install(FILES app/assets/oyama-hrt.desktop
@@ -661,7 +666,7 @@ if(BUILD_TESTING)
 
     add_executable(compat_test storage/tests/compat_test.cpp)
     target_include_directories(compat_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-    target_compile_options(compat_test PRIVATE -std=c++11 -pedantic-errors)
+    target_compile_options(compat_test PRIVATE -std=c++11 -pedantic-errors -Wno-changes-meaning)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(compat_test PRIVATE -Wall -Wextra -Wpedantic)
     endif()
