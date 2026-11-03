@@ -49,7 +49,7 @@ QtObject {
     readonly property color illustrationShade: dark ? "#46271d" : "#fbe2d7"
     readonly property color illustrationDeep: dark ? "#2b1711" : "#f4c3b1"
     readonly property color illustrationShine: dark ? "#774738" : "#ffffff"
-    // The hand-drawn rule under a field, and the ink drawn over it on focus.
+    // The straight rule under a field, and the ink drawn over it on focus.
     readonly property color inkRule: dark ? "#858279" : "#8c8981"
     readonly property color inkRun: dark ? "#f9f9f7" : "#1a1916"
     readonly property color shadow: dark ? "#80000000" : "#0f181714"

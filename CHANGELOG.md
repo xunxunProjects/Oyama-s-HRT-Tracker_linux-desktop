@@ -15,6 +15,11 @@
 - C++11 baseline with Qt 6.4 default and Qt 5.15.2 compatibility.
 - 9 cross-platform binaries (Linux, FreeBSD, OpenBSD × 3 profiles). NetBSD is
   not built for this release because the NetBSD build machine was unavailable.
+- Rebuild the vault screens (setup, unlock, migration, unavailable, panic) on
+  the app's design system: they follow the light and dark themes (the setup
+  page was unreadable in light), are translated, and lay the 24 words out in
+  four numbered columns. A wrong phrase on the panic screen keeps the grey
+  screen. Field lines are straight, as on the web.
 
 ## 0.5.1 — 2026-11-01
 

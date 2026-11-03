@@ -94,9 +94,20 @@ ApplicationWindow {
                     anchors.bottomMargin: 20
                     variant: "ghost"
                     iconName: "lock"
-                    text: qsTr("Lock")
+                    text: T.t("vault.lock")
+                    // The word goes where it would not fit the rail
+                    // ("Закрыть"); the button keeps it as its name.
+                    iconOnly: lockLabel.advanceWidth + iconSize + 4 + 20 > Theme.railWidth - 4
                     visible: app.vaultState === "unlocked" && !window.firstRun
                     onClicked: app.lockVault()
+
+                    TextMetrics {
+                        id: lockLabel
+                        font.family: Theme.fontFamily
+                        font.pixelSize: Theme.body
+                        font.weight: Font.Medium
+                        text: T.t("vault.lock")
+                    }
                 }
             }
 

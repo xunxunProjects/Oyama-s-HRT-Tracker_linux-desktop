@@ -2,6 +2,8 @@ import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
 
+// The records are locked: the recovery phrase in one line, hidden as it is
+// typed, and what went wrong in words under it.
 Item {
     id: page
     property string errorText: ""
@@ -14,76 +16,67 @@ Item {
         phraseField.text = ""
         errorText = ""
         if (!app.unlockVault(secret)) {
-            errorText = app.status
+            errorText = app.statusKey ? T.t(app.statusKey, app.statusArgs) : app.status
         }
     }
 
+    Component.onCompleted: phraseField.field.forceActiveFocus()
+
     ColumnLayout {
         anchors.centerIn: parent
-        width: Math.min(Math.max(page.width - 96, 240), 560)
-        spacing: 14
+        width: Math.min(400, page.width - 64)
+        spacing: 0
 
-        Label {
+        Doodle {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.bottomMargin: 28
+            name: "lock"
+            size: 56
+        }
+
+        UiText {
             Layout.fillWidth: true
-            horizontalAlignment: Text.AlignHCenter
-            text: qsTr("Vault locked")
-            color: Theme.text
-            font.pixelSize: Theme.title
+            text: T.t("vault.locked_title")
+            size: Theme.title
             font.weight: Font.DemiBold
-        }
-
-        Label {
-            Layout.fillWidth: true
+            font.letterSpacing: -0.52
             horizontalAlignment: Text.AlignHCenter
-            text: qsTr("Enter the seven-word recovery phrase to unlock " +
-                       "your data.")
-            color: Theme.textMuted
-            font.pixelSize: Theme.body
-            wrapMode: Text.WordWrap
+            wrapMode: Text.Wrap
         }
 
-        TextField {
+        UiText {
+            Layout.fillWidth: true
+            Layout.topMargin: 12
+            Layout.bottomMargin: 32
+            text: T.t("vault.locked_subtitle")
+            color: Theme.textMuted
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            lineHeightMode: Text.ProportionalHeight
+            lineHeight: 1.2
+        }
+
+        LineField {
             id: phraseField
             objectName: "unlockPhrase"
             Layout.fillWidth: true
-            echoMode: TextInput.Password
-            selectByMouse: false
-            placeholderText: qsTr("Recovery phrase")
+            label: T.t("vault.phrase_label")
+            error: page.errorText
             enabled: !app.vaultBusy
+            inputMethodHints: Qt.ImhSensitiveData | Qt.ImhNoPredictiveText
+            field.echoMode: TextInput.Password
+            field.selectByMouse: false
             onAccepted: page.attemptUnlock()
+            onEdited: page.errorText = ""
         }
 
-        RowLayout {
-            Layout.fillWidth: true
-            spacing: 12
-
-            Button {
-                objectName: "unlockButton"
-                text: qsTr("Unlock")
-                highlighted: true
-                enabled: !app.vaultBusy && phraseField.text.trim().length > 0
-                onClicked: page.attemptUnlock()
-            }
-
-            BusyIndicator {
-                objectName: "unlockBusy"
-                visible: app.vaultBusy
-                running: app.vaultBusy
-                Layout.preferredWidth: 32
-                Layout.preferredHeight: 32
-            }
-
-            Item { Layout.fillWidth: true }
-        }
-
-        Label {
-            objectName: "unlockError"
-            Layout.fillWidth: true
-            visible: page.errorText.length > 0
-            text: page.errorText
-            color: Theme.danger
-            font.pixelSize: Theme.body
-            wrapMode: Text.WordWrap
+        AppButton {
+            objectName: "unlockButton"
+            Layout.alignment: Qt.AlignRight
+            Layout.topMargin: 20
+            text: app.vaultBusy ? T.t("vault.unlocking") : T.t("vault.unlock")
+            enabled: !app.vaultBusy && phraseField.text.trim().length > 0
+            onClicked: page.attemptUnlock()
         }
     }
 
