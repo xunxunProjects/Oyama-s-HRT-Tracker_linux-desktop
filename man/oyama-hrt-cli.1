@@ -9,58 +9,179 @@ oyama-hrt-cli \- command-line interface for Oyama's HRT Tracker
 is the command-line companion to
 .BR oyama-hrt-app .
 It manages the encrypted vault, PostgreSQL cluster, backups, and data
-migration without the graphical interface.
+migration without the graphical interface. Every command that reads health
+records needs an unlocked vault; the recovery phrase is read from standard
+input and is never accepted as a command-line argument.
 .SH COMMANDS
+.SS General
 .TP
-.B version
-Print the application version.
+.B version [\-\-verbose]
+Print the application version. With
+.B \-\-verbose
+also print the security profile compiled into the binary.
+.SS Vault
 .TP
-.B vault setup
-Initialize a new encrypted vault with a recovery phrase.
+.B vault status
+Print
+.IR uninitialized ,
+.IR locked ,
+or
+.IR unlocked .
 .TP
-.B vault unlock \fB--phrase-stdin\fR
-Unlock the vault using a recovery phrase read from stdin.
+.B vault setup [\-\-phrase-stdin] [\-\-kdf-ops N \-\-kdf-mem BYTES]
+Create a new encrypted vault. Interactive setup generates a 24-word BIP39
+recovery phrase, prints it once, and asks for three positions. A phrase
+supplied with
+.B \-\-phrase-stdin
+is accepted for provisioning and tests.
 .TP
-.B backup export \fIFILE\fR
-Export an encrypted backup to \fIFILE\fR.
+.B vault unlock-check \-\-phrase-stdin
+Read the vault phrase from one stdin line and verify that it unlocks the vault.
 .TP
-.B backup export --plaintext \fIFILE\fR
-Export a plaintext (unencrypted) backup to \fIFILE\fR.
+.B vault change-phrase \-\-phrase-stdin \-\-new-phrase-stdin
+Read the current phrase and then the new phrase from stdin and re-wrap the data
+encryption key. Existing records are not re-encrypted.
+.SS Database
 .TP
-.B backup import \fIFILE\fR
-Import a backup from \fIFILE\fR.
-.TP
-.B backup preview \fIFILE\fR
-Preview the contents of a backup without importing.
+.B db setup [\-\-existing|\-\-managed] [\-\-yes] [\-\-force]
+Select an existing local PostgreSQL server or create an application-managed
+cluster. The selected backend is written to
+.IR $XDG_CONFIG_HOME/oyama-hrt/config .
 .TP
 .B db start
-Start the managed PostgreSQL cluster.
+Start the application-managed cluster.
 .TP
 .B db stop
-Stop the managed PostgreSQL cluster.
+Stop the application-managed cluster.
 .TP
-.B db migrate-vault
-Migrate a legacy plaintext database to the encrypted vault.
+.B db cluster-status
+Show the configured backend, paths, port, database, and running state.
+.TP
+.B db ping
+Connect to PostgreSQL and print the database, user, and server version.
+.TP
+.B db init
+Create the database if missing, then apply all pending migrations.
+.TP
+.B db migrate
+Apply pending forward-only migrations.
+.TP
+.B db migrate-vault [\-\-yes] [\-\-phrase-stdin] [\-\-purge-old PATH]
+Import a legacy plaintext application-managed cluster into a new encrypted
+cluster, verify source and target digests, and promote the new cluster. The old
+plaintext directory is retained.
+.B \-\-purge-old
+deletes that exact directory after a confirmed migration and requires
+.BR \-\-yes .
+.TP
+.B db status
+Show migration versions, applied state, and checksum status.
+.SS Settings
+.TP
+.B settings show
+Print the settings stored in the vault.
+.TP
+.B settings set [\-\-weight KG] [\-\-birth-year YEAR] [\-\-calibration off|ekf|ou_kalman|mipd] [\-\-history-mode forward|retrospective] [\-\-pk-params JSON|@FILE] [\-\-pk-params-updated-at MS] [\-\-updated-at MS]
+Update settings. The arguments are stored in the encrypted vault.
+.SS Doses
+.TP
+.B doses list \-\-mode transfem|transmasc
+List dose events for a mode.
+.TP
+.B doses add \-\-mode MODE \-\-route ROUTE \-\-ester ESTER \-\-dose-mg N \-\-time-h H [\-\-extras JSON] [\-\-updated-at MS] [\-\-created-at MS] [\-\-id UUID]
+Add a dose event.
+.TP
+.B doses remove \-\-id UUID
+Remove a dose event.
+.SS Backups
+.TP
+.B backup export FILE [\-\-plaintext]
+Export an encrypted backup to
+.IR FILE .
+.B \-\-plaintext
+writes the upstream-compatible JSON in clear text and prints a warning.
+.TP
+.B backup preview FILE [\-\-backup-phrase-stdin]
+Preview a backup without importing it.
+.TP
+.B backup import FILE [\-\-dry-run] [\-\-plaintext] [\-\-backup-phrase-stdin]
+Import a backup. Encrypted files are detected automatically; a plaintext file
+requires
+.BR \-\-plaintext .
+.B \-\-dry-run
+previews without writing.
 .SH GLOBAL OPTIONS
 .TP
+.B \-\-socket-dir DIR
+Unix socket directory.
+.TP
+.B \-\-dbname NAME
+Database name (default
+.IR oyama_hrt ).
+.TP
+.B \-\-user NAME
+Database role (default: current system user).
+.TP
+.B \-\-port PORT
+PostgreSQL port (default 5432).
+.TP
+.B \-\-migrations DIR
+Migration directory.
+.TP
+.B \-\-data-dir DIR
+Managed cluster data directory.
+.TP
+.B \-\-pg-bin-dir DIR
+Directory containing
+.BR initdb ,
+.BR pg_ctl ,
+and
+.BR postgres .
+.TP
 .B \-\-phrase-stdin
-Read the recovery phrase from stdin (disables terminal echo).
+Read the vault phrase from one stdin line.
 .TP
-.B \-\-db \fINAME\fR
-Specify the database name.
+.B \-\-backup-phrase-stdin
+Read a separate backup phrase from one stdin line.
 .TP
-.B \-\-host \fIHOST\fR
-Specify the PostgreSQL host.
-.TP
-.B \-\-port \fIPORT\fR
-Specify the PostgreSQL port.
-.SH SECURITY
-The CLI disables core dumps and marks itself non-dumpable before handling
-vault secrets, to prevent recovery phrase leakage via core files.
+.B \-\-help, \-h
+Print usage.
 .SH FILES
 .TP
-.I ~/.config/oyama-hrt/
-Application configuration.
+.I $XDG_CONFIG_HOME/oyama-hrt/config
+Application configuration and selected backend. Defaults to
+.IR ~/.config/oyama-hrt/config .
+.TP
+.I $XDG_DATA_HOME/oyama-hrt/pgdata
+Default data directory for an application-managed PostgreSQL cluster.
+.SH SECURITY
+The CLI disables core dumps and marks itself non-dumpable before handling
+vault secrets, to prevent recovery phrase leakage via core files. The phrase is
+read from stdin and is never placed in argv, a log, or the clipboard.
+.SH SUPPORT
+Support is self-service.
+.B Do not contact the developer for support.
+Read this man page, the documentation in
+.I docs/
+(start with
+.IR docs/README.md
+and
+.IR docs/SUPPORT.md ),
+and the GitHub wiki first; only open a GitHub issue if those do not answer your
+question.
+.PP
+Wiki:
+.I https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki
+.br
+Issues:
+.I https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/issues
+.br
+Release:
+.I https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/releases/tag/v0.6.0
+.PP
+Report security vulnerabilities privately through
+.IR SECURITY.md ;
+never open a public issue for a vulnerability.
 .SH SEE ALSO
 .BR oyama-hrt-app (1)
 .SH AUTHOR

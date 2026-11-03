@@ -13,7 +13,7 @@ the top-level `Makefile`; the finer CMake options are in the main
 | CMake | 3.21+ | Configure and build |
 | Ninja | A current release | Default `Makefile` generator |
 | C compiler | C99 | PK core |
-| C++ compiler | C++20 | Desktop app and storage layer |
+| C++ compiler | C++11-compatible; default build requests C++20 | Desktop app, storage layer, and compatibility check |
 | PostgreSQL | 14+ | Database server and libpq |
 | libsodium | 1.0.18+ | Vault encryption (Argon2id, AES-GCM, XChaCha20-Poly1305) |
 | nlohmann/json | 3.11+ | Storage and backup JSON parsing |
@@ -154,10 +154,10 @@ and no longer needs to be passed directly.
 
 ### Build profiles
 
-The default build uses Qt 6.4 and C++20-compatible sources compiled as C++11
-(`OYAMA_QT_MAJOR=6`). Select the Qt major with `-DOYAMA_QT_MAJOR=5` for the
-optional Qt 5.15.2 compatibility build, and the C++ standard with
-`-DCMAKE_CXX_STANDARD=11` or `-DCMAKE_CXX_STANDARD=20`. See
+The default build uses Qt 6.4 (`OYAMA_QT_MAJOR=6`) and requests C++20. The
+0.6.0 tree keeps a C++11 compatibility baseline and a C++11 compile check
+(`storage_cxx11_compile`, `compat_test`). Select the Qt major with
+`-DOYAMA_QT_MAJOR=5` for the optional Qt 5.15.2 compatibility build. See
 `docs/security/profiles.md` for the security profiles and
 `CMakePresets.json` for the named configurations.
 
@@ -175,8 +175,8 @@ Use `su` instead of `sudo` on a base NetBSD system where `sudo` is not
 installed. `-j2` is deliberately portable; raise it only when the host has
 enough memory, because each integration test can start a PostgreSQL cluster.
 
-The current release suite has 34 tests. Integration tests return `77` (skip) when
-the PostgreSQL server tools are unavailable. OpenBSD and NetBSD must be rebuilt
+The suite includes unit, integration, CLI, Qt, and security tests. Integration
+tests return `77` (skip) when the PostgreSQL server tools are unavailable. OpenBSD and NetBSD must be rebuilt
 and tested on their native hosts or VMs; a Linux result is not evidence for
 either binary.
 

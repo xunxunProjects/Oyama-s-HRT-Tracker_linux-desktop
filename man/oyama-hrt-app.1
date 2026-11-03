@@ -3,11 +3,13 @@
 oyama-hrt-app \- desktop application for tracking hormone replacement therapy
 .SH SYNOPSIS
 .B oyama-hrt-app
+[\fIOPTIONS\fR]
 .SH DESCRIPTION
 .B oyama-hrt-app
-is a native Qt 6 desktop application for tracking hormone replacement therapy
+is a native Qt desktop application for tracking hormone replacement therapy
 doses, lab results, and pharmacokinetic curves. All data is stored locally in
-an encrypted PostgreSQL database managed by the application.
+an encrypted PostgreSQL database managed by the application. The default build
+uses Qt 6.4 or newer; a Qt 5.15.2 compatibility build is available.
 .PP
 The application provides a graphical interface for:
 .IP \(bu 2
@@ -19,15 +21,64 @@ Importing and exporting encrypted backups
 .IP \(bu 2
 Managing settings, preferences, and calibration data
 .PP
-On first run, the application guides the user through vault setup, including
-recovery phrase generation and PostgreSQL cluster initialization.
+On first run, the application guides the user through vault setup, including a
+24-word BIP39 recovery phrase. The PostgreSQL backend is configured with
+.BR "oyama-hrt-cli db setup" ;
+the shell cannot load data until a backend is available. Existing vaults keep
+their original recovery phrase.
+.SH OPTIONS
+.TP
+.B \-\-self-test
+Boot the shell with the offscreen platform and verify that the vault gate
+covers and disables the application shell while the vault is not unlocked.
+.TP
+.B \-\-screenshot PATH
+Render a screenshot to
+.IR PATH .
+.TP
+.B \-\-page NAME
+Select the initial page for a screenshot run.
 .SH FILES
 .TP
-.I ~/.config/oyama-hrt/
-Application configuration and UI preferences.
+.I $XDG_CONFIG_HOME/oyama-hrt/config
+Application configuration and selected PostgreSQL backend. Defaults to
+.IR ~/.config/oyama-hrt/config .
 .TP
 .I $XDG_DATA_HOME/oyama-hrt/
-Application data directory.
+Application data directory, including the default managed cluster at
+.IR pgdata .
+.SH SECURITY
+The application locks the vault after 15 minutes of inactivity and on quit,
+zeroing the in-memory data encryption key. The
+.I full
+security profile adds a panic lock, a best-effort capture guard, and the
+.BR oyama-keyd
+reference key-isolation deployment. These features have documented limits; see
+.IR docs/security/ .
+.SH SUPPORT
+Support is self-service.
+.B Do not contact the developer for support.
+Read this man page, the documentation in
+.I docs/
+(start with
+.IR docs/README.md
+and
+.IR docs/SUPPORT.md ),
+and the GitHub wiki first; only open a GitHub issue if those do not answer your
+question.
+.PP
+Wiki:
+.I https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki
+.br
+Issues:
+.I https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/issues
+.br
+Release:
+.I https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/releases/tag/v0.6.0
+.PP
+Report security vulnerabilities privately through
+.IR SECURITY.md ;
+never open a public issue for a vulnerability.
 .SH SEE ALSO
 .BR oyama-hrt-cli (1)
 .SH AUTHOR

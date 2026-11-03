@@ -3,10 +3,20 @@
 Thank you for contributing to Oyama's HRT Tracker. This project stores health
 data and has an encrypted vault; security-sensitive changes require care.
 
+## Before asking for help
+
+This project does not provide individual developer support. **Do not contact
+the developer for support. Read the man pages, the documentation in `docs/`,
+and the GitHub wiki first; only open a GitHub issue if those do not answer your
+question.** The full policy, including what to include in an issue, is in
+[`docs/SUPPORT.md`](docs/SUPPORT.md). Use the
+[wiki](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki)
+for user-facing documentation and `SECURITY.md` for vulnerability reports.
+
 ## Before you start
 
-1. Read `README.md`, `SECURITY.md`, and the relevant design note under
-   `docs/superpowers/specs/`.
+1. Read `README.md`, `SECURITY.md`, `docs/README.md`, and the relevant design
+   note under `docs/superpowers/specs/`.
 2. Build and run the baseline tests before editing.
 3. Work on a feature branch and open a pull request against `main`.
 
