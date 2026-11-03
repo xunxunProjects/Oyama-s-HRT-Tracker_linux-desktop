@@ -11,13 +11,24 @@ release or on the latest commit of `main` before reporting.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.5.x   | Yes       |
-| 0.1.x and older | No |
+| 0.6.x   | Yes       |
+| 0.5.x and older | No |
 
-## Reporting a vulnerability
+## Support requests are not vulnerability reports
 
-**Do not open a public issue, discussion, or pull request for a security
-problem.** Use GitHub's private advisory form:
+Ordinary questions, installation problems, build failures, forgotten phrases,
+and "how do I" requests are **support requests**, not security reports.
+**Do not contact the developer for support. Read the man pages, the
+documentation in `docs/`, and the GitHub wiki first; only open a GitHub issue if
+those do not answer your question.** Start with
+[`docs/README.md`](docs/README.md), [`docs/SUPPORT.md`](docs/SUPPORT.md), and
+the
+[GitHub wiki](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki).
+Never use the private advisory form for ordinary support.
+
+Security vulnerabilities are different: report them privately through the
+advisory form below. **Do not open a public issue, discussion, or pull request
+for a security problem.** Use GitHub's private advisory form:
 
 <https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/security/advisories/new>
 
@@ -62,6 +73,8 @@ In scope:
 - the CLI, including phrase input, backup handling, and `db migrate-vault`;
 - the Qt/QML application, vault gate, setup/unlock/lock flow, idle lock, and
   managed PostgreSQL lifecycle;
+- the full-profile panic lock, capture guard, key protocol, and `oyama-keyd`
+  reference implementation;
 - local PostgreSQL configuration written by the application, file modes, Unix
   socket handling, and migration files;
 - documentation that could lead a user into an unsafe setup.
@@ -86,8 +99,20 @@ Out of scope for the application security policy:
 
 The vault protects health records at rest. Encrypted record blobs, `vault_meta`,
 WAL, backups, and a powered-off disk contain ciphertext rather than plaintext
-records. The recovery phrase is never written by the application, logged,
-passed in argv, or offered through a clipboard.
+records. New vaults use a 24-word BIP39 recovery phrase with 256 bits of
+entropy; existing vaults keep their original phrase. The phrase is never
+written by the application, logged, passed in argv, or offered through a
+clipboard without a warning.
+
+The `full` profile adds a panic lock, a best-effort capture guard, and a
+reference Xen key-guest deployment (`oyama-keyd`). These are defence-in-depth
+features with documented limits: the capture guard is best-effort, memory
+wiping cannot reach every copy, and dom0 can read guest memory unless a
+confidential-computing technology is active. See
+[`docs/security/profiles.md`](docs/security/profiles.md),
+[`docs/security/panic.md`](docs/security/panic.md),
+[`docs/security/capture-guard.md`](docs/security/capture-guard.md), and
+[`docs/security/key-isolation.md`](docs/security/key-isolation.md).
 
 The vault does **not** protect against a local attacker who can already act as
 your user while the vault is unlocked. It also cannot promise that Qt, libpq,

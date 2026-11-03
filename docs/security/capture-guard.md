@@ -1,14 +1,19 @@
 # Capture guard
 
-The capture guard is a full-profile feature. It detects screenshot tools and
-blacks out the application window while they are running.
+The capture guard is a full-profile feature. It detects known screenshot tools
+and blacks out the application window while they are running.
 
-## Detection layers
+## Detection
 
-1. Process watcher: polls `/proc` for known screenshot tool names.
-2. D-Bus name watcher (optional): subscribes to `NameOwnerChanged` for
-   `org.kde.KWin.ScreenShot2` and `org.gnome.Shell.Screenshot`.
-3. X11 RECORD (optional): watches for `GetImage` requests.
+1. Process watcher: polls `/proc` for known screenshot tool names. This is the
+   primary implemented layer in 0.6.0.
+2. D-Bus name watcher: `security/src/capture_dbus.c` is a placeholder in this
+   release; it is not an active detection layer.
+3. X11 RECORD: `security/src/capture_x11.c` is a placeholder in this release; it
+   is not an active detection layer.
+
+`OYAMA_CAPTURE_POLL_MS` changes the poll interval (default 100 ms).
+`OYAMA_CAPTURE_PROC_ROOT` changes the proc root for tests.
 
 ## Best-effort warning
 

@@ -1,5 +1,10 @@
 # Handoff: finish the merge, then debug the merged desktop UI
 
+> **Historical document (2026-10-31).** This handoff describes the 0.5.0 merge
+> cycle and is kept for project history. For the current release, see the
+> [0.6.0 release notes](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/releases/tag/v0.6.0)
+> and the [wiki](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki).
+
 Status date: 2026-10-31. This is the handoff for the next session and the next
 pull request. It is deliberately separate from the 0.5.0 release notes.
 

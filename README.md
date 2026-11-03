@@ -6,8 +6,25 @@ are encrypted at the application layer before they reach PostgreSQL. Data moves
 in and out through the upstream `oyama-hrt-complete-backup` format, encrypted by
 default.
 
+**Current version: 0.6.0** (released 2026-11-03). Download it from the
+[0.6.0 release](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/releases/tag/v0.6.0).
+
+## Support
+
+> [!IMPORTANT]
+> **Support is self-service.**
+> **Do not contact the developer for support. Read the man pages, the
+> documentation in `docs/`, and the GitHub wiki first; only open a GitHub issue
+> if those do not answer your question.**
+>
+> Start with `man oyama-hrt-cli`, `man oyama-hrt-app`, [`docs/README.md`](docs/README.md),
+> [`docs/SUPPORT.md`](docs/SUPPORT.md), and the
+> [GitHub wiki](https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki).
+> Security vulnerabilities go through [`SECURITY.md`](SECURITY.md), never a
+> public issue.
+
 **Status: model core, encrypted storage, legacy migration, encrypted backups,
-and an early vault-gated Qt/QML shell implemented (M9).** The C99
+security profiles, and a vault-gated Qt/QML shell implemented (M9).** The C99
 pharmacokinetic core is in `core/`, with a strict C test and a comparison
 harness that checks it against the upstream TypeScript model to machine
 precision. `storage/` contains the PostgreSQL schema, forward-only migration
@@ -16,8 +33,10 @@ application-managed cluster lifecycle, and the LWW/tombstone backup merge;
 `cli/` exposes setup, vault, migration, data, and backup commands. `app/` has a
 Qt 6/QML shell with setup/unlock/lock gates and Overview, Add dose, History, and
 Settings screens wired to the encrypted vault and the PK model, including
-route-specific dose extras and in-place dose editing. It is an early milestone:
-Labs, Plan, Supplies, Forecast, distribution packaging, and full upstream UI
+route-specific dose extras and in-place dose editing. Version 0.6.0 also ships
+`off`/`standard`/`full` security profiles, 24-word BIP39 recovery phrases,
+memory hygiene and panic lock, a best-effort capture guard, and a reference Xen
+key-isolation deployment. Labs, Plan, Supplies, Forecast, and full upstream UI
 parity are still ahead.
 
 - Design: [`docs/superpowers/specs/2026-10-29-linux-desktop-design.md`](docs/superpowers/specs/2026-10-29-linux-desktop-design.md)
@@ -29,13 +48,18 @@ parity are still ahead.
 - Changelog: [`CHANGELOG.md`](CHANGELOG.md)
 - Donations: [`DONATIONS.md`](DONATIONS.md)
 - Documentation index: [`docs/README.md`](docs/README.md)
+- Support policy: [`docs/SUPPORT.md`](docs/SUPPORT.md)
+- Security policy: [`SECURITY.md`](SECURITY.md)
 - Wiki: <https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/wiki>
+- Release 0.6.0: <https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/releases/tag/v0.6.0>
+- Release verification: <https://github.com/xunxunProjects/Oyama-s-HRT-Tracker_linux-desktop/releases/download/v0.6.0/VERIFYING.md>
 
 ## Build
 
 Requirements: CMake 3.21+, Ninja (or another CMake generator), a C99 compiler,
-a C++20 compiler, libpq 14 or newer, libsodium 1.0.18 or newer, and
-nlohmann/json 3.11 or newer. PostgreSQL
+a C++ compiler (the default build requests C++20; the tree keeps a C++11
+compatibility baseline and compile check), libpq 14 or newer, libsodium 1.0.18
+or newer, and nlohmann/json 3.11 or newer. PostgreSQL
 server 14+ is needed for the database and for the integration tests. For the
 application-managed cluster, `initdb`, `pg_ctl`, and `postgres` must be on
 `PATH` or in a directory passed with `--pg-bin-dir`/`PG_BINDIR`. The Qt shell
@@ -93,8 +117,16 @@ tree, then in `<prefix>/share/oyama-hrt/migrations`. Override the location with
 
 ## Build profiles
 
-`OYAMA_SECURITY_PROFILE` selects `off`, `standard`, or `full`; the default is
-`standard`. Qt 6.4+ is the default for every profile; the optional
+The build supports three security profiles selected with
+`-DOYAMA_SECURITY_PROFILE=off|standard|full` (default `standard`):
+
+- `off` — debug profile; disables the extra security modules but still uses the
+  vault.
+- `standard` — default for ordinary users.
+- `full` — secure release; enables capture guard, panic lock, and key isolation,
+  and is the only profile that ships `oyama-keyd`.
+
+Qt 6.4+ is the default for every profile; the optional
 `-DOYAMA_QT_MAJOR=5` selects the Qt 5.15.2 compatibility build. With the
 Makefile wrapper, `make` builds `standard` and `make SECURITY=0` builds `off`.
 
@@ -103,20 +135,6 @@ table, the compiler-hardening differences, and the
 `oyama-hrt-cli version --verbose` report. The pinned dependency sources and the
 offline bootstrap workflow are in
 [`docs/dependencies.md`](docs/dependencies.md#vendored-build).
-
-## Build profiles
-
-The build supports three security profiles selected with
-`-DOYAMA_SECURITY_PROFILE=off|standard|full` (default `standard`):
-
-- `off` — debug profile; disables the extra security modules but still uses the
-  vault.
-- `standard` — default for ordinary users.
-- `full` — secure release; enables capture guard, panic lock, and key isolation.
-
-See [`docs/security/profiles.md`](docs/security/profiles.md) for the full feature
-table. The Makefile wrapper maps `SECURITY=1` (default) to `standard` and
-`SECURITY=0` to `off`.
 
 ## Local database
 
@@ -136,7 +154,7 @@ For scripts and tests, select a backend explicitly:
 
 ```sh
 # Use an existing local server (recommended when one is already running).
-build/oyama-hrt-cli db setup --existing --yes --socket-dir /run/postgresql
+build/oyama-hrt-cli --socket-dir /run/postgresql db setup --existing --yes
 
 # Create and start an application-managed cluster.
 build/oyama-hrt-cli db setup --managed --yes
@@ -156,13 +174,15 @@ phrase:
 build/oyama-hrt-cli vault setup
 ```
 
-The normal interactive setup generates seven EFF Diceware words (about 90 bits
-of entropy), prints them once, and asks you to write them down and re-enter
-three positions. Write the phrase on paper, keep it offline, and store it
-somewhere you trust, such as a safe. There is no password reset, recovery key,
-or support override: losing the phrase makes the vault permanently
-unreadable. Do not paste it into a clipboard, a chat window, a shell argument,
-or a file on the same machine.
+The normal interactive setup generates a 24-word BIP39 mnemonic (256 bits of
+entropy plus an 8-bit checksum), prints it once, and asks you to write it down
+and re-enter three positions. Write the phrase on paper, keep it offline, and
+store it somewhere you trust, such as a safe. There is no password reset,
+recovery key, or support override: losing the phrase makes the vault
+permanently unreadable. Do not paste it into a clipboard, a chat window, a
+shell argument, or a file on the same machine. Existing vaults keep their
+original phrase; `vault change-phrase` may upgrade a vault to a BIP39 phrase,
+but no migration is forced.
 
 `vault setup --phrase-stdin` accepts an externally supplied phrase for
 provisioning and tests; normal users should use the interactive generator. The
@@ -198,12 +218,12 @@ build/oyama-hrt-cli vault setup
 build/oyama-hrt-cli vault unlock-check --phrase-stdin
 build/oyama-hrt-cli vault change-phrase --phrase-stdin --new-phrase-stdin
 build/oyama-hrt-cli db migrate-vault --yes --phrase-stdin
-build/oyama-hrt-cli settings set --weight 70 --birth-year 1995 --phrase-stdin
-build/oyama-hrt-cli doses add --phrase-stdin \
+build/oyama-hrt-cli --phrase-stdin settings set --weight 70 --birth-year 1995
+build/oyama-hrt-cli --phrase-stdin doses add \
   --mode transfem --route oral --ester E2 --dose-mg 2 --time-h 480000
-build/oyama-hrt-cli backup export ~/oyama-backup.json --phrase-stdin
-build/oyama-hrt-cli backup preview ~/oyama-backup.json --phrase-stdin
-build/oyama-hrt-cli backup import ~/oyama-backup.json --phrase-stdin
+build/oyama-hrt-cli --phrase-stdin backup export ~/oyama-backup.oyamaebk
+build/oyama-hrt-cli --phrase-stdin backup preview ~/oyama-backup.oyamaebk
+build/oyama-hrt-cli --phrase-stdin backup import ~/oyama-backup.oyamaebk
 ```
 
 Every command that needs the vault reads one line from stdin when given
@@ -244,7 +264,7 @@ confirmed migration and requires `--yes`. The app performs the same migration in
 a background worker when the configured backend is managed. For an existing
 (non-managed) server, the app refuses to migrate in place: export with the old
 binary to JSON, then import that file with
-`backup import old.json --plaintext --phrase-stdin`.
+`oyama-hrt-cli --phrase-stdin backup import old.json --plaintext`.
 
 ### Backup import/export
 
@@ -315,24 +335,29 @@ guaranteed erasure.
 
 ## Project status
 
-Version 0.6.0 is the first release with the encrypted local vault. The C99
-pharmacokinetic core has been compared point-by-point with the upstream
-TypeScript model across 36 scenarios and 413,323 fields, with a maximum
-relative error of about 1.1e-15. The PostgreSQL storage layer, migration
+Version 0.6.0 is a security-focused release. The encrypted local vault first
+shipped in 0.5.0; 0.6.0 adds `off`/`standard`/`full` security profiles, pinned
+third-party sources with checksums and an offline bootstrap path, 24-word BIP39
+recovery phrases for new vaults, memory hygiene and a full-profile panic lock, a
+best-effort full-profile capture guard, and a reference Xen key-isolation
+deployment. The C99 pharmacokinetic core has been compared point-by-point with
+the upstream TypeScript model across 36 scenarios and 413,323 fields, with a
+maximum relative error of about 1.1e-15. The PostgreSQL storage layer, migration
 runner, managed cluster lifecycle, application-level vault, legacy plaintext
 migration, encrypted backups, first-run setup, LWW/tombstone merge, and the
 CLI are implemented.
 
-The first launch generates a seven-word recovery phrase, shows it once, and
-asks you to write it down. There is no recovery service and no back door; if
-the phrase is lost, the data is lost. Backups are encrypted by default;
-`--plaintext` exports the upstream-compatible JSON only when explicitly
-requested.
+The first launch generates a 24-word BIP39 recovery phrase, shows it once, and
+asks you to write it down. Existing vaults keep their original phrase. There is
+no recovery service and no back door; if the phrase is lost, the data is lost.
+Backups are encrypted by default; `--plaintext` exports the
+upstream-compatible JSON only when explicitly requested.
 
-The Qt 6/QML shell implements the vault setup, unlock, and lock screens plus
-Overview, Add dose, History, and Settings. Plan, Labs, Supplies, Forecast,
-distribution packaging, and the remaining upstream UI parity work are still
-ahead.
+The release publishes nine platform archives (Linux, FreeBSD, and OpenBSD
+amd64, each in `off`, `standard`, and `full`) plus a source tarball. The Qt
+6/QML shell implements the vault setup, unlock, and lock screens plus Overview,
+Add dose, History, and Settings. Plan, Labs, Supplies, Forecast, and the
+remaining upstream UI parity work are still ahead.
 
 ## Repository layout
 
@@ -346,7 +371,7 @@ vault/
   src/                 libpq/libsodium vault implementation
   tests/               crypto and v1 vault tests
 storage/
-  include/oyama/       C++20 storage API (vault, connection, migrations, repositories)
+  include/oyama/       C++ storage API (vault, connection, migrations, repositories)
   src/                 libpq implementation
   migrations/          forward-only SQL schema migrations
   tests/               unit and PostgreSQL integration tests

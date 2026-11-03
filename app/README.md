@@ -1,4 +1,4 @@
-# Desktop application shell (M2)
+# Desktop application shell (M9)
 
 This directory contains the Qt 6 / QML desktop shell for Linux and BSD.  It is
 intentionally a native Qt Quick application: no Qt WebEngine, Electron, Node,
@@ -6,7 +6,7 @@ or embedded browser.
 
 ## Current scope
 
-The M2 shell is implemented and uses the real local database and the C99
+The M9 shell is implemented and uses the real local database and the C99
 pharmacokinetic model.  It currently provides:
 
 - **Overview** — current E2, CPA and testosterone values, the modeled E2 curve,
@@ -23,8 +23,8 @@ pharmacokinetic model.  It currently provides:
 - **Single-window shell** — sidebar navigation, a page header, light/dark/system
   themes, and English, Chinese, Russian, and Persian UI text, with right-to-left
   layout for Persian.
-- **Vault gate** — first run generates a seven-word recovery phrase, asks you to
-  write it down and re-enter three positions, then unlocks the vault. Later
+- **Vault gate** — first run generates a 24-word BIP39 recovery phrase, asks you
+  to write it down and re-enter three positions, then unlocks the vault. Later
   launches show an unlock screen. A header button locks immediately; the app
   also locks after 15 minutes of inactivity and on quit.
 - **Managed cluster lifecycle** — if the saved configuration selects a managed
@@ -43,8 +43,9 @@ oyama-hrt-cli db setup
 
 ## Build and run
 
-Requirements: CMake 3.21+, a C++20 compiler, Qt 6.4+ with Core, Qml, Quick and
-Quick Controls 2, libpq, libsodium, and nlohmann/json.
+Requirements: CMake 3.21+, a C++ compiler (the default build requests C++20;
+the tree keeps a C++11 compatibility baseline), Qt 6.4+ with Core, Qml, Quick
+and Quick Controls 2, libpq, libsodium, and nlohmann/json.
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug
@@ -108,13 +109,12 @@ downsampled to roughly 700 points.
 ## Known gaps
 
 - Plan/What-if, Labs, Supplies, Forecast and backup import/export UI are not in
-  the M2 shell.
+  the M9 shell.
 - PK parsing stores the calibration method/history but calibration itself is
   not applied to the curve yet.
-- No i18n yet; the shell strings are English.
 - No single-instance guard, tray integration, or desktop notifications yet.
-- No packaging, install rules beyond the executable, or BSD/X11/Wayland test
-  matrix yet.
+- Release archives exist for Linux, FreeBSD, and OpenBSD, but the shell still
+  lacks a full BSD/X11/Wayland test matrix.
 - Errors are shown in the status bar; there is no modal recovery flow.
 
 ## Privacy
