@@ -62,7 +62,7 @@ using oyama::storage::VaultSettingsRepository;
 using oyama::storage::VaultState;
 using oyama::storage::VaultStore;
 
-constexpr const char* kVersion = "0.5.0";
+constexpr const char* kVersion = "0.6.0";
 
 struct GlobalOptions {
     ConnectionConfig config;

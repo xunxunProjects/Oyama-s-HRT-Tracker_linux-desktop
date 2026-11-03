@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-11-03
 
 - Pin Qt, PostgreSQL, libsodium, nlohmann/json, and Xen to checksum-verified
   source archives, with an offline bootstrap script and a CycloneDX SBOM.
@@ -12,6 +12,9 @@
   shows a solid gray screen.  Add a best-effort capture guard (full profile)
   that blacks out the window on screenshot detection.  Add a versioned key
   protocol codec and a reference Xen key-isolation deployment (full profile).
+- C++11 baseline with Qt 6.4 default and Qt 5.15.2 compatibility.
+- 9 cross-platform binaries (Linux, FreeBSD, OpenBSD × 3 profiles). NetBSD is
+  not built for this release because the NetBSD build machine was unavailable.
 
 ## 0.5.1 — 2026-11-01
 

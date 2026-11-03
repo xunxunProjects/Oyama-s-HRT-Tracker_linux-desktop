@@ -315,7 +315,7 @@ guaranteed erasure.
 
 ## Project status
 
-Version 0.5.0 is the first release with the encrypted local vault. The C99
+Version 0.6.0 is the first release with the encrypted local vault. The C99
 pharmacokinetic core has been compared point-by-point with the upstream
 TypeScript model across 36 scenarios and 413,323 fields, with a maximum
 relative error of about 1.1e-15. The PostgreSQL storage layer, migration
