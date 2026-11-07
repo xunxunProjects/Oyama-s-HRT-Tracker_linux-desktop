@@ -122,7 +122,8 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_library(oyama_pk STATIC
-    core/src/pk.c)
+    core/src/pk.c
+    core/src/pk_common.c)
 target_include_directories(oyama_pk
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/core/include)
