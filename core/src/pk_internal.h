@@ -25,5 +25,14 @@ typedef struct oyama_pk_route_module {
 const oyama_pk_route_module *oyama_pk_module_for(oyama_pk_route route,
                                                 oyama_pk_ester ester);
 
-/* Resolved parameters for one event are declared in pk_common.h. */
+extern const oyama_pk_route_module oyama_pk_module_e2_injection;
+extern const oyama_pk_route_module oyama_pk_module_e2_sublingual;
+extern const oyama_pk_route_module oyama_pk_module_e2_gel;
+extern const oyama_pk_route_module oyama_pk_module_e2_patch;
+extern const oyama_pk_route_module oyama_pk_module_e2_oral;
+extern const oyama_pk_route_module oyama_pk_module_cpa_oral;
+extern const oyama_pk_route_module oyama_pk_module_t_injection;
+extern const oyama_pk_route_module oyama_pk_module_t_gel;
+extern const oyama_pk_route_module oyama_pk_module_t_patch;
+extern const oyama_pk_route_module oyama_pk_module_t_oral;/* Resolved parameters for one event are declared in pk_common.h. */
 #endif /* OYAMA_PK_INTERNAL_H */

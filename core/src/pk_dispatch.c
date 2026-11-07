@@ -172,6 +172,11 @@ void oyama_pk_resolve_params(const oyama_pk_dose *event,
                            const oyama_pk_params *p,
                            pk_params *out)
 {
+    const oyama_pk_route_module *mod = oyama_pk_module_for(event->route, event->ester);
+    if (mod != NULL) {
+        mod->resolve_params(event, birth_year, p, out);
+        return;
+    }
     /* Every route sets only the fields it uses; k2_slow is optional upstream.
      * Clear first so a previous event's optional rate cannot leak into this
      * one's max-lifetime calculation. */
@@ -389,3 +394,28 @@ void oyama_pk_resolve_params(const oyama_pk_dose *event,
 
 /* ------------------------------------------------------------------------- */
 /* ------------------------------------------------------------------------- */
+
+static const oyama_pk_route_module *const OYAMA_PK_MODULES[] = {
+    &oyama_pk_module_e2_injection,
+    &oyama_pk_module_e2_sublingual,
+    &oyama_pk_module_e2_gel,
+    &oyama_pk_module_e2_patch,
+    &oyama_pk_module_e2_oral,
+    &oyama_pk_module_cpa_oral,
+    &oyama_pk_module_t_injection,
+    &oyama_pk_module_t_gel,
+    &oyama_pk_module_t_patch,
+    &oyama_pk_module_t_oral,
+    NULL
+};
+const oyama_pk_route_module *oyama_pk_module_for(oyama_pk_route route,
+                                                oyama_pk_ester ester)
+{
+    size_t i;
+    for (i = 0; OYAMA_PK_MODULES[i] != NULL; i++) {
+        if (OYAMA_PK_MODULES[i]->owns(route, ester)) {
+            return OYAMA_PK_MODULES[i];
+        }
+    }
+    return NULL;
+}
