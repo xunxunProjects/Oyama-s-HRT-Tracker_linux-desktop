@@ -45,7 +45,10 @@ typedef enum {
     OYAMA_PK_ROUTE_PATCH_APPLY = 2,
     OYAMA_PK_ROUTE_PATCH_REMOVE = 3,
     OYAMA_PK_ROUTE_GEL = 4,
-    OYAMA_PK_ROUTE_ORAL = 5
+    OYAMA_PK_ROUTE_ORAL = 5,
+    OYAMA_PK_ROUTE_NASAL = 6,
+    OYAMA_PK_ROUTE_SC = 7,
+    OYAMA_PK_ROUTE_PELLET = 8
 } oyama_pk_route;
 
 /* Values are stable; keep them in sync with the upstream `Ester` enum. */

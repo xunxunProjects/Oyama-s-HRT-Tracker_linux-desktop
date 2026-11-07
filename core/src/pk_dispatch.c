@@ -403,9 +403,12 @@ static const oyama_pk_route_module *const OYAMA_PK_MODULES[] = {
     &oyama_pk_module_e2_oral,
     &oyama_pk_module_cpa_oral,
     &oyama_pk_module_t_injection,
+    &oyama_pk_module_t_sc,
     &oyama_pk_module_t_gel,
     &oyama_pk_module_t_patch,
     &oyama_pk_module_t_oral,
+    &oyama_pk_module_t_nasal,
+    &oyama_pk_module_t_pellet,
     NULL
 };
 const oyama_pk_route_module *oyama_pk_module_for(oyama_pk_route route,

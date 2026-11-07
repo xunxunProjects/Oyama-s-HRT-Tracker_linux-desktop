@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Modularize the C99 PK core into route modules (`transfem/*`, `transmasc/*`),
+  with a shared kernel, dispatch registry, and split public headers, while
+  preserving numerical parity with upstream.
+- Add nasal, subcutaneous, and pellet testosterone routes plus bicalutamide
+  (enabled) scenario coverage.
+
 ## 0.6.0 — 2026-11-03
 
 - Pin Qt, PostgreSQL, libsodium, nlohmann/json, and Xen to checksum-verified

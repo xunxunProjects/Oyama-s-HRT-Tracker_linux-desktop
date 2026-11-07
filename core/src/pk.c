@@ -250,7 +250,8 @@ static double event_amount(const oyama_pk_dose *event,
     if (tau < 0.0) return 0.0;
 
     switch (event->route) {
-    case OYAMA_PK_ROUTE_INJECTION: {
+    case OYAMA_PK_ROUTE_INJECTION:
+    case OYAMA_PK_ROUTE_SC: {
         const double dose_fast = event->dose_mg * p->frac_fast;
         const double dose_slow = event->dose_mg * (1.0 - p->frac_fast);
         if (p->k2 > 0.0) {
@@ -263,6 +264,7 @@ static double event_amount(const oyama_pk_dose *event,
 
     case OYAMA_PK_ROUTE_GEL:
     case OYAMA_PK_ROUTE_ORAL:
+    case OYAMA_PK_ROUTE_NASAL:
         if (event->route == OYAMA_PK_ROUTE_ORAL &&
             event->ester == OYAMA_PK_ESTER_CPA) {
             const double beta = log(2.0) / 43.9;
@@ -290,6 +292,7 @@ static double event_amount(const oyama_pk_dose *event,
     }
 
     case OYAMA_PK_ROUTE_PATCH_APPLY:
+    case OYAMA_PK_ROUTE_PELLET:
         if (p->rate_mg_h > 0.0) {
             if (tau <= wear_h) {
                 return (p->rate_mg_h / p->k3) * (1.0 - exp(-p->k3 * tau));
@@ -446,13 +449,15 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
             if (sorted[i].route == OYAMA_PK_ROUTE_PATCH_REMOVE) continue;
             models[mi].event_index = i;
             oyama_pk_resolve_params(&sorted[i], birth_year, &params, &models[mi].params);
-            if (sorted[i].route == OYAMA_PK_ROUTE_PATCH_APPLY) {
+            if (sorted[i].route == OYAMA_PK_ROUTE_PATCH_APPLY ||
+                sorted[i].route == OYAMA_PK_ROUTE_PELLET) {
                 wear = oyama_pk_common_patch_wear_h(i, sorted, remove_time);
             }
             models[mi].wear_h = wear;
             models[mi].max_lifetime_h =
                 oyama_pk_common_max_lifetime_h(&models[mi].params, wear,
-                               sorted[i].route == OYAMA_PK_ROUTE_PATCH_APPLY);
+                               sorted[i].route == OYAMA_PK_ROUTE_PATCH_APPLY ||
+                               sorted[i].route == OYAMA_PK_ROUTE_PELLET);
             mi++;
         }
     }
