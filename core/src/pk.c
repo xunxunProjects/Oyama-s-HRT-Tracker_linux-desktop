@@ -1,5 +1,5 @@
 #include "oyama/pk.h"
-
+#include "pk_internal.h"
 #include <float.h>
 #include <math.h>
 #include <stdint.h>
