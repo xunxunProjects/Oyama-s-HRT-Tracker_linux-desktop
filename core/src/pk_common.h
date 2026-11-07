@@ -44,3 +44,6 @@ double oyama_pk_common_max_lifetime_h(const pk_params *p, double wear_h,
 
 void oyama_pk_common_sort_events_by_time(size_t *order, size_t n,
                                          const oyama_pk_dose *events);
+
+void oyama_pk_resolve_params(const oyama_pk_dose *event, int birth_year,
+                            const oyama_pk_params *params, pk_params *out);

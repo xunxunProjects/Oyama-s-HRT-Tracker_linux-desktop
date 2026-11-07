@@ -123,7 +123,8 @@ endif()
 
 add_library(oyama_pk STATIC
     core/src/pk.c
-    core/src/pk_common.c)
+    core/src/pk_common.c
+    core/src/pk_dispatch.c)
 target_include_directories(oyama_pk
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/core/include)
