@@ -71,6 +71,9 @@ static oyama_pk_route parse_route(const char *text)
     if (strcmp(text, "patchRemove") == 0) return OYAMA_PK_ROUTE_PATCH_REMOVE;
     if (strcmp(text, "gel") == 0) return OYAMA_PK_ROUTE_GEL;
     if (strcmp(text, "oral") == 0) return OYAMA_PK_ROUTE_ORAL;
+    if (strcmp(text, "nasal") == 0) return OYAMA_PK_ROUTE_NASAL;
+    if (strcmp(text, "sc") == 0) return OYAMA_PK_ROUTE_SC;
+    if (strcmp(text, "pellet") == 0) return OYAMA_PK_ROUTE_PELLET;
     fprintf(stderr, "dump: bad route: %s\n", text);
     exit(2);
 }

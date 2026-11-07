@@ -1,6 +1,6 @@
 # PK Core Modularization Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Reorganize the C99 pharmacokinetic core in `core/` so its source tree mirrors the upstream route-module layout (`transfem/*` and `transmasc/*`, one module per drug × route), while preserving the public `oyama/pk.h` ABI and the numerical results validated by `tools/compare`.
 
@@ -42,7 +42,7 @@ Each task ends with a build, `pk_smoke_test`, the compare harness, a dev diary e
 
 - [x] Run the compare harness on the current tree and record the result.
 - [x] Write this plan.
-- [ ] Add the dev diary entry and commit.
+- [x] Add the dev diary entry and commit.
 
 **Verification:** `git status` shows only the plan and diary; `ctest -R pk_smoke_test` passes.
 
@@ -69,9 +69,9 @@ typedef struct oyama_pk_route_module {
 } oyama_pk_route_module;
 ```
 
-- [ ] Add the internal header with the vtable and a registry declaration.
-- [ ] Include it from `pk.c` without changing behavior.
-- [ ] Build and run `pk_smoke_test`.
+- [x] Add the internal header with the vtable and a registry declaration.
+- [x] Include it from `pk.c` without changing behavior.
+- [x] Build and run `pk_smoke_test`.
 
 **Verification:** build clean; smoke test passes.
 
@@ -85,9 +85,9 @@ typedef struct oyama_pk_route_module {
 - Modify: `core/src/pk.c` (call into common; remove duplicated statics)
 - Modify: `CMakeLists.txt`
 
-- [ ] Move `exp_div_diff1`, `exp_div_diff2`, `analytic2c`, `analytic3c`, `one_comp_amount`, `cpa_wslow`, `patch_removal_times`, `max_lifetime_h`, age helpers into `pk_common.c`.
-- [ ] Expose them through `pk_common.h`.
-- [ ] Build, smoke test, compare harness.
+- [x] Move `exp_div_diff1`, `exp_div_diff2`, `analytic2c`, `analytic3c`, `one_comp_amount`, `cpa_wslow`, `patch_removal_times`, `max_lifetime_h`, age helpers into `pk_common.c`.
+- [x] Expose them through `pk_common.h`.
+- [x] Build, smoke test, compare harness.
 
 **Verification:** 0 fields above `1e-6`.
 
@@ -100,9 +100,9 @@ typedef struct oyama_pk_route_module {
 - Modify: `core/src/pk_internal.h`
 - Modify: `core/src/pk.c`
 
-- [ ] Implement `oyama_pk_module_for(route, ester)` mirroring upstream `moduleFor()`.
-- [ ] Replace the inline `bioavailability()` and `resolve_params()` switches with dispatch calls, keeping the zeroed fallback.
-- [ ] Build, smoke test, compare harness.
+- [x] Implement `oyama_pk_module_for(route, ester)` mirroring upstream `moduleFor()`.
+- [x] Replace the inline `bioavailability()` and `resolve_params()` switches with dispatch calls, keeping the zeroed fallback.
+- [x] Build, smoke test, compare harness.
 
 **Verification:** module ownership table matches upstream; 0 fields above `1e-6`.
 
@@ -114,9 +114,9 @@ typedef struct oyama_pk_route_module {
 - Create: `core/src/transfem/e2_injection.c`, `e2_sublingual.c`, `e2_gel.c`, `e2_patch.c`, `e2_oral.c`, `cpa_oral.c`, `bica_oral.c`
 - Modify: `CMakeLists.txt`, `pk_dispatch.c`
 
-- [ ] Move each route's bioavailability, resolve_params, and amount logic into its module file.
-- [ ] Register modules in the dispatch table.
-- [ ] Build, smoke test, compare harness.
+- [x] Move each route's bioavailability, resolve_params, and amount logic into its module file.
+- [x] Register modules in the dispatch table.
+- [x] Build, smoke test, compare harness.
 
 **Verification:** transfeminine scenarios unchanged.
 
@@ -128,9 +128,9 @@ typedef struct oyama_pk_route_module {
 - Create: `core/src/transmasc/t_injection.c`, `t_sc.c`, `t_gel.c`, `t_patch.c`, `t_oral.c`, `t_nasal.c`, `t_pellet.c`
 - Modify: `CMakeLists.txt`, `pk_dispatch.c`
 
-- [ ] Move each route's logic into its module file.
-- [ ] Register modules in the dispatch table.
-- [ ] Build, smoke test, compare harness.
+- [x] Move each route's logic into its module file.
+- [x] Register modules in the dispatch table.
+- [x] Build, smoke test, compare harness.
 
 **Verification:** transmasculine scenarios unchanged.
 
@@ -142,9 +142,9 @@ typedef struct oyama_pk_route_module {
 - Modify: `core/include/oyama/pk.h`
 - Create: `core/include/oyama/pk/transfem.h`, `transmasc.h`, and per-route headers if needed
 
-- [ ] Split declarations/documentation by sex and route while keeping `pk.h` as an umbrella include.
-- [ ] Update consumers if include paths change.
-- [ ] Build desktop and CLI.
+- [x] Split declarations/documentation by sex and route while keeping `pk.h` as an umbrella include.
+- [x] Update consumers if include paths change.
+- [x] Build desktop and CLI.
 
 **Verification:** all targets build; smoke test passes.
 
@@ -156,9 +156,9 @@ typedef struct oyama_pk_route_module {
 - Modify: upstream dumper and `tools/compare` scenarios
 - Modify: `core/src/transmasc/*.c`, `core/src/transfem/bica_oral.c`
 
-- [ ] Add scenarios for nasal, subcutaneous, pellet, and bicalutamide (enabled) routes.
-- [ ] Implement any missing behavior in the C modules.
-- [ ] Regenerate compare outputs and verify 0 fields above `1e-6`.
+- [x] Add scenarios for nasal, subcutaneous, pellet, and bicalutamide (enabled) routes.
+- [x] Implement any missing behavior in the C modules.
+- [x] Regenerate compare outputs and verify 0 fields above `1e-6`.
 
 **Verification:** expanded scenario set passes.
 
@@ -170,9 +170,9 @@ typedef struct oyama_pk_route_module {
 - Modify: `docs/spec/divergences.md` if any intentional deviation remains
 - Modify: `CHANGELOG.md`
 
-- [ ] Run full test suite and ASan build.
-- [ ] Run compare harness on expanded scenarios.
-- [ ] Update documentation and changelog.
-- [ ] Commit.
+- [x] Run full test suite and ASan build.
+- [x] Run compare harness on expanded scenarios.
+- [x] Update documentation and changelog.
+- [x] Commit.
 
 **Verification:** full suite green; compare harness green.

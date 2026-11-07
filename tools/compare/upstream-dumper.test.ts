@@ -28,6 +28,7 @@ interface Scenario {
     weight: number;
     birthYear: number | null;
     events: DoseEvent[];
+    options?: Record<string, unknown>;
 }
 
 let seq = 0;
@@ -45,8 +46,8 @@ const ev = (
 const at = (offsetH: number) => NOW_H + offsetH;
 
 const scenarios: Scenario[] = [];
-const scenario = (id: string, events: DoseEvent[], weight = 70, birthYear: number | null = null) => {
-    scenarios.push({ id, weight, birthYear, events });
+const scenario = (id: string, events: DoseEvent[], weight = 70, birthYear: number | null = null, options: Record<string, unknown> = {}) => {
+    scenarios.push({ id, weight, birthYear, events, options });
 };
 
 scenario('oral_e2_single', [ev(Route.oral, Ester.E2, 2, at(-24))]);
@@ -154,6 +155,14 @@ scenario('patch_same_time_tiebreak', [
 scenario('t_injection_tc', [ev(Route.injection, Ester.TC, 250, at(-240))]);
 scenario('t_injection_te', [ev(Route.injection, Ester.TE, 250, at(-240))]);
 scenario('t_injection_tu', [ev(Route.injection, Ester.TU, 1000, at(-240))]);
+scenario('t_nasal', [ev(Route.nasal, Ester.T, 10, at(-12))]);
+scenario('t_sc_tc', [ev(Route.sc, Ester.TC, 250, at(-240))]);
+scenario('t_pellet', [ev(Route.pellet, Ester.T, 75, at(-100))]);
+scenario('bica_enabled', [
+    ev(Route.oral, Ester.E2, 2, at(-24)),
+    ev(Route.oral, Ester.SPIRO, 100, at(-24)),
+    ev(Route.oral, Ester.BICA, 50, at(-24)),
+], 70, null, { bicalutamide: true });
 scenario('age_e2_young', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 1990);
 scenario('age_e2_older', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 1950);
 scenario('age_t_older', [ev(Route.injection, Ester.TC, 250, at(-240))], 70, 1950);
@@ -209,7 +218,7 @@ test('dump upstream PK scenarios and results', () => {
                 ].join('\t'),
             );
         }
-        const sim = runSimulation(s.events, s.weight, s.birthYear);
+        const sim = runSimulation(s.events, s.weight, s.birthYear, s.options ?? {});
         results[s.id] = sim
             ? {
                   ...sim,

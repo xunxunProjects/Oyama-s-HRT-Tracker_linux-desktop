@@ -132,9 +132,12 @@ add_library(oyama_pk STATIC
     core/src/transfem/e2_oral.c
     core/src/transfem/cpa_oral.c
     core/src/transmasc/t_injection.c
+    core/src/transmasc/t_sc.c
     core/src/transmasc/t_gel.c
     core/src/transmasc/t_patch.c
-    core/src/transmasc/t_oral.c)
+    core/src/transmasc/t_oral.c
+    core/src/transmasc/t_nasal.c
+    core/src/transmasc/t_pellet.c)
 target_include_directories(oyama_pk
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/core/include)
