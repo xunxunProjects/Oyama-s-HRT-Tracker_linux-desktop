@@ -122,7 +122,19 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 add_library(oyama_pk STATIC
-    core/src/pk.c)
+    core/src/pk.c
+    core/src/pk_common.c
+    core/src/pk_dispatch.c
+    core/src/transfem/e2_injection.c
+    core/src/transfem/e2_sublingual.c
+    core/src/transfem/e2_gel.c
+    core/src/transfem/e2_patch.c
+    core/src/transfem/e2_oral.c
+    core/src/transfem/cpa_oral.c
+    core/src/transmasc/t_injection.c
+    core/src/transmasc/t_gel.c
+    core/src/transmasc/t_patch.c
+    core/src/transmasc/t_oral.c)
 target_include_directories(oyama_pk
     PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}/core/include)
