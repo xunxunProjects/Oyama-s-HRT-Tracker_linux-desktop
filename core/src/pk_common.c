@@ -371,7 +371,7 @@ double oyama_pk_common_patch_wear_h(size_t index, const oyama_pk_dose *events,
 
 double oyama_pk_common_max_lifetime_h(const pk_params *p, double wear_h, int is_patch)
 {
-    double rates[5];
+    double rates[6];
     int n = 0;
     double min_rate;
     int i;
@@ -387,6 +387,7 @@ double oyama_pk_common_max_lifetime_h(const pk_params *p, double wear_h, int is_
     if (p->k2 > 0.0) rates[n++] = p->k2;
     if (p->k2_slow > 0.0) rates[n++] = p->k2_slow;
     if (p->k3 > 0.0) rates[n++] = p->k3;
+    if (p->k3_fast > 0.0) rates[n++] = p->k3_fast;
     if (n == 0) return INFINITY;
     min_rate = rates[0];
     for (i = 1; i < n; i++) if (rates[i] < min_rate) min_rate = rates[i];

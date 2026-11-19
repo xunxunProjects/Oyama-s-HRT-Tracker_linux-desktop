@@ -166,6 +166,19 @@ scenario('bica_enabled', [
 scenario('age_e2_young', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 1990);
 scenario('age_e2_older', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 1950);
 scenario('age_t_older', [ev(Route.injection, Ester.TC, 250, at(-240))], 70, 1950);
+scenario('age_e2_prepubertal', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 2018);
+scenario('age_e2_early_puberty', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 2013);
+scenario('age_e2_mid_puberty', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 2010);
+scenario('age_e2_late_puberty', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 2007);
+scenario('age_t_late_puberty', [ev(Route.injection, Ester.TC, 250, at(-240))], 70, 2006);
+scenario('age_e2_capped', [ev(Route.oral, Ester.E2, 2, at(-24))], 70, 1930);
+scenario('weight_e2_40', [ev(Route.oral, Ester.E2, 2, at(-24))], 40, null);
+scenario('weight_e2_140', [ev(Route.oral, Ester.E2, 2, at(-24))], 140, null);
+scenario('weight_t_150', [ev(Route.injection, Ester.TC, 250, at(-240))], 150, null);
+scenario('weight_cpa_40', [ev(Route.oral, Ester.CPA, 50, at(-24))], 40, null);
+scenario('weight_cpa_140', [ev(Route.oral, Ester.CPA, 50, at(-24))], 140, null);
+scenario('sublingual_e2_heavy', [ev(Route.sublingual, Ester.E2, 2, at(-6))], 140, null);
+scenario('sublingual_eb_heavy', [ev(Route.sublingual, Ester.EB, 2, at(-6))], 140, null);
 scenario('mixed_unsorted', [
     ev(Route.gel, Ester.T, 50, at(-12), { [ExtraKey.gelSite]: 0 }),
     ev(Route.injection, Ester.EV, 5, at(-240)),

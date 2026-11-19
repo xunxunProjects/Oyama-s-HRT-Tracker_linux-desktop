@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 #define OYAMA_PK_VERSION_MAJOR 1
-#define OYAMA_PK_VERSION_MINOR 0
+#define OYAMA_PK_VERSION_MINOR 1
 #define OYAMA_PK_VERSION_PATCH 0
 
 /* Hard cap on the number of base grid points, matching upstream. */
@@ -141,6 +141,12 @@ typedef struct {
     double t_gel_arm;
     double t_gel_thigh;
     double t_gel_scrotal;
+    /*
+     * Mucosal elimination rate for plain sublingual E2, in h^-1.  Upstream
+     * uses 1.2.  The fast sublingual branch uses
+     * k3_fast = k3 * (e2_sl_kElimSL / 0.41); ester doses keep k3 only.
+     */
+    double e2_sl_kElimSL;
 } oyama_pk_params;
 
 typedef struct {

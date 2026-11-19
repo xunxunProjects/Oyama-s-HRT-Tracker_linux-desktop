@@ -7,9 +7,12 @@ After the PK modularization work (plan
 intentional numerical deviations** from the upstream TypeScript model. The
 `tools/compare` harness is the authoritative check and currently reports:
 
-- 453,612 field comparisons across 40 scenarios
+- 584,865 field comparisons across 60 scenarios
 - 0 fields above `1e-6`
-- worst relative error `~1.12e-15`
+- worst relative error `~1.53e-15`
+- 50,000,000-point curve cross-validation: max absolute error
+  `1.09e-10 pg/mL`, zero points above `1.5 pg/mL`, zero above `5 pg/mL`
+  (`tools/pk-crossval/`)
 
 ## Empirical / uncertain parameters
 

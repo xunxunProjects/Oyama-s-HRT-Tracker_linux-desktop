@@ -16,6 +16,7 @@ typedef struct pk_params {
     double k2;
     double k2_slow;
     double k3;
+    double k3_fast;
     double F;
     double rate_mg_h;
     double F_fast;

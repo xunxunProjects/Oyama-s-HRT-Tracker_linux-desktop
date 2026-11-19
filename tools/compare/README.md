@@ -1,9 +1,9 @@
 # PK comparison harness
 
 This directory checks the C99 model against the upstream TypeScript model in
-`/home/haiyan/git/Oyama-s-HRT-Tracker` (upstream commit `f727a4d` when the port
-was verified). The C core and upstream are independent implementations of the
-same equations, so agreement is evidence that the port is faithful.
+`/home/haiyan/git/Oyama-s-HRT-Tracker` (upstream commit `766e3cb` when the port
+was last verified). The C core and upstream are independent implementations of
+the same equations, so agreement is evidence that the port is faithful.
 
 The harness has three parts:
 
@@ -48,8 +48,11 @@ python3 tools/compare/compare.py \
 ```
 
 A successful run ends with `0 above 1e-06`. The last verified run compared
-413,323 fields across 36 scenarios; the worst relative error was
-`1.119e-15` (concentration values) with zero fields above `1e-6`.
+584,865 fields across 60 scenarios; the worst relative error was
+`1.526e-15` (concentration values) with zero fields above `1e-6`.
+
+For a much larger curve-level check, see `tools/pk-crossval/` (50,000,000
+concentration points, C vs upstream TypeScript).
 
 ## What is covered
 
@@ -57,8 +60,10 @@ The scenarios exercise both hormone modes and every modelled route/ester:
 oral E2/EV/EB and CPA, sublingual E2/EV/EB with default and custom theta,
 gel E2/EV and T at all three sites, E2 and T patches including removal,
 overlap, fallback pairing, and same-time tie-breaks, all E2 and T injection
-esters, age adjustment, unsorted input, unmodelled drugs, empty history,
-zero body weight, and an invalid birth year.
+esters, the puberty age bands and 75-year cap, allometric weight scaling at
+40/140/150 kg, unsorted input, unmodelled drugs, empty history, zero body
+weight, and an invalid birth year. CPA is checked at 40 and 140 kg so the
+deliberate exclusion of CPA from weight scaling stays pinned.
 
 Calibration (`off`/`ekf`/`ou_kalman`/`mipd`) is not part of the core simulator
 and is not covered here; it is a later milestone.

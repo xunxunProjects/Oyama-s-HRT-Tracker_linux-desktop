@@ -53,6 +53,24 @@ static oyama_pk_dose oral_e2(double dose_mg, double time_h)
     return d;
 }
 
+static oyama_pk_dose sublingual_e2(double dose_mg, double time_h,
+                                   oyama_pk_ester ester)
+{
+    oyama_pk_dose d;
+    memset(&d, 0, sizeof d);
+    d.id = "sublingual-e2";
+    d.route = OYAMA_PK_ROUTE_SUBLINGUAL;
+    d.ester = ester;
+    d.time_h = time_h;
+    d.dose_mg = dose_mg;
+    return d;
+}
+
+static double age_time_h(int birth_year, double age_years)
+{
+    return (birth_year + 0.5 + age_years - 1970.0) * HOURS_PER_YEAR;
+}
+
 static int test_empty_history(void)
 {
     oyama_pk_request req;
@@ -278,6 +296,144 @@ static int test_patch_apply_flood_is_bounded(void)
     return 0;
 }
 
+static int simulate_one(const oyama_pk_dose *dose, double body_weight_kg,
+                        const oyama_pk_params *params, oyama_pk_result *out,
+                        double *t, double *total, double *e2, double *cpa,
+                        double *tt, size_t capacity)
+{
+    oyama_pk_request req;
+
+    memset(&req, 0, sizeof req);
+    req.events = dose;
+    req.event_count = 1;
+    req.body_weight_kg = body_weight_kg;
+    req.now_h = NOW_H;
+    req.params = params;
+
+    memset(out, 0, sizeof *out);
+    out->time_h = t;
+    out->conc_pg_ml = total;
+    out->conc_pg_ml_e2 = e2;
+    out->conc_ng_ml_cpa = cpa;
+    out->conc_ng_dl_t = tt;
+    out->capacity = capacity;
+    return oyama_pk_simulate(&req, out);
+}
+
+static int test_age_ramp(void)
+{
+    const int birth_year = 1970;
+    const double slope_e2 = log(1.0 / 0.75) / (79.0 - 27.0);
+    const double slope_t = log(1821.0 / 1390.0) / (67.0 - 27.0);
+    const double adult19_e2 = exp(-slope_e2 * (19.0 - 54.0));
+    const double adult19_t = exp(-slope_t * (19.0 - 54.0));
+
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_E2, birth_year, age_time_h(birth_year, 9.0)),
+               adult19_e2 * 0.70, 1e-12);
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_E2, birth_year, age_time_h(birth_year, 10.0)),
+               adult19_e2 * 0.70, 1e-12);
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_E2, birth_year, age_time_h(birth_year, 11.0)),
+               adult19_e2 * 0.74, 1e-12);
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_E2, birth_year, age_time_h(birth_year, 13.5)),
+               adult19_e2 * 0.84, 1e-12);
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_E2, birth_year, age_time_h(birth_year, 17.0)),
+               adult19_e2 * 0.95, 1e-12);
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_E2, birth_year, age_time_h(birth_year, 19.0)),
+               adult19_e2, 1e-12);
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_T, birth_year, age_time_h(birth_year, 9.0)),
+               adult19_t * 0.70, 1e-12);
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_E2, birth_year, age_time_h(birth_year, 75.0)),
+               exp(-slope_e2 * (75.0 - 54.0)), 1e-12);
+    CHECK_NEAR(oyama_pk_age_clearance_multiplier(
+                   OYAMA_PK_HORMONE_E2, birth_year, age_time_h(birth_year, 100.0)),
+               exp(-slope_e2 * (75.0 - 54.0)), 1e-12);
+    return 0;
+}
+
+static int test_weight_k3_factor(void)
+{
+    CHECK_NEAR(oyama_pk_weight_k3_factor(70.0), 1.0, 1e-12);
+    CHECK_NEAR(oyama_pk_weight_k3_factor(140.0), pow(2.0, -0.25), 1e-12);
+    CHECK_NEAR(oyama_pk_weight_k3_factor(35.0), pow(2.0, 0.25), 1e-12);
+    CHECK_NEAR(oyama_pk_weight_k3_factor(0.0), 1.0, 1e-12);
+    CHECK_NEAR(oyama_pk_weight_k3_factor(1.0), pow(1.0 / 70.0, -0.25), 1e-12);
+    CHECK_NEAR(oyama_pk_weight_k3_factor(-5.0), pow(1.0 / 70.0, -0.25), 1e-12);
+    return 0;
+}
+
+static int test_weight_scaling_auc(void)
+{
+    const oyama_pk_dose dose = oral_e2(2.0, NOW_H - 200.0);
+    oyama_pk_result light, heavy;
+    double lt[8192], ltot[8192], le2[8192], lcpa[8192], ltt[8192];
+    double ht[8192], htot[8192], he2[8192], hcpa[8192], htt[8192];
+
+    CHECK(simulate_one(&dose, 70.0, NULL, &light, lt, ltot, le2, lcpa, ltt, 8192) ==
+          OYAMA_PK_OK);
+    CHECK(simulate_one(&dose, 140.0, NULL, &heavy, ht, htot, he2, hcpa, htt, 8192) ==
+          OYAMA_PK_OK);
+    CHECK_NEAR(heavy.auc / light.auc, pow(2.0, -0.75), 1e-3);
+    return 0;
+}
+
+static int test_sublingual_k3_fast(void)
+{
+    const oyama_pk_dose plain = sublingual_e2(1.0, NOW_H - 12.0, OYAMA_PK_ESTER_E2);
+    const oyama_pk_dose ester = sublingual_e2(1.0, NOW_H - 12.0, OYAMA_PK_ESTER_EB);
+    oyama_pk_params params;
+    oyama_pk_result fast, slow, ester_fast, ester_slow;
+    double ft[8192], ftot[8192], fe2[8192], fcpa[8192], ftt[8192];
+    double st[8192], stot[8192], se2[8192], scpa[8192], stt[8192];
+    double et[8192], etot[8192], ee2[8192], ecpa[8192], ett[8192];
+    double qt[8192], qtot[8192], qe2[8192], qcpa[8192], qtt[8192];
+    size_t i;
+
+    oyama_pk_params_defaults(&params);
+    params.e2_sl_kElimSL = 0.41; /* makes k3_fast == k3 */
+
+    CHECK(simulate_one(&plain, 70.0, NULL, &fast, ft, ftot, fe2, fcpa, ftt, 8192) ==
+          OYAMA_PK_OK);
+    CHECK(simulate_one(&plain, 70.0, &params, &slow, st, stot, se2, scpa, stt, 8192) ==
+          OYAMA_PK_OK);
+    CHECK(oyama_pk_interpolate_e2(&fast, plain.time_h + 0.75) <
+          oyama_pk_interpolate_e2(&slow, plain.time_h + 0.75));
+
+    CHECK(simulate_one(&ester, 70.0, NULL, &ester_fast, et, etot, ee2, ecpa, ett,
+                       8192) == OYAMA_PK_OK);
+    CHECK(simulate_one(&ester, 70.0, &params, &ester_slow, qt, qtot, qe2, qcpa, qtt,
+                       8192) == OYAMA_PK_OK);
+    CHECK(ester_fast.length == ester_slow.length);
+    for (i = 0; i < ester_fast.length; i++) {
+        CHECK_NEAR(ester_fast.conc_pg_ml_e2[i], ester_slow.conc_pg_ml_e2[i], 1e-12);
+    }
+    return 0;
+}
+
+static int test_peri_event_075(void)
+{
+    const oyama_pk_dose dose = sublingual_e2(1.0, NOW_H - 1.0, OYAMA_PK_ESTER_E2);
+    oyama_pk_result out;
+    double t[8192], total[8192], e2[8192], cpa[8192], tt[8192];
+    size_t i;
+    int found = 0;
+
+    CHECK(simulate_one(&dose, 70.0, NULL, &out, t, total, e2, cpa, tt, 8192) ==
+          OYAMA_PK_OK);
+    for (i = 0; i < out.length; i++) {
+        if (fabs(out.time_h[i] - (dose.time_h + 0.75)) < 1e-9) found = 1;
+    }
+    CHECK(found);
+    return 0;
+}
+
 static int test_age_multiplier(void)
 {
     const int birth_year = 1970;
@@ -340,6 +496,11 @@ int main(void)
     if (test_buffer_too_small()) return 1;
     if (test_event_count_limit()) return 1;
     if (test_patch_apply_flood_is_bounded()) return 1;
+    if (test_age_ramp()) return 1;
+    if (test_weight_k3_factor()) return 1;
+    if (test_weight_scaling_auc()) return 1;
+    if (test_sublingual_k3_fast()) return 1;
+    if (test_peri_event_075()) return 1;
     if (test_age_multiplier()) return 1;
     if (test_api_helpers()) return 1;
     puts("pk_smoke_test: ok");
