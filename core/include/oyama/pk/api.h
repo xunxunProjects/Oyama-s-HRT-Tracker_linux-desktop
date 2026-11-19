@@ -37,11 +37,22 @@ double oyama_pk_interpolate_e2(const oyama_pk_result *sim, double hour_h);
 double oyama_pk_interpolate_cpa(const oyama_pk_result *sim, double hour_h);
 double oyama_pk_interpolate_t(const oyama_pk_result *sim, double hour_h);
 
-/* Age helpers, matching the upstream age adjustment. */
+/*
+ * Age helpers, matching the upstream age adjustment.  Below 19 the multiplier
+ * is the 19-year adult value times a puberty maturation ramp; at and above 19
+ * it decays exponentially from the age-54 reference and is capped at 75.
+ */
 double oyama_pk_age_at_h(int birth_year, double time_h);
 double oyama_pk_age_clearance_multiplier(oyama_pk_hormone hormone,
                                           int birth_year,
                                           double time_h);
+
+/*
+ * Allometric clearance factor applied by oyama_pk_simulate() to E2/T k3:
+ * (max(1, body_weight_kg or 70) / 70)^-0.25.  Volume is linear in weight, so
+ * total clearance scales as weight^0.75.  CPA is not scaled.
+ */
+double oyama_pk_weight_k3_factor(double body_weight_kg);
 
 /*
  * Map a sublingual hold time in minutes to theta, using the currently

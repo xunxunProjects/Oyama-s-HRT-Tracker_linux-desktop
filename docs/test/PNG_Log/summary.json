@@ -1,0 +1,147 @@
+{
+  "generated_at": "2026-11-19T23:17:36.245Z",
+  "limit": 50000000,
+  "scenario_count": 26000,
+  "scenarios_compared": 24802,
+  "total_points": 50000000,
+  "max_abs_error_pg_ml": 1.0913936421275139e-10,
+  "count_gt_1_5_pg_ml": 0,
+  "count_gt_5_pg_ml": 0,
+  "pass": true,
+  "grid_mismatches": 0,
+  "null_results": 0,
+  "mean_abs_error_pg_ml": 7.974625940912675e-14,
+  "rmse_pg_ml": 7.500468209386961e-13,
+  "percentiles_pg_ml": {
+    "p50": 0,
+    "p90": 2.220446049250313e-15,
+    "p99": 2.2737367544323206e-12,
+    "p999": 9.094947017729282e-12,
+    "p9999": 2.7284841053187847e-11,
+    "sample_size": 199204
+  },
+  "worst_case": {
+    "scenario": 24643,
+    "id": "s24643",
+    "template": "injection_t",
+    "time_h": 479799.15157578787,
+    "conc_pg_ml": 137760.37246723103,
+    "error_pg_ml": 1.0913936421275139e-10,
+    "error_e2": 0,
+    "error_t": 1.0913936421275139e-10,
+    "route": "injection",
+    "ester": "TC",
+    "age": 64.25814013977015,
+    "weight": 38.5
+  },
+  "per_route": {
+    "oral": {
+      "points": 13309212,
+      "max_abs_error_pg_ml": 3.637978807091713e-11,
+      "mean_abs_error_pg_ml": 1.9335046243533833e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "sublingual": {
+      "points": 5873934,
+      "max_abs_error_pg_ml": 2.7284841053187847e-12,
+      "mean_abs_error_pg_ml": 5.989046868314402e-16,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "gel": {
+      "points": 8810901,
+      "max_abs_error_pg_ml": 3.637978807091713e-11,
+      "mean_abs_error_pg_ml": 2.264512580446942e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "patchApply": {
+      "points": 5875333,
+      "max_abs_error_pg_ml": 5.6843418860808015e-12,
+      "mean_abs_error_pg_ml": 2.5056721495473355e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "injection": {
+      "points": 7321273,
+      "max_abs_error_pg_ml": 1.0913936421275139e-10,
+      "mean_abs_error_pg_ml": 3.3329185830330446e-13,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "nasal": {
+      "points": 2935413,
+      "max_abs_error_pg_ml": 1.8189894035458565e-11,
+      "mean_abs_error_pg_ml": 5.19704241273182e-15,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "sc": {
+      "points": 2936967,
+      "max_abs_error_pg_ml": 2.8421709430404007e-12,
+      "mean_abs_error_pg_ml": 2.1163875245093865e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "pellet": {
+      "points": 2936967,
+      "max_abs_error_pg_ml": 6.821210263296962e-12,
+      "mean_abs_error_pg_ml": 2.9356357008303574e-13,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    }
+  },
+  "per_age_band": {
+    "unknown": {
+      "points": 7518084,
+      "max_abs_error_pg_ml": 9.094947017729282e-11,
+      "mean_abs_error_pg_ml": 6.664081976464703e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "adult": {
+      "points": 29740153,
+      "max_abs_error_pg_ml": 1.0913936421275139e-10,
+      "mean_abs_error_pg_ml": 7.139961622446378e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "older": {
+      "points": 4271781,
+      "max_abs_error_pg_ml": 9.094947017729282e-11,
+      "mean_abs_error_pg_ml": 1.898940577825375e-13,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "earlyPuberty": {
+      "points": 1913363,
+      "max_abs_error_pg_ml": 3.637978807091713e-11,
+      "mean_abs_error_pg_ml": 7.172949464868537e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "midPuberty": {
+      "points": 1998126,
+      "max_abs_error_pg_ml": 5.4569682106375694e-11,
+      "mean_abs_error_pg_ml": 5.98060919114675e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "prepubertal": {
+      "points": 2550642,
+      "max_abs_error_pg_ml": 5.4569682106375694e-11,
+      "mean_abs_error_pg_ml": 6.86292311965531e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    },
+    "latePuberty": {
+      "points": 2007851,
+      "max_abs_error_pg_ml": 5.4569682106375694e-11,
+      "mean_abs_error_pg_ml": 5.970915328769695e-14,
+      "count_gt_1_5": 0,
+      "count_gt_5": 0
+    }
+  },
+  "elapsed_s": 84.485488694
+}

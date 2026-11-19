@@ -11,6 +11,9 @@
 #define AGE_REF_YEARS 54.0
 #define AGE_MIN_YEARS 19.0
 #define AGE_MAX_YEARS 75.0
+#define PUBERTY_PREPUBERTAL 0.70
+#define PUBERTY_EARLY 0.78
+#define PUBERTY_MID 0.90
 
 #define PATCH_MIN_WEAR_H 1.0
 #define PATCH_REMOVAL_GRACE_H 24.0
@@ -108,6 +111,7 @@ void oyama_pk_params_defaults(oyama_pk_params *out)
     out->t_gel_arm = 0.1;
     out->t_gel_thigh = 0.1;
     out->t_gel_scrotal = 0.5;
+    out->e2_sl_kElimSL = 1.2;
 }
 
 static double sanitize_value(double value, double fallback, double lo, double hi)
@@ -158,6 +162,8 @@ void oyama_pk_params_sanitize(const oyama_pk_params *in, oyama_pk_params *out)
     out->t_gel_arm = sanitize_value(in->t_gel_arm, defaults.t_gel_arm, 0.0, 1.0);
     out->t_gel_thigh = sanitize_value(in->t_gel_thigh, defaults.t_gel_thigh, 0.0, 1.0);
     out->t_gel_scrotal = sanitize_value(in->t_gel_scrotal, defaults.t_gel_scrotal, 0.0, 1.0);
+    out->e2_sl_kElimSL =
+        sanitize_value(in->e2_sl_kElimSL, defaults.e2_sl_kElimSL, 0.01, 10.0);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -169,6 +175,28 @@ double oyama_pk_age_at_h(int birth_year, double time_h)
     return 1970.0 + time_h / HOURS_PER_YEAR - ((double)birth_year + 0.5);
 }
 
+static double age_clearance_slope(oyama_pk_hormone hormone)
+{
+    return hormone == OYAMA_PK_HORMONE_T
+               ? log(1821.0 / 1390.0) / (67.0 - 27.0)
+               : log(1.0 / 0.75) / (79.0 - 27.0);
+}
+
+static double puberty_maturation_factor(double age)
+{
+    if (age < 10.0) return PUBERTY_PREPUBERTAL;
+    if (age >= AGE_MIN_YEARS) return 1.0;
+    if (age < 12.0) {
+        return PUBERTY_PREPUBERTAL +
+               (PUBERTY_EARLY - PUBERTY_PREPUBERTAL) * ((age - 10.0) / 2.0);
+    }
+    if (age < 15.0) {
+        return PUBERTY_EARLY +
+               (PUBERTY_MID - PUBERTY_EARLY) * ((age - 12.0) / 3.0);
+    }
+    return PUBERTY_MID + (1.0 - PUBERTY_MID) * ((age - 15.0) / 4.0);
+}
+
 double oyama_pk_age_clearance_multiplier(oyama_pk_hormone hormone,
                                           int birth_year,
                                           double time_h)
@@ -177,11 +205,20 @@ double oyama_pk_age_clearance_multiplier(oyama_pk_hormone hormone,
     double slope;
 
     if (birth_year == 0) return 1.0;
-    age = clamp(oyama_pk_age_at_h(birth_year, time_h), AGE_MIN_YEARS, AGE_MAX_YEARS);
-    slope = hormone == OYAMA_PK_HORMONE_T
-                ? log(1821.0 / 1390.0) / (67.0 - 27.0)
-                : log(1.0 / 0.75) / (79.0 - 27.0);
-    return exp(-slope * (age - AGE_REF_YEARS));
+    age = oyama_pk_age_at_h(birth_year, time_h);
+    slope = age_clearance_slope(hormone);
+    if (age < AGE_MIN_YEARS) {
+        const double adult_at_19 = exp(-slope * (AGE_MIN_YEARS - AGE_REF_YEARS));
+        return adult_at_19 * puberty_maturation_factor(age);
+    }
+    return exp(-slope * (fmin(age, AGE_MAX_YEARS) - AGE_REF_YEARS));
+}
+
+double oyama_pk_weight_k3_factor(double body_weight_kg)
+{
+    double w = body_weight_kg > 0.0 ? body_weight_kg : 70.0;
+    if (w < 1.0) w = 1.0;
+    return pow(w / 70.0, -0.25);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -282,9 +319,10 @@ static double event_amount(const oyama_pk_dose *event,
     case OYAMA_PK_ROUTE_SUBLINGUAL: {
         const double dose_fast = event->dose_mg * p->frac_fast;
         const double dose_slow = event->dose_mg * (1.0 - p->frac_fast);
+        const double k3_fast = p->k3_fast > 0.0 ? p->k3_fast : p->k3;
         const double fast = p->k2 > 0.0
-            ? oyama_pk_common_analytic3c(tau, dose_fast, p->F_fast, p->k1_fast, p->k2, p->k3)
-            : oyama_pk_common_analytic2c(tau, dose_fast, p->F_fast, p->k1_fast, p->k3);
+            ? oyama_pk_common_analytic3c(tau, dose_fast, p->F_fast, p->k1_fast, p->k2, k3_fast)
+            : oyama_pk_common_analytic2c(tau, dose_fast, p->F_fast, p->k1_fast, k3_fast);
         const double slow = p->k2_slow > 0.0
             ? oyama_pk_common_analytic3c(tau, dose_slow, p->F_slow, p->k1_slow, p->k2_slow, p->k3)
             : oyama_pk_common_analytic2c(tau, dose_slow, p->F_slow, p->k1_slow, p->k3);
@@ -449,6 +487,14 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
             if (sorted[i].route == OYAMA_PK_ROUTE_PATCH_REMOVE) continue;
             models[mi].event_index = i;
             oyama_pk_resolve_params(&sorted[i], birth_year, &params, &models[mi].params);
+            if (sorted[i].ester != OYAMA_PK_ESTER_CPA) {
+                const double weight_factor =
+                    oyama_pk_weight_k3_factor(request->body_weight_kg);
+                models[mi].params.k3 *= weight_factor;
+                if (models[mi].params.k3_fast > 0.0) {
+                    models[mi].params.k3_fast *= weight_factor;
+                }
+            }
             if (sorted[i].route == OYAMA_PK_ROUTE_PATCH_APPLY ||
                 sorted[i].route == OYAMA_PK_ROUTE_PELLET) {
                 wear = oyama_pk_common_patch_wear_h(i, sorted, remove_time);
@@ -478,12 +524,12 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
     }
     step_size = (end_time - start_time) / (double)(steps - 1);
 
-    if (n_models > (SIZE_MAX - steps - n - 1) / 10) {
+    if (n_models > (SIZE_MAX - steps - n - 1) / 11) {
         status = OYAMA_PK_ERR_INTERNAL;
         goto cleanup;
     }
     {
-        const size_t capacity = steps + n + 10 * n_models + 1;
+        const size_t capacity = steps + n + 11 * n_models + 1;
         if (capacity > SIZE_MAX / sizeof *times) {
             status = OYAMA_PK_ERR_INTERNAL;
             goto cleanup;
@@ -496,12 +542,12 @@ oyama_pk_status oyama_pk_simulate(const oyama_pk_request *request,
         }
         for (i = 0; i < n; i++) times[all_n++] = sorted[i].time_h;
         {
-            static const double offsets[10] = {0.25, 0.5, 1, 2, 4, 6, 8, 12, 24, 48};
+            static const double offsets[11] = {0.25, 0.5, 0.75, 1, 2, 4, 6, 8, 12, 24, 48};
             size_t mi;
             for (mi = 0; mi < n_models; mi++) {
                 size_t oi;
                 const double event_time = sorted[models[mi].event_index].time_h;
-                for (oi = 0; oi < 10; oi++) {
+                for (oi = 0; oi < 11; oi++) {
                     double t;
                     if (offsets[oi] > models[mi].max_lifetime_h) break;
                     t = event_time + offsets[oi];

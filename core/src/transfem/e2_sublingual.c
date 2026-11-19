@@ -100,6 +100,7 @@ static void resolve_params(const oyama_pk_dose *event, int birth_year,
     o->k2 = k2;
     o->k2_slow = event->ester == OYAMA_PK_ESTER_EV ? 0.0 : (log(2.0) / 14.36);
     o->k3 = default_k3;
+    o->k3_fast = k2 == 0.0 ? default_k3 * (params->e2_sl_kElimSL / 0.41) : 0.0;
     o->F_fast = to_e2;
     o->F_slow = params->e2_oral_bio * to_e2;
     o->F = theta * o->F_fast + (1.0 - theta) * o->F_slow;

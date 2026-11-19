@@ -323,6 +323,7 @@ void oyama_pk_resolve_params(const oyama_pk_dose *event,
         out->k2 = k2;
         out->k2_slow = event->ester == OYAMA_PK_ESTER_EV ? 0.0 : (log(2.0) / 14.36);
         out->k3 = default_k3;
+        out->k3_fast = k2 == 0.0 ? default_k3 * (p->e2_sl_kElimSL / 0.41) : 0.0;
         out->F_fast = to_e2;
         out->F_slow = p->e2_oral_bio * to_e2;
         out->F = theta * out->F_fast + (1.0 - theta) * out->F_slow;

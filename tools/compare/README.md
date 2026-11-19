@@ -1,9 +1,9 @@
 # PK comparison harness
 
 This directory checks the C99 model against the upstream TypeScript model in
-`/home/haiyan/git/Oyama-s-HRT-Tracker` (upstream commit `f727a4d` when the port
-was verified). The C core and upstream are independent implementations of the
-same equations, so agreement is evidence that the port is faithful.
+`/home/haiyan/git/Oyama-s-HRT-Tracker` (upstream commit `766e3cb` when the port
+was last verified). The C core and upstream are independent implementations of
+the same equations, so agreement is evidence that the port is faithful.
 
 The harness has three parts:
 
@@ -48,8 +48,11 @@ python3 tools/compare/compare.py \
 ```
 
 A successful run ends with `0 above 1e-06`. The last verified run compared
-413,323 fields across 36 scenarios; the worst relative error was
-`1.119e-15` (concentration values) with zero fields above `1e-6`.
+564,713 fields across 58 scenarios; the worst relative error was
+`1.526e-15` (concentration values) with zero fields above `1e-6`.
+
+For a much larger curve-level check, see `tools/pk-crossval/` (50,000,000
+concentration points, C vs upstream TypeScript).
 
 ## What is covered
 

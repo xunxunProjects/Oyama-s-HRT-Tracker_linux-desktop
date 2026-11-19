@@ -868,6 +868,12 @@ if(OYAMA_BUILD_COMPARE_TOOLS)
     if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(oyama_pk_dump PRIVATE -Wall -Wextra -Wpedantic)
     endif()
+
+    add_executable(oyama_pk_crossval_dump tools/pk-crossval/dump_binary.c)
+    target_link_libraries(oyama_pk_crossval_dump PRIVATE oyama_pk)
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(oyama_pk_crossval_dump PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
 endif()
 
 install(TARGETS oyama-hrt-cli
