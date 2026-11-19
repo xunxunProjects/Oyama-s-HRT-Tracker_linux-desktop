@@ -13,7 +13,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.ticker import LogLocator, NullFormatter
 
 AGE_ORDER = [
     "prepubertal", "earlyPuberty", "midPuberty", "latePuberty",
@@ -66,6 +65,7 @@ def main() -> None:
     max_error = float(summary["max_abs_error_pg_ml"])
     gt15 = int(summary["count_gt_1_5_pg_ml"])
     gt5 = int(summary["count_gt_5_pg_ml"])
+    nonfinite = int(summary.get("non_finite_points", 0))
     total = int(summary["total_points"])
 
     # ------------------------------------------------------------------
@@ -235,9 +235,92 @@ def main() -> None:
     plt.close(fig)
 
     # ------------------------------------------------------------------
+    # 4. CDF of the absolute error
+    # ------------------------------------------------------------------
+    errors = np.array(
+        [num(r["error_pg_ml"]) for r in sample if math.isfinite(num(r["error_pg_ml"]))],
+        dtype=float,
+    )
+    errors.sort()
+    sample_n = errors.size
+    zero_count = int(np.count_nonzero(errors == 0.0))
+    zero_fraction = zero_count / sample_n
+    sample_max = float(errors[-1])
+    positive = errors[errors > 0.0]
+    positive_cdf = (zero_count + np.arange(1, positive.size + 1)) / sample_n
+
+    fig, (ax_tail, ax_full) = plt.subplots(
+        1, 2, figsize=(16, 7.5), gridspec_kw={"width_ratios": [1.45, 1.0]}
+    )
+
+    ax_tail.step(
+        positive, positive_cdf, where="post", color="#1d4e89", linewidth=2.2,
+        label=f"Empirical CDF (sample n={sample_n:,})",
+    )
+    ax_tail.set_xscale("log")
+    ax_tail.set_xlim(max(1e-16, float(positive[0]) * 0.8), max(1e-9, sample_max * 2.0))
+    ax_tail.set_ylim(max(0.0, zero_fraction - 0.02), 1.005)
+    for q, label in ((0.99, "p99"), (0.999, "p99.9")):
+        value = float(errors[min(sample_n - 1, int(q * sample_n))])
+        ax_tail.axvline(value, color="#888888", linestyle=":", linewidth=1.0)
+        ax_tail.text(
+            value, zero_fraction + 0.008, f"{label}\n{value:.1e}",
+            rotation=90, fontsize=8, va="bottom", ha="right", color="#555555",
+        )
+    ax_tail.set_xlabel("Absolute C-vs-TypeScript error (pg/mL; log scale)")
+    ax_tail.set_ylabel("Cumulative fraction of points")
+    ax_tail.set_title("CDF tail (positive errors)")
+    ax_tail.grid(True, which="both", alpha=0.20)
+    ax_tail.legend(loc="lower right", fontsize=9, framealpha=0.9)
+    ax_tail.text(
+        0.03, 0.97,
+        f"{zero_fraction:.1%} exactly zero\n"
+        f"sample max {sample_max:.2e} pg/mL\n"
+        f"full-run max {max_error:.2e} pg/mL",
+        transform=ax_tail.transAxes, fontsize=9.5, va="top",
+        bbox=dict(boxstyle="round,pad=0.45", facecolor="white", alpha=0.92),
+    )
+
+    ax_full.step(
+        errors, np.arange(1, sample_n + 1) / sample_n, where="post",
+        color="#1d4e89", linewidth=2.2,
+    )
+    ax_full.set_xscale("symlog", linthresh=1e-12, linscale=1.2)
+    ax_full.set_xlim(0.0, 10.0)
+    ax_full.set_ylim(0.0, 1.02)
+    ax_full.axhline(1.0, color="#777777", linewidth=0.8, linestyle=":")
+    ax_full.axvline(1.5, color="#d62728", linestyle="--", linewidth=1.5,
+                    label="1.5 pg/mL threshold (0 points)")
+    ax_full.axvline(5.0, color="#8c1d18", linestyle=":", linewidth=1.8,
+                    label="5 pg/mL limit (0 points)")
+    ax_full.set_xlabel("Absolute error (pg/mL; symlog scale)")
+    ax_full.set_ylabel("Cumulative fraction of points")
+    ax_full.set_title("Full range vs acceptance thresholds")
+    ax_full.grid(True, which="both", alpha=0.20)
+    ax_full.legend(loc="lower right", fontsize=9, framealpha=0.9)
+    ax_full.text(
+        0.03, 0.55,
+        f"Sample: {sample_n:,} of {total:,} points\n"
+        f"100% <= 1.5 pg/mL\n"
+        f"0 points > 5 pg/mL",
+        transform=ax_full.transAxes, fontsize=9.5, va="center",
+        bbox=dict(boxstyle="round,pad=0.45", facecolor="white", alpha=0.92),
+    )
+
+    fig.suptitle(
+        f"Cumulative distribution of absolute error — {total:,} points, "
+        f"max {max_error:.2e} pg/mL",
+        fontsize=14,
+    )
+    fig.tight_layout()
+    cdf_path = args.out / "pk_crossval_cdf.png"
+    fig.savefig(cdf_path, dpi=200, bbox_inches="tight")
+    plt.close(fig)
+
+    # ------------------------------------------------------------------
     # Report
     # ------------------------------------------------------------------
-    report = f"""# PK cross-validation report
+    report = rf"""# PK cross-validation report
 
 Generated from `{args.results}`.
 
@@ -252,7 +335,8 @@ Generated from `{args.results}`.
 | Points with error > 5 pg/mL | {gt5:,} |
 | Grid mismatches | {summary['grid_mismatches']:,} |
 | Null results | {summary['null_results']:,} |
-| Pass (max <= 5 and >1.5 count <= 5) | **{summary['pass']}** |
+| Non-finite points | {nonfinite:,} |
+| Pass (all acceptance checks) | **{summary['pass']}** |
 
 Worst point: scenario `{summary['worst_case']['id']}` (`{summary['worst_case']['template']}`),
 route `{summary['worst_case']['route']}`, ester `{summary['worst_case']['ester']}`,
@@ -264,6 +348,7 @@ at concentration `{summary['worst_case']['conc_pg_ml']:.3f} pg/mL`.
 - `pk_crossval_scatter.png` — absolute error vs concentration, coloured by age band.
 - `pk_crossval_box.png` — error distribution by route, with a threshold-margin panel.
 - `pk_crossval_heatmap.png` — max error by route and age band.
+- `pk_crossval_cdf.png` — cumulative distribution of absolute error (log tail + full-range acceptance view).
 
 The 1.5 pg/mL and 5 pg/mL thresholds are far above the observed numerical
 difference; the C and TypeScript implementations agree to floating-point
@@ -298,6 +383,7 @@ The complete `summary.json` from the run is committed next to this report.
     print(f"wrote {scatter_path}")
     print(f"wrote {box_path}")
     print(f"wrote {heatmap_path}")
+    print(f"wrote {cdf_path}")
     print(f"wrote {args.out / 'README.md'}")
 
 

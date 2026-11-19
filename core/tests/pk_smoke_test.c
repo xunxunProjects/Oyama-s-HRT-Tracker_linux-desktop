@@ -365,6 +365,7 @@ static int test_weight_k3_factor(void)
     CHECK_NEAR(oyama_pk_weight_k3_factor(35.0), pow(2.0, 0.25), 1e-12);
     CHECK_NEAR(oyama_pk_weight_k3_factor(0.0), 1.0, 1e-12);
     CHECK_NEAR(oyama_pk_weight_k3_factor(1.0), pow(1.0 / 70.0, -0.25), 1e-12);
+    CHECK_NEAR(oyama_pk_weight_k3_factor(-5.0), pow(1.0 / 70.0, -0.25), 1e-12);
     return 0;
 }
 

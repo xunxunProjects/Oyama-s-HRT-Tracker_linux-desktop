@@ -216,7 +216,7 @@ double oyama_pk_age_clearance_multiplier(oyama_pk_hormone hormone,
 
 double oyama_pk_weight_k3_factor(double body_weight_kg)
 {
-    double w = body_weight_kg > 0.0 ? body_weight_kg : 70.0;
+    double w = body_weight_kg != 0.0 ? body_weight_kg : 70.0;
     if (w < 1.0) w = 1.0;
     return pow(w / 70.0, -0.25);
 }

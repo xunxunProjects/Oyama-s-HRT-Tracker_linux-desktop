@@ -170,7 +170,8 @@ def make_scenario(rng: random.Random, index: int, template: str) -> dict:
     else:
         raise ValueError(template)
 
-    ev.sort(key=lambda e: e["time_h"])
+    if template != "unsorted":
+        ev.sort(key=lambda e: e["time_h"])
     meta.update({
         "index": index,
         "id": f"s{index:05d}",

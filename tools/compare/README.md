@@ -48,7 +48,7 @@ python3 tools/compare/compare.py \
 ```
 
 A successful run ends with `0 above 1e-06`. The last verified run compared
-564,713 fields across 58 scenarios; the worst relative error was
+584,865 fields across 60 scenarios; the worst relative error was
 `1.526e-15` (concentration values) with zero fields above `1e-6`.
 
 For a much larger curve-level check, see `tools/pk-crossval/` (50,000,000
@@ -60,8 +60,10 @@ The scenarios exercise both hormone modes and every modelled route/ester:
 oral E2/EV/EB and CPA, sublingual E2/EV/EB with default and custom theta,
 gel E2/EV and T at all three sites, E2 and T patches including removal,
 overlap, fallback pairing, and same-time tie-breaks, all E2 and T injection
-esters, age adjustment, unsorted input, unmodelled drugs, empty history,
-zero body weight, and an invalid birth year.
+esters, the puberty age bands and 75-year cap, allometric weight scaling at
+40/140/150 kg, unsorted input, unmodelled drugs, empty history, zero body
+weight, and an invalid birth year. CPA is checked at 40 and 140 kg so the
+deliberate exclusion of CPA from weight scaling stays pinned.
 
 Calibration (`off`/`ekf`/`ou_kalman`/`mipd`) is not part of the core simulator
 and is not covered here; it is a later milestone.

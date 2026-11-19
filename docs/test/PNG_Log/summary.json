@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-11-19T23:17:36.245Z",
+  "generated_at": "2026-11-19T23:36:24.554Z",
   "limit": 50000000,
   "scenario_count": 26000,
   "scenarios_compared": 24802,
@@ -10,6 +10,7 @@
   "pass": true,
   "grid_mismatches": 0,
   "null_results": 0,
+  "non_finite_points": 0,
   "mean_abs_error_pg_ml": 7.974625940912675e-14,
   "rmse_pg_ml": 7.500468209386961e-13,
   "percentiles_pg_ml": {
@@ -36,23 +37,23 @@
   },
   "per_route": {
     "oral": {
-      "points": 13309212,
+      "points": 11355390,
       "max_abs_error_pg_ml": 3.637978807091713e-11,
-      "mean_abs_error_pg_ml": 1.9335046243533833e-14,
+      "mean_abs_error_pg_ml": 1.3154264113299329e-14,
       "count_gt_1_5": 0,
       "count_gt_5": 0
     },
     "sublingual": {
-      "points": 5873934,
-      "max_abs_error_pg_ml": 2.7284841053187847e-12,
-      "mean_abs_error_pg_ml": 5.989046868314402e-16,
+      "points": 6828504,
+      "max_abs_error_pg_ml": 2.7284841053187847e-11,
+      "mean_abs_error_pg_ml": 8.866573878865546e-15,
       "count_gt_1_5": 0,
       "count_gt_5": 0
     },
     "gel": {
-      "points": 8810901,
+      "points": 9810153,
       "max_abs_error_pg_ml": 3.637978807091713e-11,
-      "mean_abs_error_pg_ml": 2.264512580446942e-14,
+      "mean_abs_error_pg_ml": 2.5530578709201825e-14,
       "count_gt_1_5": 0,
       "count_gt_5": 0
     },
@@ -143,5 +144,5 @@
       "count_gt_5": 0
     }
   },
-  "elapsed_s": 84.485488694
+  "elapsed_s": 116.849160069
 }

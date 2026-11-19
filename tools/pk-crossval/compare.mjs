@@ -131,6 +131,7 @@ let totalPoints = 0;
 let comparedScenarios = 0;
 let gridMismatches = 0;
 let nullResults = 0;
+let nonFinite = 0;
 let maxError = 0;
 let countGt15 = 0;
 let countGt5 = 0;
@@ -189,13 +190,27 @@ for (let si = 0; si < scenarios.length; si++) {
     const ester = scenario.events.length ? scenario.events[0].ester : 'none';
     const n = Math.min(len, ts.timeH.length);
     let gridOk = len === ts.timeH.length;
-    if (!gridOk) gridMismatches++;
-    for (let j = 0; j < n; j++) {
-        if (Math.abs(cTime[j] - ts.timeH[j]) > 1e-9) {
-            gridOk = false;
-            gridMismatches++;
-            break;
+    if (gridOk) {
+        for (let j = 0; j < n; j++) {
+            if (!Number.isFinite(cTime[j]) || !Number.isFinite(ts.timeH[j]) ||
+                Math.abs(cTime[j] - ts.timeH[j]) > 1e-9) {
+                gridOk = false;
+                break;
+            }
         }
+    }
+    if (!gridOk) {
+        gridMismatches++;
+        comparedScenarios++;
+        perScenario.push({
+            index: si, id: scenario.id, template: scenario.template,
+            weight_kg: scenario.weight_kg, birth_year: scenario.birth_year,
+            age_years: age, age_band: aBand, points: 0,
+            max_error: null, mean_error: null, count_gt_1_5: 0,
+            count_gt_5: 0, grid_ok: false, time_of_max: null,
+            conc_at_max: null,
+        });
+        continue;
     }
 
     let sMax = 0;
@@ -212,6 +227,14 @@ for (let si = 0; si < scenarios.length; si++) {
         // difference to pg/mL (1 ng/dL = 10 pg/mL) for the common threshold.
         const t = Math.abs(cT[j] - ts.concNGdL_T[j]) * 10.0;
         const err = Math.max(e2, t);
+        if (!Number.isFinite(err) || !Number.isFinite(cTime[j]) ||
+            !Number.isFinite(cE2[j]) || !Number.isFinite(cT[j])) {
+            nonFinite++;
+            totalPoints++;
+            used++;
+            if (totalPoints >= limit) break;
+            continue;
+        }
         const conc = Math.max(cE2[j], cT[j] * 10.0);
         const idx = totalPoints;
 
@@ -298,9 +321,11 @@ const summary = {
     max_abs_error_pg_ml: maxError,
     count_gt_1_5_pg_ml: countGt15,
     count_gt_5_pg_ml: countGt5,
-    pass: maxError <= 5.0 && countGt15 <= 5 && gridMismatches === 0 && nullResults === 0,
+    pass: maxError <= 5.0 && countGt15 <= 5 && gridMismatches === 0 &&
+        nullResults === 0 && nonFinite === 0,
     grid_mismatches: gridMismatches,
     null_results: nullResults,
+    non_finite_points: nonFinite,
     mean_abs_error_pg_ml: totalPoints ? sumError / totalPoints : null,
     rmse_pg_ml: totalPoints ? Math.sqrt(sumSqError / totalPoints) : null,
     percentiles_pg_ml: {

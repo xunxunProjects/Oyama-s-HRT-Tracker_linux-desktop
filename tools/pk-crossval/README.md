@@ -19,14 +19,16 @@ Last run against upstream commit `766e3cb`:
 | Points with error > 5 pg/mL | 0 |
 | Grid mismatches | 0 |
 | Null results | 0 |
+| Non-finite points | 0 |
 | Pass | **yes** |
 
 Worst point: `s24643` (`injection_t`), route `injection`, ester `TC`,
 38.5 kg, age 64.26, concentration `137760.372 pg/mL`, error
 `1.091e-10 pg/mL`.
 
-The acceptance rule is: maximum absolute error <= 5 pg/mL and at most 5 points
-with error > 1.5 pg/mL.
+The acceptance rule is: maximum absolute error <= 5 pg/mL, at most 5 points
+with error > 1.5 pg/mL, zero grid mismatches, zero null results, and zero
+non-finite points.
 
 ## Files
 
@@ -41,8 +43,8 @@ with error > 1.5 pg/mL.
   scenarios, verifies the time grid, compares E2 (pg/mL) and T (ng/dL converted
   to pg/mL), and writes `summary.json`, `per_scenario.csv`,
   `errors_sample.csv`, and `histogram.json`.
-- `plot.py` — reads those results and writes the scatter, box, and heatmap PNGs
-  plus a report into `docs/test/PNG_Log/`.
+- `plot.py` — reads those results and writes the scatter, box, heatmap, and
+  absolute-error CDF PNGs plus a report into `docs/test/PNG_Log/`.
 
 ## Build
 
@@ -88,7 +90,9 @@ python3 tools/pk-crossval/plot.py \
 ```
 
 The C binary is about 1.2 GB for 50M points. The comparator streams it one
-scenario at a time, so memory use stays small.
+scenario at a time, so memory use stays small. The binary uses native-endian
+`uint32`/`double` values, so the dumper and comparator are intended to run on
+the same (little-endian) host.
 
 ## Coverage
 
@@ -101,8 +105,8 @@ birth years cover ages 6-94 plus an unknown-birth-year bucket.
 
 ## Plotting
 
-`plot.py` requires `matplotlib` and `numpy`. If the system Python does not have
-them, create a virtual environment:
+`plot.py` requires `matplotlib` (3.9 or newer, for `tick_labels`) and `numpy`.
+If the system Python does not have them, create a virtual environment:
 
 ```sh
 python3 -m venv --system-site-packages /tmp/opencode/pk-venv
